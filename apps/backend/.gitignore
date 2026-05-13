@@ -1,0 +1,13 @@
+# Ignore environment variables
+.env
+
+
+# Ignore node modules
+node_modules/
+
+# Optionally, ignore log files
+*.log
+
+# VS Code
+.vscode/
+/generated/prisma

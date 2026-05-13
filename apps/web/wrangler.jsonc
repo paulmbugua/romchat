@@ -1,0 +1,33 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "main": ".open-next/worker.js",
+  "name": "MindCare",
+  "compatibility_date": "2026-03-27",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "MindCare"
+    }
+  ],
+  "vars": {
+    "NEXT_PUBLIC_BACKEND_URL": "https://server.mindcareonlinetherapy.com"
+  },
+  "routes": [
+    {
+      "pattern": "mindcareonlinetherapy.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.mindcareonlinetherapy.com",
+      "custom_domain": true
+    }
+  ]
+}
