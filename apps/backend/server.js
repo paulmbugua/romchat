@@ -77,6 +77,7 @@ function adminShape(row) {
     status: row.status,
     rights: row.rights || adminRights[row.role] || [],
     lastLoginAt: row.last_login_at,
+    mustChangePassword: Boolean(row.must_change_password),
     createdAt: row.created_at,
   };
 }
@@ -117,9 +118,11 @@ async function initDatabase() {
       role TEXT NOT NULL CHECK (role IN ('super_admin','admin')),
       status TEXT NOT NULL DEFAULT 'active',
       rights JSONB NOT NULL DEFAULT '[]'::jsonb,
+      must_change_password BOOLEAN NOT NULL DEFAULT false,
       last_login_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false;
     CREATE TABLE IF NOT EXISTS admin_sessions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       admin_id UUID REFERENCES admin_users(id) ON DELETE CASCADE,
@@ -211,6 +214,7 @@ async function initDatabase() {
       sha(process.env.SUPER_ADMIN_PASSWORD || 'GrogonSuper2026!'),
       'super_admin',
       JSON.stringify(adminRights.super_admin),
+      false,
     ],
     [
       process.env.ADMIN_NAME || 'Member Onboarding Admin',
@@ -218,12 +222,13 @@ async function initDatabase() {
       sha(process.env.ADMIN_PASSWORD || 'GrogonAdmin2026!'),
       'admin',
       JSON.stringify(adminRights.admin),
+      true,
     ],
   ];
   for (const admin of seededAdmins) {
     await pool.query(
-      `INSERT INTO admin_users (full_name, email, password_hash, role, rights)
-       VALUES ($1,$2,$3,$4,$5::jsonb)
+      `INSERT INTO admin_users (full_name, email, password_hash, role, rights, must_change_password)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6)
        ON CONFLICT (email) DO UPDATE SET role = EXCLUDED.role, rights = EXCLUDED.rights`,
       admin,
     );
@@ -309,6 +314,24 @@ app.post('/api/admin/auth/login', async (req, res, next) => {
 });
 
 app.get('/api/admin/auth/me', requireAdmin, (req, res) => res.json({ admin: req.admin }));
+app.post('/api/admin/auth/change-password', requireAdmin, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) return res.status(400).json({ message: 'Current and new password are required.' });
+    if (String(newPassword).length < 10) return res.status(400).json({ message: 'Use at least 10 characters for the new password.' });
+    if (newPassword === 'GrogonAdmin2026!' || newPassword === 'GrogonSuper2026!') return res.status(400).json({ message: 'Choose a private password, not an issued temporary password.' });
+    const { rows } = await pool.query('SELECT * FROM admin_users WHERE id = $1', [req.admin.id]);
+    if (!rows[0] || rows[0].password_hash !== sha(currentPassword)) return res.status(401).json({ message: 'Current password is incorrect.' });
+    const updated = await pool.query(
+      'UPDATE admin_users SET password_hash = $1, must_change_password = false WHERE id = $2 RETURNING id, full_name, email, role, status, rights, must_change_password, last_login_at, created_at',
+      [sha(newPassword), req.admin.id],
+    );
+    await logAudit(req.admin.id, 'admin.password_changed', 'admin_user', req.admin.id, { forced: Boolean(rows[0].must_change_password) });
+    res.json({ admin: adminShape(updated.rows[0]), message: 'Password changed. Your admin account is now secured.' });
+  } catch (error) {
+    next(error);
+  }
+});
 app.post('/api/admin/auth/logout', requireAdmin, async (req, res, next) => {
   try {
     const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -327,7 +350,7 @@ async function getOperationalSummary() {
       pool.query(`SELECT l.*, m.full_name, m.member_no FROM loan_applications l LEFT JOIN members m ON m.id = l.member_id ORDER BY l.created_at DESC LIMIT 30`),
       pool.query(`SELECT t.*, m.full_name, m.member_no, a.full_name posted_by_name FROM transactions t LEFT JOIN members m ON m.id = t.member_id LEFT JOIN admin_users a ON a.id = t.posted_by ORDER BY t.created_at DESC LIMIT 30`),
       pool.query(`SELECT s.*, m.full_name, m.member_no, a.full_name assigned_admin_name FROM support_tickets s LEFT JOIN members m ON m.id = s.member_id LEFT JOIN admin_users a ON a.id = s.assigned_admin_id ORDER BY s.created_at DESC LIMIT 30`),
-      pool.query('SELECT id, full_name, email, role, status, rights, last_login_at, created_at FROM admin_users ORDER BY created_at DESC'),
+      pool.query('SELECT id, full_name, email, role, status, rights, must_change_password, last_login_at, created_at FROM admin_users ORDER BY created_at DESC'),
       pool.query(`SELECT ot.*, m.full_name member_name, m.member_no, a.full_name assigned_admin_name FROM onboarding_tasks ot LEFT JOIN members m ON m.id = ot.member_id LEFT JOIN admin_users a ON a.id = ot.assigned_admin_id ORDER BY ot.created_at DESC LIMIT 30`),
       pool.query(`SELECT al.*, a.full_name admin_name FROM audit_logs al LEFT JOIN admin_users a ON a.id = al.admin_id ORDER BY al.created_at DESC LIMIT 40`),
     ]);
@@ -371,8 +394,8 @@ app.post('/api/admin/admins', requireAdmin, requireRight('admins.manage'), async
     const { fullName, email, password, role = 'admin' } = req.body;
     if (!fullName || !email || !password || !adminRights[role]) return res.status(400).json({ message: 'fullName, email, password and valid role are required' });
     const { rows } = await pool.query(
-      `INSERT INTO admin_users (full_name, email, password_hash, role, rights)
-       VALUES ($1,$2,$3,$4,$5::jsonb) RETURNING id, full_name, email, role, status, rights, last_login_at, created_at`,
+      `INSERT INTO admin_users (full_name, email, password_hash, role, rights, must_change_password)
+       VALUES ($1,$2,$3,$4,$5::jsonb,true) RETURNING id, full_name, email, role, status, rights, must_change_password, last_login_at, created_at`,
       [fullName, String(email).toLowerCase(), sha(password), role, JSON.stringify(adminRights[role])],
     );
     await logAudit(req.admin.id, 'admin.create', 'admin_user', rows[0].id, { email, role });

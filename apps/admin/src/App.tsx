@@ -15,7 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 
-type Admin = { id: string; fullName: string; email: string; role: 'super_admin' | 'admin'; rights: string[] };
+type Admin = { id: string; fullName: string; email: string; role: 'super_admin' | 'admin'; rights: string[]; mustChangePassword?: boolean };
 type Ops = {
   totals: { members: number; savings: number; loans: number; dividends: number; pendingKyc: number; openTickets: number; loanQueue: number };
   members: any[];
@@ -44,6 +44,7 @@ export default function App() {
   const [memberForm, setMemberForm] = useState({ fullName: '', email: '', phone: '', shopLocation: 'Kirinyaga Road', membershipTier: 'Jua Kali', tradeCategory: 'Mechanic', idNumber: '', kraPin: '', nextOfKin: '' });
   const [txn, setTxn] = useState({ memberId: '', kind: 'savings_deposit', amount: '5000', channel: 'M-Pesa', reference: '' });
   const [newAdmin, setNewAdmin] = useState({ fullName: '', email: '', password: 'GrogonAdmin2026!', role: 'admin' });
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: 'GrogonAdmin2026!', newPassword: '', confirmPassword: '' });
 
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token]);
   const can = (right: string) => Boolean(admin?.rights?.includes(right));
@@ -68,14 +69,15 @@ export default function App() {
       setAdmin(data.admin);
       localStorage.setItem('grogon-admin-token', data.token);
       localStorage.setItem('grogon-admin-user', JSON.stringify(data.admin));
-      setStatus(`Signed in as ${data.admin.role.replace('_', ' ')}`);
+      setPasswordForm((current) => ({ ...current, currentPassword: login.password }));
+      setStatus(data.admin.mustChangePassword ? 'Temporary password accepted. Set your private password to continue.' : `Signed in as ${data.admin.role.replace('_', ' ')}`);
     } catch (error: any) {
       setStatus(error.message || 'Login failed');
     }
   }
 
   async function load() {
-    if (!token) return;
+    if (!token || admin?.mustChangePassword) return;
     setStatus('Refreshing operations...');
     try {
       const data = await request('/api/admin/operations');
@@ -125,6 +127,25 @@ export default function App() {
     }
   }
 
+  async function changePassword(event: React.FormEvent) {
+    event.preventDefault();
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setStatus('New password and confirmation do not match.');
+      return;
+    }
+    setStatus('Securing admin account...');
+    try {
+      const data = await request('/api/admin/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword }) });
+      setAdmin(data.admin);
+      localStorage.setItem('grogon-admin-user', JSON.stringify(data.admin));
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setStatus(data.message);
+      await load();
+    } catch (error: any) {
+      setStatus(error.message);
+    }
+  }
+
   async function createAdmin(event: React.FormEvent) {
     event.preventDefault();
     setStatus('Creating admin...');
@@ -159,7 +180,7 @@ export default function App() {
           </div>
           <div>
             <h2 className="max-w-xl text-5xl font-black leading-tight">Run onboarding, credit, savings and member support from one desk.</h2>
-            <p className="mt-5 max-w-lg leading-8 text-[#d6e3ff]">Super admins control roles and oversight. Admins handle member onboarding, KYC, transactions, loan review and support on behalf of members.</p>
+            <p className="mt-5 max-w-lg leading-8 text-[#d6e3ff]">Super admins control roles and oversight. Admins receive a temporary password, then must set a private password on first login before handling member operations.</p>
           </div>
           <p className="text-sm text-[#d6e3ff]">Demo super admin: superadmin@grogonsacco.co.ke / GrogonSuper2026!</p>
         </section>
@@ -171,6 +192,38 @@ export default function App() {
             <Input label="Email" value={login.email} onChange={(value) => setLogin({ ...login, email: value })} />
             <Input label="Password" value={login.password} type="password" onChange={(value) => setLogin({ ...login, password: value })} />
             <button className="mt-6 w-full rounded-lg bg-[#fd761a] px-5 py-3 font-black text-[#351000]">Login</button>
+            <p className="mt-4 rounded-lg bg-[#eff4ff] p-3 text-sm font-bold text-[#39475f]">{status}</p>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
+  if (admin.mustChangePassword) {
+    return (
+      <main className="grid min-h-screen bg-[#f8f9ff] px-4 py-10 text-[#0b1c30]">
+        <section className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-2xl border border-[#c5c6cd] bg-white shadow-xl md:grid-cols-[0.9fr_1.1fr]">
+          <div className="bg-[#0d1c32] p-8 text-white">
+            <ShieldCheck className="text-[#fd761a]" size={34} />
+            <h1 className="mt-5 text-4xl font-black">Set your private admin password.</h1>
+            <p className="mt-4 leading-8 text-[#d6e3ff]">
+              This account was issued a temporary password by the super admin. Before accessing member records,
+              loan approvals or transaction posting, create a private password known only to you.
+            </p>
+            <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-[#d6e3ff]">
+              <p className="font-black text-white">{admin.fullName}</p>
+              <p>{admin.email}</p>
+              <p className="mt-2 capitalize text-[#ffb690]">{admin.role.replace('_', ' ')}</p>
+            </div>
+          </div>
+          <form onSubmit={changePassword} className="p-6 md:p-8">
+            <p className="text-sm font-black uppercase tracking-[0.16em] text-[#9d4300]">First login security</p>
+            <h2 className="mt-2 text-3xl font-black">Replace issued password</h2>
+            <Input label="Current temporary password" value={passwordForm.currentPassword} type="password" onChange={(value) => setPasswordForm({ ...passwordForm, currentPassword: value })} />
+            <Input label="New private password" value={passwordForm.newPassword} type="password" onChange={(value) => setPasswordForm({ ...passwordForm, newPassword: value })} />
+            <Input label="Confirm new password" value={passwordForm.confirmPassword} type="password" onChange={(value) => setPasswordForm({ ...passwordForm, confirmPassword: value })} />
+            <button className="mt-6 w-full rounded-lg bg-[#fd761a] px-5 py-3 font-black text-[#351000]">Secure account and continue</button>
+            <button type="button" onClick={logout} className="mt-3 w-full rounded-lg border border-[#c5c6cd] px-5 py-3 font-black">Logout</button>
             <p className="mt-4 rounded-lg bg-[#eff4ff] p-3 text-sm font-bold text-[#39475f]">{status}</p>
           </form>
         </section>
@@ -237,5 +290,5 @@ function Kyc({ members, onApprove }: any) { return <Panel title="KYC and activat
 function Loans({ loans, canApprove, onDecision }: any) { return <Panel title="Loan committee desk"><div className="grid gap-3">{loans.map((l: any) => <div key={l.id} className="rounded-lg bg-[#eff4ff] p-4"><div className="flex flex-wrap justify-between gap-3"><div><p className="font-black">{l.memberNo} - {l.loanType} - {fmt(l.amount)}</p><p className="text-sm text-[#44474d]">{l.purpose}</p></div><div className="flex gap-2"><button onClick={() => onDecision(l.id, 'under_review')} className="rounded-lg border px-3 py-2 font-bold">Review</button><button onClick={() => onDecision(l.id, 'rejected')} className="rounded-lg border px-3 py-2 font-bold">Reject</button>{canApprove && <><button onClick={() => onDecision(l.id, 'approved')} className="rounded-lg bg-[#fd761a] px-3 py-2 font-black text-[#351000]">Approve</button><button onClick={() => onDecision(l.id, 'disbursed')} className="rounded-lg bg-[#0d1c32] px-3 py-2 font-black text-white">Disburse</button></>}</div></div></div>)}</div></Panel>; }
 function Transactions({ members, transactions, txn, setTxn, onSubmit }: any) { return <div className="grid gap-5 p-5 xl:grid-cols-[0.85fr_1.15fr]"><Panel title="Post transaction for member"><form onSubmit={onSubmit} className="grid gap-3"><label className="text-sm font-black text-[#44474d]">Member<select value={txn.memberId} onChange={(e) => setTxn({ ...txn, memberId: e.target.value })} className="mt-2 w-full rounded-lg border border-[#c5c6cd] bg-[#f8f9ff] p-3">{members.map((m: any) => <option key={m.id} value={m.id}>{m.memberNo} - {m.fullName}</option>)}</select></label>{['kind','amount','channel','reference'].map((key) => <Input key={key} label={key} value={txn[key]} onChange={(value) => setTxn({ ...txn, [key]: value })} />)}<button className="rounded-lg bg-[#fd761a] px-5 py-3 font-black text-[#351000]">Post transaction</button></form></Panel><MiniTable title="Recent posted transactions" rows={transactions.map((t: any) => [t.reference, t.memberName, t.kind, fmt(t.amount)])} /></div>; }
 function Support({ tickets, onUpdate }: any) { return <Panel title="Member support desk"><div className="grid gap-3">{tickets.map((t: any) => <div key={t.id} className="rounded-lg bg-[#eff4ff] p-4"><p className="font-black">{t.memberNo || '-'} - {t.memberName || 'Member'} - {t.subject}</p><p className="mt-1 text-sm text-[#44474d]">{t.message}</p><div className="mt-3 flex gap-2"><button onClick={() => onUpdate(t.id, 'in_progress')} className="rounded-lg border px-3 py-2 font-bold">Assign</button><button onClick={() => onUpdate(t.id, 'closed')} className="rounded-lg bg-[#0d1c32] px-3 py-2 font-bold text-white">Close</button></div></div>)}</div></Panel>; }
-function Admins({ admins, form, setForm, onSubmit }: any) { return <div className="grid gap-5 p-5 xl:grid-cols-[0.8fr_1.2fr]"><Panel title="Create admin user"><form onSubmit={onSubmit} className="grid gap-3">{['fullName','email','password'].map((key) => <Input key={key} label={key} value={form[key]} type={key === 'password' ? 'password' : 'text'} onChange={(value) => setForm({ ...form, [key]: value })} />)}<label className="text-sm font-black text-[#44474d]">Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="mt-2 w-full rounded-lg border border-[#c5c6cd] bg-[#f8f9ff] p-3"><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></label><button className="rounded-lg bg-[#fd761a] px-5 py-3 font-black text-[#351000]">Create admin</button></form></Panel><MiniTable title="Admin users and rights" rows={admins.map((a: any) => [a.fullName, a.email, a.role, a.status])} /></div>; }
+function Admins({ admins, form, setForm, onSubmit }: any) { return <div className="grid gap-5 p-5 xl:grid-cols-[0.8fr_1.2fr]"><Panel title="Create admin user"><form onSubmit={onSubmit} className="grid gap-3"><p className="rounded-lg bg-[#eff4ff] p-3 text-sm font-bold text-[#39475f]">Issued passwords are temporary. The admin will be forced to create a private password on first login.</p>{['fullName','email','password'].map((key) => <Input key={key} label={key === 'password' ? 'Temporary issued password' : key} value={form[key]} type={key === 'password' ? 'password' : 'text'} onChange={(value) => setForm({ ...form, [key]: value })} />)}<label className="text-sm font-black text-[#44474d]">Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="mt-2 w-full rounded-lg border border-[#c5c6cd] bg-[#f8f9ff] p-3"><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></label><button className="rounded-lg bg-[#fd761a] px-5 py-3 font-black text-[#351000]">Create admin</button></form></Panel><MiniTable title="Admin users and rights" rows={admins.map((a: any) => [a.fullName, a.email, a.role, a.mustChangePassword ? 'Password reset due' : a.status])} /></div>; }
 function Audit({ audits }: any) { return <Panel title="Audit trail"><div className="space-y-2">{audits.map((a: any) => <div key={a.id} className="grid grid-cols-4 gap-2 rounded-lg bg-[#eff4ff] p-3 text-sm"><span className="font-bold">{a.adminName || 'System'}</span><span>{a.action}</span><span>{a.entityType}</span><span>{new Date(a.createdAt).toLocaleString()}</span></div>)}</div></Panel>; }
