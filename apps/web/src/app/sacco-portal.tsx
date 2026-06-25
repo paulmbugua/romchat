@@ -168,6 +168,8 @@ export default function GrogonSaccoPortal() {
     setMessage(data.message || (res.ok ? 'Password created.' : 'Password update failed.'));
     if (res.ok) {
       setDashboard(data.dashboard);
+      setSetupMode(false);
+      setPassword({ next: '', confirm: '' });
       localStorage.setItem('grogon-member-dashboard', JSON.stringify(data.dashboard));
       router.replace('/portal');
     }
