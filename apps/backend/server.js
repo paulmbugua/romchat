@@ -18,10 +18,24 @@ const pool = new Pool({
 
 const allowedOrigins = String(
   process.env.CORS_ALLOWED_ORIGINS ||
-    'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173',
+    'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174',
 ).split(',').map((origin) => origin.trim()).filter(Boolean);
 
-app.use(cors({ origin: (origin, cb) => !origin || allowedOrigins.includes(origin) ? cb(null, true) : cb(new Error(`Not allowed by CORS: ${origin}`)), credentials: true }));
+function isAllowedDevOrigin(origin) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin) || isAllowedDevOrigin(origin)) {
+        return cb(null, true);
+      }
+      return cb(new Error(`Not allowed by CORS: ${origin}`));
+    },
+    credentials: true,
+  }),
+);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '2mb' }));
