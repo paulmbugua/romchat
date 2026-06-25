@@ -42,6 +42,7 @@ app.use(express.urlencoded({ extended: true }));
 const money = (value) => Number(value || 0);
 const sha = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
 const randomToken = () => crypto.randomBytes(32).toString('hex');
+const normalizePhone = (value) => String(value || '').replace(/\D/g, '').replace(/^0/, '254');
 const adminRights = {
   super_admin: [
     'dashboard.read',
@@ -97,6 +98,7 @@ const memberShape = (row) => ({
   kycStatus: row.kyc_status,
   onboardingStage: row.onboarding_stage || 'registered',
   assignedAdminId: row.assigned_admin_id,
+  mustSetPassword: !row.member_password_hash,
   createdAt: row.created_at,
 });
 
@@ -151,6 +153,15 @@ async function initDatabase() {
     ALTER TABLE members ADD COLUMN IF NOT EXISTS kra_pin TEXT;
     ALTER TABLE members ADD COLUMN IF NOT EXISTS next_of_kin TEXT;
     ALTER TABLE members ADD COLUMN IF NOT EXISTS trade_category TEXT;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS member_password_hash TEXT;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS last_member_login_at TIMESTAMPTZ;
+    CREATE TABLE IF NOT EXISTS member_sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      member_id UUID REFERENCES members(id) ON DELETE CASCADE,
+      token_hash TEXT UNIQUE NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
     CREATE TABLE IF NOT EXISTS onboarding_tasks (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       member_id UUID REFERENCES members(id) ON DELETE CASCADE,
@@ -377,6 +388,86 @@ async function getOperationalSummary() {
 app.get('/api/sacco/summary', async (_req, res, next) => {
   try {
     res.json(await getOperationalSummary());
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function requireMember(req, res, next) {
+  try {
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    if (!token) return res.status(401).json({ message: 'Member login required' });
+    const { rows } = await pool.query(
+      `SELECT m.* FROM member_sessions s
+       JOIN members m ON m.id = s.member_id
+       WHERE s.token_hash = $1 AND s.expires_at > now() AND m.status = 'active'`,
+      [sha(token)],
+    );
+    if (!rows[0]) return res.status(401).json({ message: 'Member session expired' });
+    req.member = rows[0];
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function buildMemberDashboard(memberId) {
+  const [{ rows: memberRows }, { rows: loans }, { rows: transactions }, { rows: tickets }] = await Promise.all([
+    pool.query('SELECT * FROM members WHERE id = $1', [memberId]),
+    pool.query('SELECT * FROM loan_applications WHERE member_id = $1 ORDER BY created_at DESC LIMIT 12', [memberId]),
+    pool.query('SELECT * FROM transactions WHERE member_id = $1 ORDER BY created_at DESC LIMIT 20', [memberId]),
+    pool.query('SELECT * FROM support_tickets WHERE member_id = $1 ORDER BY created_at DESC LIMIT 8', [memberId]),
+  ]);
+  const member = memberShape(memberRows[0]);
+  return {
+    member,
+    savings: {
+      balance: member.savingsBalance,
+      monthlyTarget: member.membershipTier === 'Premium' ? 10000 : member.membershipTier === 'Biashara' ? 5000 : 2500,
+      deposits: transactions.filter((t) => t.kind === 'savings_deposit').map((t) => ({ id: t.id, amount: money(t.amount), reference: t.reference, channel: t.channel, createdAt: t.created_at })),
+    },
+    loans: loans.map((loan) => ({ id: loan.id, loanType: loan.loan_type, amount: money(loan.amount), termMonths: loan.term_months, purpose: loan.purpose, status: loan.status, monthlyRepayment: money(loan.monthly_repayment), createdAt: loan.created_at })),
+    dividends: { balance: member.dividendBalance, lastDeclared: '2026 Auto Trade Pool', payoutStatus: member.dividendBalance > 0 ? 'Available for payout request' : 'Accruing' },
+    transactions: transactions.map((t) => ({ id: t.id, kind: t.kind, channel: t.channel, amount: money(t.amount), reference: t.reference, status: t.status, createdAt: t.created_at })),
+    support: tickets.map((t) => ({ id: t.id, subject: t.subject, message: t.message, status: t.status, resolution: t.resolution, createdAt: t.created_at })),
+  };
+}
+
+app.post('/api/member/auth/login', async (req, res, next) => {
+  try {
+    const memberNo = String(req.body.memberNo || '').trim().toUpperCase();
+    const phone = normalizePhone(req.body.phone);
+    const password = String(req.body.password || '');
+    const { rows } = await pool.query('SELECT * FROM members WHERE upper(member_no) = $1', [memberNo]);
+    const member = rows[0];
+    if (!member || normalizePhone(member.phone) !== phone) return res.status(401).json({ message: 'Member number or phone number is incorrect.' });
+    if (member.status !== 'active') return res.status(403).json({ message: 'This member account is not active. Contact the SACCO desk.' });
+    const mustSetPassword = !member.member_password_hash;
+    if (!mustSetPassword && member.member_password_hash !== sha(password)) return res.status(401).json({ message: 'Password is incorrect.' });
+    const token = randomToken();
+    await pool.query('INSERT INTO member_sessions (member_id, token_hash, expires_at) VALUES ($1,$2,now() + interval \'14 days\')', [member.id, sha(token)]);
+    await pool.query('UPDATE members SET last_member_login_at = now() WHERE id = $1', [member.id]);
+    res.json({ token, mustSetPassword, dashboard: await buildMemberDashboard(member.id), message: mustSetPassword ? 'First login verified. Create your private password.' : 'Welcome back.' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/member/auth/set-password', requireMember, async (req, res, next) => {
+  try {
+    const password = String(req.body.password || '');
+    if (password.length < 8) return res.status(400).json({ message: 'Use at least 8 characters for your password.' });
+    if (password === req.member.member_no || normalizePhone(password) === normalizePhone(req.member.phone)) return res.status(400).json({ message: 'Do not use your member number or phone as password.' });
+    const { rows } = await pool.query('UPDATE members SET member_password_hash = $1 WHERE id = $2 RETURNING *', [sha(password), req.member.id]);
+    res.json({ dashboard: await buildMemberDashboard(req.member.id), member: memberShape(rows[0]), message: 'Password created. Your member portal is ready.' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/member/dashboard', requireMember, async (req, res, next) => {
+  try {
+    res.json(await buildMemberDashboard(req.member.id));
   } catch (error) {
     next(error);
   }

@@ -1,66 +1,130 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch, formatKes, type SaccoSummary } from './lib/api';
+import { apiFetch, formatKes } from './lib/api';
 
 const ink = '#08132a';
 const orange = '#fd761a';
 const blue = '#d6e3ff';
 const white = '#ffffff';
-const initial: SaccoSummary = {
-  totals: { members: 0, savings: 0, loans: 0, dividends: 0 },
-  members: [],
-  loans: [],
-  transactions: [],
-  tickets: [],
+
+type MemberDashboard = {
+  member: {
+    id: string;
+    memberNo: string;
+    fullName: string;
+    phone: string;
+    email?: string;
+    shopLocation: string;
+    membershipTier: string;
+    savingsBalance: number;
+    loanBalance: number;
+    dividendBalance: number;
+    kycStatus: string;
+    onboardingStage?: string;
+    mustSetPassword?: boolean;
+  };
+  savings: { balance: number; monthlyTarget: number; deposits: any[] };
+  loans: any[];
+  dividends: { balance: number; lastDeclared: string; payoutStatus: string };
+  transactions: any[];
+  support: any[];
 };
 
 export default function App() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [summary, setSummary] = useState<SaccoSummary>(initial);
-  const [tab, setTab] = useState<'home' | 'loans' | 'savings' | 'support'>('home');
+  const [token, setToken] = useState('');
+  const [dashboard, setDashboard] = useState<MemberDashboard | null>(null);
+  const [tab, setTab] = useState<'home' | 'savings' | 'loans' | 'dividends' | 'support'>('home');
   const [status, setStatus] = useState('Welcome to Grogon SACCO');
   const [memberNo, setMemberNo] = useState('GS-0001');
   const [phone, setPhone] = useState('+254711204480');
-  const [amount, setAmount] = useState('25000');
+  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [amount, setAmount] = useState('5000');
+  const [loanAmount, setLoanAmount] = useState('250000');
+  const [ticketMessage, setTicketMessage] = useState('Please assist me with my SACCO account.');
 
-  async function load() {
-    try {
-      const data = await apiFetch<SaccoSummary>('/api/sacco/summary');
-      setSummary(data);
-      setStatus('Live member portal');
-    } catch {
-      setStatus('Offline mode. Start backend on port 4000.');
-    }
-  }
+  const member = dashboard?.member;
+  const mustSetPassword = Boolean(token && member?.mustSetPassword);
 
-  useEffect(() => {
-    if (authenticated) load();
-  }, [authenticated]);
-
-  const member = summary.members.find((item) => item.memberNo === memberNo) || summary.members[0];
-
-  function login() {
+  async function login() {
     if (!memberNo.trim() || !phone.trim()) {
       setStatus('Enter member number and registered phone.');
       return;
     }
-    setAuthenticated(true);
-    setStatus('Opening member portal...');
+    setStatus('Checking member access...');
+    try {
+      const data = await apiFetch<{ token: string; mustSetPassword: boolean; dashboard: MemberDashboard; message: string }>('/api/member/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ memberNo, phone, password }),
+      });
+      setToken(data.token);
+      setDashboard(data.dashboard);
+      setStatus(data.message || 'Member access confirmed.');
+    } catch (error: any) {
+      setStatus(error.message || 'Login failed.');
+    }
+  }
+
+  async function load() {
+    if (!token) return;
+    try {
+      const data = await apiFetch<MemberDashboard>('/api/member/dashboard', { token });
+      setDashboard(data);
+      setStatus('Dashboard updated.');
+    } catch (error: any) {
+      setStatus(error.message || 'Could not refresh dashboard.');
+    }
+  }
+
+  useEffect(() => {
+    if (token && !mustSetPassword) load();
+  }, [token]);
+
+  async function createPassword() {
+    if (newPassword.length < 8) {
+      setStatus('Use at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setStatus('The two passwords do not match.');
+      return;
+    }
+    try {
+      const data = await apiFetch<{ dashboard: MemberDashboard; message: string }>('/api/member/auth/set-password', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ password: newPassword }),
+      });
+      setDashboard(data.dashboard);
+      setStatus(data.message || 'Password created.');
+    } catch (error: any) {
+      setStatus(error.message || 'Password setup failed.');
+    }
   }
 
   async function post(path: string, body: any) {
     setStatus('Submitting...');
     try {
       const data: any = await apiFetch(path, { method: 'POST', body: JSON.stringify(body) });
-      setStatus(data.message || 'Posted');
+      setStatus(data.message || 'Posted successfully.');
       await load();
     } catch (error: any) {
-      setStatus(error.message || 'Request failed');
+      setStatus(error.message || 'Request failed.');
     }
   }
 
-  if (!authenticated) {
+  function logout() {
+    setToken('');
+    setDashboard(null);
+    setPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setStatus('Logged out.');
+  }
+
+  if (!token || !dashboard || !member) {
     return (
       <View style={{ flex: 1, backgroundColor: '#f8f9ff' }}>
         <ScrollView contentContainerStyle={{ padding: 18, paddingTop: 58, paddingBottom: 34 }}>
@@ -73,27 +137,52 @@ export default function App() {
               <Ionicons name="construct-outline" size={26} color={orange} />
             </View>
           </View>
-          <Text style={{ marginTop: 28, color: ink, fontSize: 36, fontWeight: '900', lineHeight: 42 }}>
-            Where Grogon mechanics and spare shops save, borrow and grow.
+          <Text style={{ marginTop: 28, color: ink, fontSize: 34, fontWeight: '900', lineHeight: 40 }}>
+            Private SACCO services for Grogon mechanics and spare shops.
           </Text>
           <Text style={{ marginTop: 14, color: '#44474d', fontSize: 16, lineHeight: 25 }}>
-            For mechanics, panel beaters, painters, auto electricians, spare-part dealers and garage owners around Grogon, Kirinyaga Road and Kamukunji.
+            Members manage savings, loans, dividends and support after SACCO admin onboarding.
           </Text>
           <View style={{ marginTop: 24, gap: 10 }}>
-            <PublicPoint icon="people-outline" text="Member-owned savings and dividends" />
-            <PublicPoint icon="cash-outline" text="Equipment and working-capital finance" />
-            <PublicPoint icon="shield-checkmark-outline" text="KYC, credit committee and clear records" />
+            <PublicPoint icon="wallet-outline" text="Member savings and deposit records" />
+            <PublicPoint icon="cash-outline" text="Equipment and working-capital credit" />
+            <PublicPoint icon="headset-outline" text="Support desk for KYC, loans and dividends" />
           </View>
           <Card light>
             <Text style={{ color: '#9d4300', fontWeight: '900', letterSpacing: 1 }}>MEMBER LOGIN</Text>
-            <TextInput value={memberNo} onChangeText={setMemberNo} placeholder="Member number" style={lightInput} />
-            <TextInput value={phone} onChangeText={setPhone} placeholder="Registered phone" style={lightInput} />
+            <TextInput value={memberNo} onChangeText={setMemberNo} placeholder="Member number" style={lightInput} autoCapitalize="characters" />
+            <TextInput value={phone} onChangeText={setPhone} placeholder="Registered phone" style={lightInput} keyboardType="phone-pad" />
+            <TextInput value={password} onChangeText={setPassword} placeholder="Password, leave blank on first login" style={lightInput} secureTextEntry />
             <TouchableOpacity style={publicPrimary} onPress={login}>
-              <Text style={{ color: '#351000', fontWeight: '900' }}>LOGIN TO PORTAL</Text>
+              <Text style={{ color: '#351000', fontWeight: '900' }}>LOGIN TO DASHBOARD</Text>
             </TouchableOpacity>
-            <Text style={{ marginTop: 12, color: '#44474d', lineHeight: 21 }}>
-              Not activated? Visit the SACCO desk with ID, KRA PIN and workshop details.
-            </Text>
+            <Text style={{ marginTop: 12, color: '#44474d', lineHeight: 21 }}>{status}</Text>
+          </Card>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  if (mustSetPassword) {
+    return (
+      <View style={{ flex: 1, backgroundColor: ink }}>
+        <ScrollView contentContainerStyle={{ padding: 18, paddingTop: 58, paddingBottom: 34 }}>
+          <Text style={label}>FIRST LOGIN</Text>
+          <Text style={{ color: white, fontSize: 32, fontWeight: '900', lineHeight: 38, marginTop: 8 }}>
+            Create your private password, {member.fullName}.
+          </Text>
+          <Text style={{ color: blue, lineHeight: 24, marginTop: 12 }}>
+            From your next login, use your member number, registered phone and this password.
+          </Text>
+          <Card>
+            <Text style={h2}>{member.memberNo}</Text>
+            <Text style={muted}>{member.shopLocation} - KYC {member.kycStatus}</Text>
+            <TextInput value={newPassword} onChangeText={setNewPassword} placeholder="New password" placeholderTextColor="#8790a3" style={input} secureTextEntry />
+            <TextInput value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm password" placeholderTextColor="#8790a3" style={input} secureTextEntry />
+            <TouchableOpacity style={primary} onPress={createPassword}>
+              <Text style={primaryText}>CREATE PASSWORD</Text>
+            </TouchableOpacity>
+            <Text style={{ marginTop: 12, color: blue }}>{status}</Text>
           </Card>
         </ScrollView>
       </View>
@@ -102,13 +191,13 @@ export default function App() {
 
   return (
     <View style={{ flex: 1, backgroundColor: ink }}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 92 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 96 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <View>
-            <Text style={{ color: orange, fontWeight: '900', letterSpacing: 1 }}>GROGON SACCO</Text>
-            <Text style={{ color: white, fontSize: 26, fontWeight: '900' }}>Member Portal</Text>
+            <Text style={{ color: orange, fontWeight: '900', letterSpacing: 1 }}>{member.memberNo}</Text>
+            <Text style={{ color: white, fontSize: 26, fontWeight: '900' }}>{member.fullName}</Text>
           </View>
-          <TouchableOpacity onPress={() => setAuthenticated(false)} style={{ padding: 8 }}>
+          <TouchableOpacity onPress={logout} style={{ padding: 8 }}>
             <Ionicons name="log-out-outline" size={25} color={orange} />
           </TouchableOpacity>
         </View>
@@ -117,37 +206,45 @@ export default function App() {
         {tab === 'home' && (
           <View>
             <Card>
-              <Text style={label}>ACTIVE MEMBER</Text>
-              <Text style={h2}>{member?.fullName || 'Grogon Member'}</Text>
-              <Text style={muted}>{member?.memberNo || memberNo} - {member?.shopLocation || 'Kirinyaga Road'}</Text>
+              <Text style={label}>MEMBER ACCOUNT</Text>
+              <Text style={h2}>{member.shopLocation}</Text>
+              <Text style={muted}>{member.membershipTier} member - KYC {member.kycStatus}</Text>
               <View style={{ marginTop: 14, gap: 10 }}>
-                <Metric icon="wallet-outline" label="Savings" value={formatKes(member?.savingsBalance || 0)} />
-                <Metric icon="cash-outline" label="Loan balance" value={formatKes(member?.loanBalance || 0)} />
-                <Metric icon="trending-up-outline" label="Dividends" value={formatKes(member?.dividendBalance || 0)} />
+                <Metric icon="wallet-outline" label="Savings" value={formatKes(member.savingsBalance)} />
+                <Metric icon="cash-outline" label="Loan balance" value={formatKes(member.loanBalance)} />
+                <Metric icon="trending-up-outline" label="Dividends" value={formatKes(member.dividendBalance)} />
+                <Metric icon="flag-outline" label="Monthly target" value={formatKes(dashboard.savings.monthlyTarget)} />
               </View>
             </Card>
           </View>
         )}
 
+        {tab === 'savings' && (
+          <Card>
+            <Text style={label}>SAVINGS</Text>
+            <Text style={h2}>Deposit to your SACCO account</Text>
+            <TextInput value={amount} onChangeText={setAmount} keyboardType="number-pad" style={input} />
+            <TouchableOpacity style={primary} onPress={() => post('/api/payments/record', { memberId: member.id, kind: 'savings_deposit', amount: Number(amount), channel: 'M-Pesa' })}>
+              <Text style={primaryText}>POST SAVINGS DEPOSIT</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={secondary} onPress={() => post('/api/payments/record', { memberId: member.id, kind: 'loan_repayment', amount: Number(amount), channel: 'M-Pesa' })}>
+              <Text style={{ color: white, fontWeight: '900' }}>POST LOAN REPAYMENT</Text>
+            </TouchableOpacity>
+          </Card>
+        )}
+
         {tab === 'loans' && (
           <Card>
-            <Text style={label}>CREDIT REQUEST</Text>
-            <Text style={h2}>Choose a loan product</Text>
-            {['Equipment Financing', 'Working Capital', 'Business Growth Fund'].map((loanType, index) => (
+            <Text style={label}>LOANS</Text>
+            <Text style={h2}>Apply for business credit</Text>
+            <TextInput value={loanAmount} onChangeText={setLoanAmount} keyboardType="number-pad" style={input} />
+            {['Equipment Financing', 'Working Capital', 'Emergency Garage Float'].map((loanType, index) => (
               <TouchableOpacity
                 key={loanType}
-                onPress={() =>
-                  post('/api/loans/apply', {
-                    memberId: member?.id,
-                    loanType,
-                    amount: index ? 350000 : 1200000,
-                    termMonths: index ? 12 : 24,
-                    purpose: `${loanType} for Grogon auto shop operations`,
-                  })
-                }
+                onPress={() => post('/api/loans/apply', { memberId: member.id, loanType, amount: Number(loanAmount), termMonths: index === 0 ? 24 : 12, purpose: `${loanType} for Grogon auto shop operations` })}
                 style={choice}
               >
-                <Ionicons name={index === 0 ? 'construct-outline' : index === 1 ? 'wallet-outline' : 'trending-up-outline'} size={25} color={orange} />
+                <Ionicons name={index === 0 ? 'construct-outline' : index === 1 ? 'wallet-outline' : 'flash-outline'} size={25} color={orange} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: white, fontWeight: '900' }}>{loanType}</Text>
                   <Text style={muted}>Submit to credit committee</Text>
@@ -157,41 +254,39 @@ export default function App() {
           </Card>
         )}
 
-        {tab === 'savings' && (
+        {tab === 'dividends' && (
           <Card>
-            <Text style={label}>M-PESA PAYBILL</Text>
-            <Text style={h2}>Deposit or repay</Text>
-            <TextInput value={amount} onChangeText={setAmount} keyboardType="number-pad" style={input} />
-            <TouchableOpacity style={primary} onPress={() => post('/api/payments/record', { memberId: member?.id, kind: 'savings_deposit', amount: Number(amount), channel: 'M-Pesa' })}>
-              <Text style={primaryText}>POST SAVINGS DEPOSIT</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={secondary} onPress={() => post('/api/payments/record', { memberId: member?.id, kind: 'loan_repayment', amount: Number(amount), channel: 'M-Pesa' })}>
-              <Text style={{ color: white, fontWeight: '900' }}>POST LOAN REPAYMENT</Text>
-            </TouchableOpacity>
+            <Text style={label}>DIVIDENDS</Text>
+            <Text style={h2}>{formatKes(dashboard.dividends.balance)}</Text>
+            <Text style={muted}>{dashboard.dividends.payoutStatus}</Text>
+            <Text style={{ marginTop: 14, color: blue }}>Last declared pool: {dashboard.dividends.lastDeclared}</Text>
           </Card>
         )}
 
         {tab === 'support' && (
           <Card>
-            <Text style={label}>LIVE SUPPORT</Text>
+            <Text style={label}>SUPPORT</Text>
             <Text style={h2}>Kirinyaga Road member desk</Text>
-            <Text style={muted}>Open a ticket for KYC, dividend payout or loan repayment help.</Text>
-            <TouchableOpacity style={primary} onPress={() => post('/api/support/tickets', { memberId: member?.id, subject: 'Mobile app support', message: 'Please assist this SACCO member.' })}>
+            <TextInput value={ticketMessage} onChangeText={setTicketMessage} multiline style={[input, { minHeight: 92 }]} />
+            <TouchableOpacity style={primary} onPress={() => post('/api/support/tickets', { memberId: member.id, subject: 'Mobile app support', message: ticketMessage })}>
               <Text style={primaryText}>OPEN SUPPORT TICKET</Text>
             </TouchableOpacity>
+            <Text style={{ marginTop: 12, color: blue }}>{dashboard.support.length} support record(s)</Text>
           </Card>
         )}
       </ScrollView>
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 74, backgroundColor: '#151f37', borderTopWidth: 1, borderColor: '#2a344d', flexDirection: 'row', justifyContent: 'space-around', paddingTop: 8 }}>
+
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 78, backgroundColor: '#151f37', borderTopWidth: 1, borderColor: '#2a344d', flexDirection: 'row', justifyContent: 'space-around', paddingTop: 8 }}>
         {[
           ['home', 'home-outline', 'Home'],
-          ['loans', 'document-text-outline', 'Loans'],
           ['savings', 'wallet-outline', 'Savings'],
+          ['loans', 'document-text-outline', 'Loans'],
+          ['dividends', 'trending-up-outline', 'Dividends'],
           ['support', 'headset-outline', 'Support'],
         ].map(([key, icon, title]) => (
-          <TouchableOpacity key={key} onPress={() => setTab(key as any)} style={{ alignItems: 'center', gap: 3 }}>
-            <Ionicons name={icon as any} size={24} color={tab === key ? orange : blue} />
-            <Text style={{ color: tab === key ? orange : blue, fontSize: 11, fontWeight: '800' }}>{title}</Text>
+          <TouchableOpacity key={key} onPress={() => setTab(key as any)} style={{ alignItems: 'center', gap: 3, width: 70 }}>
+            <Ionicons name={icon as any} size={22} color={tab === key ? orange : blue} />
+            <Text style={{ color: tab === key ? orange : blue, fontSize: 10, fontWeight: '800' }}>{title}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -238,5 +333,3 @@ function Metric({ icon, label: itemLabel, value }: { icon: any; label: string; v
     </View>
   );
 }
-
-
