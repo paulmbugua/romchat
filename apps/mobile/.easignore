@@ -1,0 +1,55 @@
+﻿# EAS upload hygiene for the mobile app
+# Keep source, assets, config, package files and lockfiles uploadable.
+
+# Dependencies and package-manager caches
+node_modules/
+.npm/
+.yarn/cache/
+.yarn/unplugged/
+.pnpm-store/
+
+# Expo / Metro / React Native caches
+.expo/
+.expo-shared/
+.metro-health-check*
+*.tsbuildinfo
+
+# Generated native and build output
+android/
+ios/
+build/
+dist/
+web-build/
+.cxx/
+*.apk
+*.aab
+*.ipa
+
+# Test and coverage output
+coverage/
+.jest/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+google-services.json
+GoogleService-Info.plist
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
