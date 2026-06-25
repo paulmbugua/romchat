@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   BadgeCheck,
   Banknote,
+  Download,
+  FileText,
   ClipboardCheck,
   ClipboardList,
   KeyRound,
@@ -171,6 +173,31 @@ export default function App() {
     }
   }
 
+  async function downloadPdf(path: string, filename: string, print = false) {
+    setStatus(print ? 'Preparing printable PDF...' : 'Preparing PDF download...');
+    try {
+      const res = await fetch(`${apiBase}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'PDF request failed');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (print) {
+        const win = window.open(url, '_blank');
+        setTimeout(() => win?.print(), 700);
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+      }
+      setStatus(print ? 'Printable PDF opened.' : 'PDF downloaded.');
+    } catch (error: any) {
+      setStatus(error.message || 'Could not prepare PDF.');
+    }
+  }
+
   async function approveKyc(member: any) {
     if (!member?.id || busyAction) return;
     setBusyAction(member.id);
@@ -286,14 +313,16 @@ export default function App() {
           <Stat icon={<ShieldCheck />} title="Role" value={admin.role === 'super_admin' ? 'Super' : 'Admin'} />
         </div>
 
-        {tab === 'Command' && <Dashboard ops={ops} />}
+        <ReportBar onPdf={downloadPdf} />
+
+        {tab === 'Command' && <Dashboard ops={ops} onPdf={downloadPdf} />}
         {tab === 'Onboarding' && <Onboarding form={memberForm} setForm={setMemberForm} onSubmit={submitMember} canCreate={can('members.create')} tasks={ops.tasks} />}
-        {tab === 'KYC' && <Kyc members={ops.members} busyId={busyAction} onApprove={approveKyc} />}
-        {tab === 'Loans' && <Loans loans={ops.loans} canApprove={can('loans.approve')} onDecision={(id, status) => quick(`/api/admin/loans/${id}/decision`, { status, notes: `Marked ${status} from admin console` }, 'Updating loan...')} />}
-        {tab === 'Transactions' && <Transactions members={ops.members} transactions={ops.transactions} txn={txn} setTxn={setTxn} onSubmit={postTransaction} />}
+        {tab === 'KYC' && <Kyc members={ops.members} busyId={busyAction} onApprove={approveKyc} onPdf={downloadPdf} />}
+        {tab === 'Loans' && <Loans loans={ops.loans} canApprove={can('loans.approve')} onPdf={downloadPdf} onDecision={(id, status, notes) => quick(`/api/admin/loans/${id}/decision`, { status, notes: notes || `Marked ${status} from admin console` }, 'Updating loan...')} />}
+        {tab === 'Transactions' && <Transactions members={ops.members} transactions={ops.transactions} txn={txn} setTxn={setTxn} onSubmit={postTransaction} onPdf={downloadPdf} />}
         {tab === 'Support' && <Support tickets={ops.tickets} onUpdate={(id, status) => quick(`/api/admin/tickets/${id}`, { status, resolution: status === 'closed' ? 'Resolved by SACCO desk' : 'Assigned for follow up' }, 'Updating ticket...')} />}
         {tab === 'Admins' && can('admins.manage') && <Admins admins={ops.admins} form={newAdmin} setForm={setNewAdmin} onSubmit={createAdmin} />}
-        {tab === 'Audit' && <Audit audits={ops.audits} />}
+        {tab === 'Audit' && <Audit audits={ops.audits} onPdf={downloadPdf} />}
       </section>
     </main>
   );
@@ -302,10 +331,40 @@ export default function App() {
 function Stat({ icon, title, value }: { icon: React.ReactNode; title: string; value: string }) { return <div className="rounded-xl border border-[#c5c6cd] bg-white p-4 shadow-sm"><div className="mb-3 text-[#9d4300]">{icon}</div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#44474d]">{title}</p><p className="mt-2 text-xl font-black">{value}</p></div>; }
 function Input({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; type?: string }) { return <label className="mt-4 block text-sm font-black text-[#44474d]">{label}<input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="mt-2 w-full rounded-lg border border-[#c5c6cd] bg-[#f8f9ff] p-3 text-[#0b1c30]" /></label>; }
 function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="m-5 rounded-xl border border-[#c5c6cd] bg-white p-5 shadow-sm"><h3 className="mb-4 text-2xl font-black">{title}</h3>{children}</section>; }
-function Dashboard({ ops }: { ops: Ops }) { return <div className="grid gap-5 p-5 xl:grid-cols-2"><MiniTable title="Latest Members" rows={ops.members.map((m) => [m.memberNo, m.fullName, m.shopLocation, m.onboardingStage])} /><MiniTable title="Onboarding Tasks" rows={ops.tasks.map((t) => [t.memberNo, t.memberName, t.task, t.status])} /><MiniTable title="Recent Transactions" rows={ops.transactions.map((t) => [t.reference, t.memberName, t.kind, fmt(t.amount)])} /><MiniTable title="Credit Queue" rows={ops.loans.map((l) => [l.memberNo, l.loanType, fmt(l.amount), l.status])} /></div>; }
+function ReportBar({ onPdf }: any) {
+  const reports = [
+    ['operations', 'Operations'],
+    ['members', 'Members'],
+    ['savings', 'Savings'],
+    ['loans', 'Loans'],
+    ['dividends', 'Dividends'],
+    ['audit', 'Audit'],
+  ];
+  return (
+    <section className="mx-5 rounded-xl border border-[#c5c6cd] bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.16em] text-[#9d4300]">PDF reports</p>
+          <p className="mt-1 text-sm text-[#44474d]">Download or print member savings, loans, dividends, audit and whole SACCO operations.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {reports.map(([key, label]) => (
+            <button key={key} onClick={() => onPdf(`/api/admin/reports/${key}.pdf`, `grogon-${key}.pdf`)} className="inline-flex items-center gap-2 rounded-lg border border-[#c5c6cd] px-3 py-2 text-sm font-black">
+              <Download size={16} /> {label}
+            </button>
+          ))}
+          <button onClick={() => onPdf('/api/admin/reports/operations.pdf', 'grogon-operations.pdf', true)} className="inline-flex items-center gap-2 rounded-lg bg-[#0d1c32] px-3 py-2 text-sm font-black text-white">
+            <FileText size={16} /> Print pack
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+function Dashboard({ ops, onPdf }: { ops: Ops; onPdf: any }) { return <div className="grid gap-5 p-5 xl:grid-cols-2"><MiniTable title="Latest Members" rows={ops.members.map((m) => [m.memberNo, m.fullName, m.shopLocation, m.onboardingStage])} /><MiniTable title="Onboarding Tasks" rows={ops.tasks.map((t) => [t.memberNo, t.memberName, t.task, t.status])} /><MiniTable title="Recent M-Pesa and Admin Transactions" rows={ops.transactions.map((t) => [t.reference, t.memberName, t.kind, fmt(t.amount)])} /><MiniTable title="Credit Queue" rows={ops.loans.map((l) => [l.memberNo, l.loanType, fmt(l.amount), l.status])} /><Panel title="Member statement downloads"><div className="grid gap-2">{ops.members.slice(0, 8).map((m: any) => <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#eff4ff] p-3"><span className="font-bold">{m.memberNo} - {m.fullName}</span><button onClick={() => onPdf(`/api/admin/members/${m.id}/statement.pdf`, `${m.memberNo}-statement.pdf`)} className="rounded-lg bg-[#0d1c32] px-3 py-2 text-sm font-black text-white">PDF statement</button></div>)}</div></Panel></div>; }
 function MiniTable({ title, rows }: { title: string; rows: string[][] }) { return <Panel title={title}><div className="space-y-2">{rows.slice(0, 8).map((row, i) => <div key={i} className="grid grid-cols-4 gap-2 rounded-lg bg-[#eff4ff] p-3 text-sm">{row.map((cell, j) => <span key={j} className="truncate font-semibold">{cell || '-'}</span>)}</div>)}</div></Panel>; }
 function Onboarding({ form, setForm, onSubmit, canCreate, tasks }: any) { return <div className="grid gap-5 p-5 xl:grid-cols-[0.9fr_1.1fr]"><Panel title="Onboard member on behalf of SACCO">{canCreate ? <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-2">{Object.keys(form).map((key) => <Input key={key} label={key.replace(/([A-Z])/g, ' $1')} value={form[key]} onChange={(value) => setForm({ ...form, [key]: value })} />)}<button className="rounded-lg bg-[#fd761a] px-5 py-3 font-black text-[#351000] md:col-span-2">Create member and KYC task</button></form> : <p>You do not have member creation rights.</p>}</Panel><MiniTable title="Open onboarding tasks" rows={tasks.map((t: any) => [t.memberNo, t.memberName, t.task, t.status])} /></div>; }
-function Kyc({ members, onApprove, busyId }: any) {
+function Kyc({ members, onApprove, busyId, onPdf }: any) {
   const queue = [...members].sort((a: any, b: any) => {
     const rank = (item: any) => item.kycStatus === 'approved' ? 1 : 0;
     return rank(a) - rank(b);
@@ -335,13 +394,16 @@ function Kyc({ members, onApprove, busyId }: any) {
                 <p className="mt-2 text-sm text-[#44474d]">{m.tradeCategory || 'Auto trade'} - {m.shopLocation}</p>
                 <p className="mt-1 text-sm text-[#44474d]">Stage: {m.onboardingStage} - Status: {m.status}</p>
               </div>
-              <button
-                disabled={approved || busy}
-                onClick={() => onApprove(m)}
-                className={`rounded-lg px-4 py-2 font-black transition ${approved ? 'cursor-not-allowed bg-[#d8f8e8] text-[#005236]' : busy ? 'cursor-wait bg-[#fd761a] text-[#351000]' : 'bg-[#0d1c32] text-white hover:bg-[#172a49]'}`}
-              >
-                {approved ? 'KYC Approved' : busy ? 'Approving...' : 'Approve KYC'}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => onPdf(`/api/admin/members/${m.id}/statement.pdf`, `${m.memberNo}-statement.pdf`)} className="rounded-lg border border-[#c5c6cd] px-4 py-2 font-black">PDF</button>
+                <button
+                  disabled={approved || busy}
+                  onClick={() => onApprove(m)}
+                  className={`rounded-lg px-4 py-2 font-black transition ${approved ? 'cursor-not-allowed bg-[#d8f8e8] text-[#005236]' : busy ? 'cursor-wait bg-[#fd761a] text-[#351000]' : 'bg-[#0d1c32] text-white hover:bg-[#172a49]'}`}
+                >
+                  {approved ? 'KYC Approved' : busy ? 'Approving...' : 'Approve KYC'}
+                </button>
+              </div>
             </div>
           );
         })}
@@ -349,8 +411,43 @@ function Kyc({ members, onApprove, busyId }: any) {
     </Panel>
   );
 }
-function Loans({ loans, canApprove, onDecision }: any) { return <Panel title="Loan committee desk"><div className="grid gap-3">{loans.map((l: any) => <div key={l.id} className="rounded-lg bg-[#eff4ff] p-4"><div className="flex flex-wrap justify-between gap-3"><div><p className="font-black">{l.memberNo} - {l.loanType} - {fmt(l.amount)}</p><p className="text-sm text-[#44474d]">{l.purpose}</p></div><div className="flex gap-2"><button onClick={() => onDecision(l.id, 'under_review')} className="rounded-lg border px-3 py-2 font-bold">Review</button><button onClick={() => onDecision(l.id, 'rejected')} className="rounded-lg border px-3 py-2 font-bold">Reject</button>{canApprove && <><button onClick={() => onDecision(l.id, 'approved')} className="rounded-lg bg-[#fd761a] px-3 py-2 font-black text-[#351000]">Approve</button><button onClick={() => onDecision(l.id, 'disbursed')} className="rounded-lg bg-[#0d1c32] px-3 py-2 font-black text-white">Disburse</button></>}</div></div></div>)}</div></Panel>; }
-function Transactions({ members, transactions, txn, setTxn, onSubmit }: any) { return <div className="grid gap-5 p-5 xl:grid-cols-[0.85fr_1.15fr]"><Panel title="Post transaction for member"><form onSubmit={onSubmit} className="grid gap-3"><label className="text-sm font-black text-[#44474d]">Member<select value={txn.memberId} onChange={(e) => setTxn({ ...txn, memberId: e.target.value })} className="mt-2 w-full rounded-lg border border-[#c5c6cd] bg-[#f8f9ff] p-3">{members.map((m: any) => <option key={m.id} value={m.id}>{m.memberNo} - {m.fullName}</option>)}</select></label>{['kind','amount','channel','reference'].map((key) => <Input key={key} label={key} value={txn[key]} onChange={(value) => setTxn({ ...txn, [key]: value })} />)}<button className="rounded-lg bg-[#fd761a] px-5 py-3 font-black text-[#351000]">Post transaction</button></form></Panel><MiniTable title="Recent posted transactions" rows={transactions.map((t: any) => [t.reference, t.memberName, t.kind, fmt(t.amount)])} /></div>; }
+function Loans({ loans, canApprove, onDecision, onPdf }: any) {
+  const [selected, setSelected] = useState<any>(null);
+  const [status, setStatus] = useState('under_review');
+  const [notes, setNotes] = useState('');
+  function review(loan: any) {
+    setSelected(loan);
+    setStatus(loan.status === 'submitted' ? 'under_review' : loan.status);
+    setNotes(loan.decisionNotes || `Reviewed ${loan.memberNo} ${loan.loanType} request against savings, repayment capacity and workshop purpose.`);
+  }
+  return (
+    <Panel title="Loan committee desk">
+      <div className="mb-4 rounded-xl border border-[#c5c6cd] bg-[#f8f9ff] p-4">
+        <p className="font-black">Credit review workflow</p>
+        <p className="mt-1 text-sm text-[#44474d]">Click Review to open notes, status selection and decision actions. Super admins can approve and disburse.</p>
+      </div>
+      <div className="grid gap-3">
+        {loans.map((l: any) => <div key={l.id} className="rounded-lg bg-[#eff4ff] p-4"><div className="flex flex-wrap justify-between gap-3"><div><p className="font-black">{l.memberNo} - {l.loanType} - {fmt(l.amount)}</p><p className="text-sm text-[#44474d]">{l.purpose}</p><p className="mt-1 text-xs font-bold uppercase text-[#9d4300]">Status: {l.status}</p></div><div className="flex flex-wrap gap-2"><button onClick={() => review(l)} className="rounded-lg border border-[#0d1c32] px-3 py-2 font-bold">Review</button><button onClick={() => onDecision(l.id, 'rejected', 'Rejected from committee desk after review.')} className="rounded-lg border px-3 py-2 font-bold">Reject</button>{canApprove && <><button onClick={() => onDecision(l.id, 'approved', 'Approved by credit committee.')} className="rounded-lg bg-[#fd761a] px-3 py-2 font-black text-[#351000]">Approve</button><button onClick={() => onDecision(l.id, 'disbursed', 'Disbursed after approval and member confirmation.')} className="rounded-lg bg-[#0d1c32] px-3 py-2 font-black text-white">Disburse</button></>}<button onClick={() => onPdf('/api/admin/reports/loans.pdf', 'grogon-loans.pdf')} className="rounded-lg border px-3 py-2 font-bold">PDF</button></div></div></div>)}
+      </div>
+      {selected && (
+        <div className="mt-5 rounded-xl border border-[#c5c6cd] bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.16em] text-[#9d4300]">Committee review</p>
+              <h4 className="mt-1 text-2xl font-black">{selected.memberNo} - {selected.loanType}</h4>
+              <p className="mt-1 text-sm text-[#44474d]">{fmt(selected.amount)} over {selected.termMonths} months. Monthly repayment {fmt(selected.monthlyRepayment)}.</p>
+            </div>
+            <button onClick={() => setSelected(null)} className="rounded-lg border px-3 py-2 font-bold">Close</button>
+          </div>
+          <label className="mt-4 block text-sm font-black text-[#44474d]">Decision status<select value={status} onChange={(e) => setStatus(e.target.value)} className="mt-2 w-full rounded-lg border border-[#c5c6cd] bg-[#f8f9ff] p-3"><option value="under_review">Under review</option><option value="rejected">Rejected</option>{canApprove && <option value="approved">Approved</option>}{canApprove && <option value="disbursed">Disbursed</option>}</select></label>
+          <label className="mt-4 block text-sm font-black text-[#44474d]">Committee notes<textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-2 min-h-28 w-full rounded-lg border border-[#c5c6cd] bg-[#f8f9ff] p-3" /></label>
+          <button onClick={() => onDecision(selected.id, status, notes)} className="mt-4 rounded-lg bg-[#fd761a] px-5 py-3 font-black text-[#351000]">Save review decision</button>
+        </div>
+      )}
+    </Panel>
+  );
+}
+function Transactions({ members, transactions, txn, setTxn, onSubmit, onPdf }: any) { return <div className="grid gap-5 p-5 xl:grid-cols-[0.85fr_1.15fr]"><Panel title="Back-office adjustment"><form onSubmit={onSubmit} className="grid gap-3"><p className="rounded-lg bg-[#fff2e6] p-3 text-sm font-bold text-[#783200]">Normal member savings are posted automatically from M-Pesa PayBill callbacks. Use this only for corrections, dividends, loan repayments received outside PayBill, or admin-approved adjustments.</p><label className="text-sm font-black text-[#44474d]">Member<select value={txn.memberId} onChange={(e) => setTxn({ ...txn, memberId: e.target.value })} className="mt-2 w-full rounded-lg border border-[#c5c6cd] bg-[#f8f9ff] p-3">{members.map((m: any) => <option key={m.id} value={m.id}>{m.memberNo} - {m.fullName}</option>)}</select></label>{['kind','amount','channel','reference'].map((key) => <Input key={key} label={key} value={txn[key]} onChange={(value) => setTxn({ ...txn, [key]: value })} />)}<button className="rounded-lg bg-[#fd761a] px-5 py-3 font-black text-[#351000]">Post adjustment</button></form></Panel><Panel title="Recent posted transactions"><div className="mb-3 flex flex-wrap gap-2"><button onClick={() => onPdf('/api/admin/reports/savings.pdf', 'grogon-savings.pdf')} className="rounded-lg border px-3 py-2 font-bold">Savings PDF</button><button onClick={() => onPdf('/api/admin/reports/operations.pdf', 'grogon-operations.pdf', true)} className="rounded-lg bg-[#0d1c32] px-3 py-2 font-bold text-white">Print operations</button></div><MiniTable title="M-Pesa and admin activity" rows={transactions.map((t: any) => [t.reference, t.memberName, t.kind, fmt(t.amount)])} /></Panel></div>; }
 function Support({ tickets, onUpdate }: any) { return <Panel title="Member support desk"><div className="grid gap-3">{tickets.map((t: any) => <div key={t.id} className="rounded-lg bg-[#eff4ff] p-4"><p className="font-black">{t.memberNo || '-'} - {t.memberName || 'Member'} - {t.subject}</p><p className="mt-1 text-sm text-[#44474d]">{t.message}</p><div className="mt-3 flex gap-2"><button onClick={() => onUpdate(t.id, 'in_progress')} className="rounded-lg border px-3 py-2 font-bold">Assign</button><button onClick={() => onUpdate(t.id, 'closed')} className="rounded-lg bg-[#0d1c32] px-3 py-2 font-bold text-white">Close</button></div></div>)}</div></Panel>; }
 function Admins({ admins, form, setForm, onSubmit }: any) { return <div className="grid gap-5 p-5 xl:grid-cols-[0.8fr_1.2fr]"><Panel title="Create admin user"><form onSubmit={onSubmit} className="grid gap-3"><p className="rounded-lg bg-[#eff4ff] p-3 text-sm font-bold text-[#39475f]">Issued passwords are temporary. The admin will be forced to create a private password on first login.</p>{['fullName','email','password'].map((key) => <Input key={key} label={key === 'password' ? 'Temporary issued password' : key} value={form[key]} type={key === 'password' ? 'password' : 'text'} onChange={(value) => setForm({ ...form, [key]: value })} />)}<label className="text-sm font-black text-[#44474d]">Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="mt-2 w-full rounded-lg border border-[#c5c6cd] bg-[#f8f9ff] p-3"><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></label><button className="rounded-lg bg-[#fd761a] px-5 py-3 font-black text-[#351000]">Create admin</button></form></Panel><MiniTable title="Admin users and rights" rows={admins.map((a: any) => [a.fullName, a.email, a.role, a.mustChangePassword ? 'Password reset due' : a.status])} /></div>; }
-function Audit({ audits }: any) { return <Panel title="Audit trail"><div className="space-y-2">{audits.map((a: any) => <div key={a.id} className="grid grid-cols-4 gap-2 rounded-lg bg-[#eff4ff] p-3 text-sm"><span className="font-bold">{a.adminName || 'System'}</span><span>{a.action}</span><span>{a.entityType}</span><span>{new Date(a.createdAt).toLocaleString()}</span></div>)}</div></Panel>; }
+function Audit({ audits, onPdf }: any) { return <Panel title="Audit trail"><div className="mb-3"><button onClick={() => onPdf('/api/admin/reports/audit.pdf', 'grogon-audit.pdf')} className="rounded-lg bg-[#0d1c32] px-3 py-2 font-bold text-white">Download audit PDF</button></div><div className="space-y-2">{audits.map((a: any) => <div key={a.id} className="grid grid-cols-4 gap-2 rounded-lg bg-[#eff4ff] p-3 text-sm"><span className="font-bold">{a.adminName || 'System'}</span><span>{a.action}</span><span>{a.entityType}</span><span>{new Date(a.createdAt).toLocaleString()}</span></div>)}</div></Panel>; }

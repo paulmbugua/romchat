@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import crypto from 'crypto';
 import pg from 'pg';
+import PDFDocument from 'pdfkit';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -43,6 +44,9 @@ const money = (value) => Number(value || 0);
 const sha = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
 const randomToken = () => crypto.randomBytes(32).toString('hex');
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '').replace(/^0/, '254');
+const paybillNumber = process.env.MPESA_PAYBILL || '522522';
+const accountForMember = (memberNo) => `GROGON-${String(memberNo || '').toUpperCase()}`;
+const authTokenFrom = (req) => String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') || String(req.query.token || '');
 const adminRights = {
   super_admin: [
     'dashboard.read',
@@ -107,6 +111,60 @@ async function logAudit(adminId, action, entityType, entityId, details = {}) {
     'INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, details) VALUES ($1,$2,$3,$4,$5)',
     [adminId || null, action, entityType, entityId || null, JSON.stringify(details)],
   );
+}
+
+function sendPdf(res, filename, title, subtitle, blocks = []) {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  const doc = new PDFDocument({ margin: 44, size: 'A4' });
+  doc.pipe(res);
+  doc.fillColor('#0d1c32').fontSize(20).text('Grogon SACCO', { continued: false });
+  doc.fillColor('#9d4300').fontSize(9).text('Kirinyaga Road, Nairobi | Mechanics and auto shops', { characterSpacing: 0.5 });
+  doc.moveDown(1);
+  doc.fillColor('#0b1c30').fontSize(18).text(title);
+  if (subtitle) doc.fillColor('#44474d').fontSize(10).text(subtitle);
+  doc.moveDown(0.8);
+  for (const block of blocks) {
+    doc.fillColor('#0d1c32').fontSize(13).text(block.heading, { underline: false });
+    doc.moveDown(0.3);
+    if (block.lines) {
+      for (const line of block.lines) doc.fillColor('#0b1c30').fontSize(10).text(line);
+    }
+    if (block.rows) {
+      for (const row of block.rows) {
+        doc.fillColor('#0b1c30').fontSize(9).text(row.join('   |   '), { lineGap: 4 });
+      }
+    }
+    doc.moveDown(0.8);
+  }
+  doc.fillColor('#75777e').fontSize(8).text(`Generated ${new Date().toLocaleString('en-KE')}`, 44, 790);
+  doc.end();
+}
+
+function reportRows(title, rows, mapper) {
+  return { heading: title, rows: rows.length ? rows.map(mapper) : [['No records']] };
+}
+
+function transactionLabel(kind) {
+  return String(kind || '').replace(/_/g, ' ');
+}
+
+async function memberReport(memberId, type = 'full') {
+  const dashboard = await buildMemberDashboard(memberId);
+  const member = dashboard.member;
+  const blocks = [
+    { heading: 'Member details', lines: [
+      `${member.memberNo} - ${member.fullName}`,
+      `Phone: ${member.phone} | Shop: ${member.shopLocation}`,
+      `Tier: ${member.membershipTier} | KYC: ${member.kycStatus}`,
+      `Savings: KES ${member.savingsBalance.toLocaleString('en-KE')} | Loan balance: KES ${member.loanBalance.toLocaleString('en-KE')} | Dividends: KES ${member.dividendBalance.toLocaleString('en-KE')}`,
+    ] },
+  ];
+  if (type === 'full' || type === 'savings') blocks.push(reportRows('Savings deposits', dashboard.savings.deposits, (t) => [t.reference, `KES ${t.amount.toLocaleString('en-KE')}`, t.channel || 'M-Pesa', new Date(t.createdAt).toLocaleDateString('en-KE')]));
+  if (type === 'full' || type === 'loans') blocks.push(reportRows('Loan statement', dashboard.loans, (l) => [l.loanType, `KES ${l.amount.toLocaleString('en-KE')}`, l.status, `Monthly: KES ${l.monthlyRepayment.toLocaleString('en-KE')}`]));
+  if (type === 'full' || type === 'dividends') blocks.push({ heading: 'Dividend statement', lines: [`Balance: KES ${dashboard.dividends.balance.toLocaleString('en-KE')}`, `Status: ${dashboard.dividends.payoutStatus}`, `Pool: ${dashboard.dividends.lastDeclared}`] });
+  if (type === 'full' || type === 'transactions') blocks.push(reportRows('Account statement', dashboard.transactions, (t) => [transactionLabel(t.kind), `KES ${t.amount.toLocaleString('en-KE')}`, t.reference, t.status]));
+  return { member, blocks };
 }
 
 async function initDatabase() {
@@ -197,6 +255,8 @@ async function initDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     ALTER TABLE transactions ADD COLUMN IF NOT EXISTS posted_by UUID REFERENCES admin_users(id) ON DELETE SET NULL;
+    ALTER TABLE transactions ADD COLUMN IF NOT EXISTS payer_phone TEXT;
+    ALTER TABLE transactions ADD COLUMN IF NOT EXISTS raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb;
     CREATE TABLE IF NOT EXISTS support_tickets (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       member_id UUID REFERENCES members(id) ON DELETE SET NULL,
@@ -282,7 +342,7 @@ async function initDatabase() {
 
 async function requireAdmin(req, res, next) {
   try {
-    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const token = authTokenFrom(req);
     if (!token) return res.status(401).json({ message: 'Admin login required' });
     const { rows } = await pool.query(
       `SELECT a.* FROM admin_sessions s
@@ -395,7 +455,7 @@ app.get('/api/sacco/summary', async (_req, res, next) => {
 
 async function requireMember(req, res, next) {
   try {
-    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const token = authTokenFrom(req);
     if (!token) return res.status(401).json({ message: 'Member login required' });
     const { rows } = await pool.query(
       `SELECT m.* FROM member_sessions s
@@ -472,6 +532,19 @@ app.get('/api/member/dashboard', requireMember, async (req, res, next) => {
     next(error);
   }
 });
+
+app.get('/api/member/statements/:type.pdf', requireMember, async (req, res, next) => {
+  try {
+    const type = String(req.params.type || 'full');
+    const allowed = ['full', 'savings', 'loans', 'dividends', 'transactions'];
+    if (!allowed.includes(type)) return res.status(400).json({ message: 'Unknown statement type.' });
+    const { member, blocks } = await memberReport(req.member.id, type);
+    sendPdf(res, `${member.memberNo}-${type}-statement.pdf`, `${type[0].toUpperCase() + type.slice(1)} statement`, `${member.fullName} | ${member.memberNo}`, blocks);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/admin/operations', requireAdmin, requireRight('dashboard.read'), async (_req, res, next) => {
   try {
     res.json(await getOperationalSummary());
@@ -479,6 +552,35 @@ app.get('/api/admin/operations', requireAdmin, requireRight('dashboard.read'), a
     next(error);
   }
 });
+
+app.get('/api/admin/reports/:type.pdf', requireAdmin, requireRight('dashboard.read'), async (req, res, next) => {
+  try {
+    const ops = await getOperationalSummary();
+    const type = String(req.params.type || 'operations');
+    const blocks = [];
+    if (type === 'operations' || type === 'members') blocks.push(reportRows('Members', ops.members, (m) => [m.memberNo, m.fullName, m.shopLocation, `Savings KES ${m.savingsBalance.toLocaleString('en-KE')}`, `Loans KES ${m.loanBalance.toLocaleString('en-KE')}`]));
+    if (type === 'operations' || type === 'savings') blocks.push(reportRows('Savings and payments', ops.transactions.filter((t) => ['savings_deposit', 'membership_fee', 'loan_repayment'].includes(t.kind)), (t) => [t.reference, t.memberNo || '-', transactionLabel(t.kind), `KES ${t.amount.toLocaleString('en-KE')}`, t.postedByName || 'M-Pesa']));
+    if (type === 'operations' || type === 'loans') blocks.push(reportRows('Loans', ops.loans, (l) => [l.memberNo || '-', l.loanType, `KES ${l.amount.toLocaleString('en-KE')}`, l.status, l.decisionNotes || '-']));
+    if (type === 'operations' || type === 'dividends') blocks.push(reportRows('Dividend balances', ops.members, (m) => [m.memberNo, m.fullName, `KES ${m.dividendBalance.toLocaleString('en-KE')}`, m.membershipTier]));
+    if (type === 'operations' || type === 'audit') blocks.push(reportRows('Admin activity', ops.audits, (a) => [a.adminName || 'System', a.action, a.entityType, new Date(a.createdAt).toLocaleString('en-KE')]));
+    if (!blocks.length) return res.status(400).json({ message: 'Unknown report type.' });
+    await logAudit(req.admin.id, 'report.download', 'report', null, { type });
+    sendPdf(res, `grogon-${type}-report.pdf`, `${type[0].toUpperCase() + type.slice(1)} report`, `Prepared for ${req.admin.fullName}`, blocks);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/members/:id/statement.pdf', requireAdmin, requireRight('dashboard.read'), async (req, res, next) => {
+  try {
+    const { member, blocks } = await memberReport(req.params.id, 'full');
+    await logAudit(req.admin.id, 'member.statement.download', 'member', req.params.id, { memberNo: member.memberNo });
+    sendPdf(res, `${member.memberNo}-admin-statement.pdf`, 'Member account statement', `${member.fullName} | ${member.memberNo}`, blocks);
+  } catch (error) {
+    next(error);
+  }
+});
+
 
 app.post('/api/admin/admins', requireAdmin, requireRight('admins.manage'), async (req, res, next) => {
   try {
@@ -620,6 +722,40 @@ app.post('/api/loans/apply', async (req, res, next) => {
     next(error);
   }
 });
+
+app.post('/api/mpesa/callback', async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const stk = body.Body?.stkCallback;
+    const metadata = stk?.CallbackMetadata?.Item || [];
+    const meta = Object.fromEntries(metadata.map((item) => [item.Name, item.Value]));
+    const amount = Number(body.amount || body.TransAmount || meta.Amount || 0);
+    const receipt = String(body.receipt || body.TransID || body.mpesaReceiptNumber || meta.MpesaReceiptNumber || stk?.CheckoutRequestID || '').trim();
+    const rawAccount = String(body.accountReference || body.BillRefNumber || body.AccountReference || meta.AccountReference || '').trim().toUpperCase();
+    const phone = normalizePhone(body.phone || body.MSISDN || body.PhoneNumber || meta.PhoneNumber || '');
+    if (!amount || !receipt) return res.status(400).json({ message: 'M-Pesa amount and receipt are required.' });
+    const account = rawAccount.replace(/^GROGON[-\s]?/, '');
+    const { rows: members } = await pool.query(
+      `SELECT * FROM members WHERE upper(member_no) = $1 OR $2 = upper(member_no) OR regexp_replace(phone, '[^0-9]', '', 'g') = $3 LIMIT 1`,
+      [account, rawAccount, phone],
+    );
+    const member = members[0];
+    if (!member) return res.status(404).json({ message: 'No SACCO member matched this M-Pesa account reference.' });
+    const { rows } = await pool.query(
+      `INSERT INTO transactions (member_id, kind, channel, amount, reference, payer_phone, raw_payload)
+       VALUES ($1,'savings_deposit','M-Pesa PayBill',$2,$3,$4,$5::jsonb)
+       ON CONFLICT (reference) DO NOTHING
+       RETURNING *`,
+      [member.id, amount, receipt, phone || null, JSON.stringify(body)],
+    );
+    if (!rows[0]) return res.json({ message: `M-Pesa receipt ${receipt} was already posted.`, duplicate: true });
+    await pool.query('UPDATE members SET savings_balance = savings_balance + $1 WHERE id = $2', [amount, member.id]);
+    res.json({ message: `M-Pesa savings deposit posted for ${member.member_no}.`, member: memberShape(member), transaction: rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/payments/record', async (req, res, next) => {
   try {
     const { memberId, kind = 'savings_deposit', amount, channel = 'M-Pesa' } = req.body;

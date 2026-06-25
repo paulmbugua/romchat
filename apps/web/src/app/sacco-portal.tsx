@@ -6,6 +6,8 @@ import {
   Bell,
   CircleDollarSign,
   ClipboardList,
+  Download,
+  FileText,
   Headphones,
   Landmark,
   LockKeyhole,
@@ -94,7 +96,6 @@ export default function GrogonSaccoPortal() {
     termMonths: '12',
     purpose: 'Spare parts stock and garage cash flow',
   });
-  const [deposit, setDeposit] = useState({ amount: '5000', channel: 'M-Pesa' });
   const [ticket, setTicket] = useState({ subject: 'Account support', message: 'Please assist me with my SACCO account.' });
 
   const token = typeof window === 'undefined' ? '' : localStorage.getItem('grogon-member-token') || '';
@@ -188,6 +189,33 @@ export default function GrogonSaccoPortal() {
     if (res.ok) {
       if (successTab) setActive(successTab);
       await loadDashboard();
+    }
+  }
+
+  async function downloadStatement(type: 'full' | 'savings' | 'loans' | 'dividends' | 'transactions', print = false) {
+    setMessage(print ? 'Preparing printable statement...' : 'Preparing PDF statement...');
+    try {
+      const res = await fetch(`${apiBase}/api/member/statements/${type}.pdf`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('grogon-member-token') || ''}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Could not prepare statement.');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (print) {
+        const win = window.open(url, '_blank');
+        setTimeout(() => win?.print(), 700);
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `grogon-${type}-statement.pdf`;
+        link.click();
+      }
+      setMessage(print ? 'Printable statement opened.' : 'Statement downloaded.');
+    } catch (error: any) {
+      setMessage(error.message || 'Statement download failed.');
     }
   }
 
@@ -397,19 +425,22 @@ export default function GrogonSaccoPortal() {
 
           {active === 'Savings' && (
             <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-              <form
-                className="rounded-xl border border-[#c5c6cd] bg-white p-6 shadow-sm"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  submit('/api/payments/record', { memberId: member.id, kind: 'savings_deposit', amount: Number(deposit.amount), channel: deposit.channel }, 'Savings');
-                }}
-              >
-                <SectionTitle icon={<PiggyBank />} title="Post savings deposit" />
-                <Input label="Amount" value={deposit.amount} onChange={(value) => setDeposit({ ...deposit, amount: value })} />
-                <Input label="Channel" value={deposit.channel} onChange={(value) => setDeposit({ ...deposit, channel: value })} />
-                <button className="mt-4 rounded-lg bg-[#fd761a] px-5 py-3 font-bold text-[#351000]">Record Deposit</button>
-              </form>
-              <Panel title="Recent savings" rows={dashboard.savings.deposits.map((item) => [item.reference, fmt(item.amount), item.channel || 'SACCO', item.status])} />
+              <div className="rounded-xl border border-[#c5c6cd] bg-white p-6 shadow-sm">
+                <SectionTitle icon={<PiggyBank />} title="M-Pesa PayBill savings" />
+                <p className="text-sm leading-7 text-[#44474d]">
+                  Do not post deposits manually. Pay through M-Pesa and the SACCO system updates your savings automatically when the PayBill callback is received.
+                </p>
+                <div className="mt-5 grid gap-3 rounded-xl bg-[#eff4ff] p-4">
+                  <Info label="PayBill" value="522522" />
+                  <Info label="Account number" value={`GROGON-${member.memberNo}`} />
+                  <Info label="Posting" value="Automatic savings deposit after M-Pesa confirmation" />
+                </div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button onClick={() => downloadStatement('savings')} className="inline-flex items-center gap-2 rounded-lg bg-[#fd761a] px-4 py-3 font-black text-[#351000]"><Download size={18} /> Savings PDF</button>
+                  <button onClick={() => downloadStatement('savings', true)} className="inline-flex items-center gap-2 rounded-lg border border-[#75777e] px-4 py-3 font-black"><FileText size={18} /> Print</button>
+                </div>
+              </div>
+              <Panel title="Auto-posted savings" rows={dashboard.savings.deposits.map((item) => [item.reference, fmt(item.amount), item.channel || 'M-Pesa PayBill', item.status])} />
             </section>
           )}
 
@@ -429,7 +460,15 @@ export default function GrogonSaccoPortal() {
                 <Input label="Purpose" value={loan.purpose} onChange={(value) => setLoan({ ...loan, purpose: value })} />
                 <button className="mt-4 rounded-lg bg-[#0d1c32] px-5 py-3 font-bold text-white">Send to Credit Committee</button>
               </form>
-              <Panel title="Loan activity" rows={dashboard.loans.map((item) => [item.loanType, fmt(item.amount), item.status, fmt(item.monthlyRepayment)])} />
+              <div className="space-y-4">
+                <div className="rounded-xl border border-[#c5c6cd] bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => downloadStatement('loans')} className="inline-flex items-center gap-2 rounded-lg bg-[#fd761a] px-4 py-3 font-black text-[#351000]"><Download size={18} /> Loan PDF</button>
+                    <button onClick={() => downloadStatement('loans', true)} className="inline-flex items-center gap-2 rounded-lg border border-[#75777e] px-4 py-3 font-black"><FileText size={18} /> Print loans</button>
+                  </div>
+                </div>
+                <Panel title="Loan activity" rows={dashboard.loans.map((item) => [item.loanType, fmt(item.amount), item.status, fmt(item.monthlyRepayment)])} />
+              </div>
             </section>
           )}
 
@@ -441,6 +480,10 @@ export default function GrogonSaccoPortal() {
                 <p className="mt-3 text-[#44474d]">{dashboard.dividends.payoutStatus}</p>
                 <div className="mt-5 rounded-lg bg-[#eff4ff] p-4 font-bold text-[#44474d]">
                   Last declared pool: {dashboard.dividends.lastDeclared}
+                </div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button onClick={() => downloadStatement('dividends')} className="inline-flex items-center gap-2 rounded-lg bg-[#fd761a] px-4 py-3 font-black text-[#351000]"><Download size={18} /> Dividend PDF</button>
+                  <button onClick={() => downloadStatement('dividends', true)} className="inline-flex items-center gap-2 rounded-lg border border-[#75777e] px-4 py-3 font-black"><FileText size={18} /> Print</button>
                 </div>
               </div>
               <div className="rounded-xl border border-[#c5c6cd] bg-[#0d1c32] p-6 text-white">
@@ -480,7 +523,14 @@ export default function GrogonSaccoPortal() {
           )}
 
           {active === 'Statement' && (
-            <section>
+            <section className="space-y-4">
+              <div className="rounded-xl border border-[#c5c6cd] bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => downloadStatement('full')} className="inline-flex items-center gap-2 rounded-lg bg-[#fd761a] px-4 py-3 font-black text-[#351000]"><Download size={18} /> Full PDF</button>
+                  <button onClick={() => downloadStatement('transactions')} className="inline-flex items-center gap-2 rounded-lg border border-[#75777e] px-4 py-3 font-black"><Download size={18} /> Transactions PDF</button>
+                  <button onClick={() => downloadStatement('full', true)} className="inline-flex items-center gap-2 rounded-lg bg-[#0d1c32] px-4 py-3 font-black text-white"><FileText size={18} /> Print statement</button>
+                </div>
+              </div>
               <Panel title="Account statement" rows={dashboard.transactions.map((item) => [item.kind.replace(/_/g, ' '), fmt(item.amount), item.reference, item.status])} />
             </section>
           )}

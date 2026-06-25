@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Linking, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch, formatKes } from './lib/api';
+import { apiBaseUrl, apiFetch, formatKes } from './lib/api';
 
 const ink = '#08132a';
 const orange = '#fd761a';
@@ -41,7 +41,6 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [amount, setAmount] = useState('5000');
   const [loanAmount, setLoanAmount] = useState('250000');
   const [ticketMessage, setTicketMessage] = useState('Please assist me with my SACCO account.');
 
@@ -113,6 +112,12 @@ export default function App() {
     } catch (error: any) {
       setStatus(error.message || 'Request failed.');
     }
+  }
+
+  function openStatement(type: 'full' | 'savings' | 'loans' | 'dividends' | 'transactions') {
+    if (!token) return;
+    const url = `${apiBaseUrl}/api/member/statements/${type}.pdf?token=${encodeURIComponent(token)}`;
+    Linking.openURL(url);
   }
 
   function logout() {
@@ -221,14 +226,16 @@ export default function App() {
 
         {tab === 'savings' && (
           <Card>
-            <Text style={label}>SAVINGS</Text>
-            <Text style={h2}>Deposit to your SACCO account</Text>
-            <TextInput value={amount} onChangeText={setAmount} keyboardType="number-pad" style={input} />
-            <TouchableOpacity style={primary} onPress={() => post('/api/payments/record', { memberId: member.id, kind: 'savings_deposit', amount: Number(amount), channel: 'M-Pesa' })}>
-              <Text style={primaryText}>POST SAVINGS DEPOSIT</Text>
+            <Text style={label}>M-PESA PAYBILL SAVINGS</Text>
+            <Text style={h2}>Deposits post automatically</Text>
+            <Text style={muted}>Use PayBill 522522 and account GROGON-{member.memberNo}. Your savings update after M-Pesa confirms the payment.</Text>
+            <Metric icon="business-outline" label="PayBill" value="522522" />
+            <Metric icon="keypad-outline" label="Account" value={`GROGON-${member.memberNo}`} />
+            <TouchableOpacity style={primary} onPress={() => openStatement('savings')}>
+              <Text style={primaryText}>DOWNLOAD SAVINGS PDF</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={secondary} onPress={() => post('/api/payments/record', { memberId: member.id, kind: 'loan_repayment', amount: Number(amount), channel: 'M-Pesa' })}>
-              <Text style={{ color: white, fontWeight: '900' }}>POST LOAN REPAYMENT</Text>
+            <TouchableOpacity style={secondary} onPress={() => openStatement('full')}>
+              <Text style={{ color: white, fontWeight: '900' }}>OPEN FULL STATEMENT PDF</Text>
             </TouchableOpacity>
           </Card>
         )}
@@ -238,6 +245,9 @@ export default function App() {
             <Text style={label}>LOANS</Text>
             <Text style={h2}>Apply for business credit</Text>
             <TextInput value={loanAmount} onChangeText={setLoanAmount} keyboardType="number-pad" style={input} />
+            <TouchableOpacity style={secondary} onPress={() => openStatement('loans')}>
+              <Text style={{ color: white, fontWeight: '900' }}>DOWNLOAD LOAN STATEMENT PDF</Text>
+            </TouchableOpacity>
             {['Equipment Financing', 'Working Capital', 'Emergency Garage Float'].map((loanType, index) => (
               <TouchableOpacity
                 key={loanType}
@@ -260,6 +270,9 @@ export default function App() {
             <Text style={h2}>{formatKes(dashboard.dividends.balance)}</Text>
             <Text style={muted}>{dashboard.dividends.payoutStatus}</Text>
             <Text style={{ marginTop: 14, color: blue }}>Last declared pool: {dashboard.dividends.lastDeclared}</Text>
+            <TouchableOpacity style={primary} onPress={() => openStatement('dividends')}>
+              <Text style={primaryText}>DOWNLOAD DIVIDEND PDF</Text>
+            </TouchableOpacity>
           </Card>
         )}
 
