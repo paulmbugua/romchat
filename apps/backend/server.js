@@ -439,16 +439,28 @@ app.patch('/api/admin/members/:id', requireAdmin, requireRight('members.update')
   }
 });
 
-app.post('/api/admin/members/:id/approve-kyc', requireAdmin, requireRight('kyc.verify'), async (req, res, next) => {
+async function approveKycHandler(req, res, next) {
   try {
-    const { rows } = await pool.query("UPDATE members SET kyc_status = 'approved', onboarding_stage = 'savings_active', status = 'active' WHERE id = $1 RETURNING *", [req.params.id]);
-    await pool.query("UPDATE onboarding_tasks SET status = 'completed', completed_at = now() WHERE member_id = $1 AND status = 'open'", [req.params.id]);
-    await logAudit(req.admin.id, 'member.kyc_approved', 'member', req.params.id, {});
-    res.json({ member: memberShape(rows[0]), message: 'KYC approved and member activated.' });
+    const { rows } = await pool.query(
+      "UPDATE members SET kyc_status = 'approved', onboarding_stage = 'savings_active', status = 'active' WHERE id = $1 RETURNING *",
+      [req.params.id],
+    );
+    if (!rows[0]) return res.status(404).json({ message: 'Member not found.' });
+    await pool.query(
+      "UPDATE onboarding_tasks SET status = 'completed', completed_at = now() WHERE member_id = $1 AND status = 'open'",
+      [req.params.id],
+    );
+    await logAudit(req.admin.id, 'member.kyc_approved', 'member', req.params.id, {
+      memberNo: rows[0].member_no,
+      fullName: rows[0].full_name,
+    });
+    res.json({ member: memberShape(rows[0]), message: `${rows[0].member_no} KYC approved and member activated.` });
   } catch (error) {
     next(error);
   }
-});
+}
+app.post('/api/admin/members/:id/approve-kyc', requireAdmin, requireRight('kyc.verify'), approveKycHandler);
+app.patch('/api/admin/members/:id/approve-kyc', requireAdmin, requireRight('kyc.verify'), approveKycHandler);
 
 app.patch('/api/admin/loans/:id/decision', requireAdmin, requireRight('loans.review'), async (req, res, next) => {
   try {
