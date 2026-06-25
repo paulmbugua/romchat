@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadgeCheck,
   Banknote,
   ClipboardCheck,
@@ -32,8 +32,8 @@ const products = [
     price: 'Monthly savings from KES 5,000',
   },
   {
-    title: 'Parts Trader',
-    detail: 'For spare-part shops, importers, resellers and specialist stockists.',
+    title: 'Parts & Spares Trader',
+    detail: 'For spare-part shops, stockists, importers, resellers and specialist suppliers.',
     price: 'Stock finance after KYC',
   },
 ];
@@ -79,12 +79,10 @@ export default function Page() {
               Built around Kirinyaga Road workshops
             </div>
             <h2 className="font-mont mt-6 max-w-4xl text-5xl font-black leading-[1.02] md:text-7xl">
-              A practical SACCO for the people who keep Nairobi moving.
+              Where Grogon mechanics and spare shops save, borrow and grow.
             </h2>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-[#44474d]">
-              Grogon SACCO brings mechanics, auto electricians, panel beaters, painters,
-              spare-part traders and garage owners together to save consistently, access fair
-              credit and grow stronger businesses.
+              Built for Kirinyaga Road mechanics, auto electricians, panel beaters, painters, spare-part shops and garage owners who need disciplined savings, fair equipment finance and working capital that understands workshop cashflow.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <a href="#join" className="rounded-lg bg-[#0d1c32] px-5 py-3 font-black text-white">
@@ -146,7 +144,7 @@ export default function Page() {
         </div>
         <div className="grid gap-4">
           <Service icon={<Banknote />} title="Equipment finance" text="Lifts, compressors, diagnostic scanners, welders, paint booths and specialty tools." />
-          <Service icon={<HandCoins />} title="Working capital" text="Short-cycle stock and payroll support for shops waiting on fleet or insurance payments." />
+          <Service icon={<HandCoins />} title="Working capital" text="Short-cycle stock, M-Pesa float and payroll support for shops waiting on fleet, insurer or customer payments." />
           <Service icon={<Clock3 />} title="Repayment discipline" text="Monthly schedules, reminders and repayment tracking through the member portal." />
           <Service icon={<FileText />} title="Statements and dividends" text="Members can access statements, annual dividends and payout preference records after login." />
         </div>
@@ -189,7 +187,7 @@ export default function Page() {
         <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="font-mont text-2xl font-black text-white">Grogon SACCO</p>
-            <p className="mt-2">Kirinyaga Road, Nairobi · +254 711 204 480 · members@grogonsacco.co.ke</p>
+            <p className="mt-2">Kirinyaga Road, Nairobi - +254 711 204 480 - members@grogonsacco.co.ke</p>
           </div>
           <a href="/login" className="rounded-lg border border-white/20 px-5 py-3 font-black text-white">
             Member Login
@@ -223,3 +221,5 @@ function Service({ icon, title, text }: { icon: React.ReactNode; title: string; 
     </div>
   );
 }
+
+

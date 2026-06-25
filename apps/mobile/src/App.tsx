@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, formatKes, type SaccoSummary } from './lib/api';
@@ -74,11 +74,10 @@ export default function App() {
             </View>
           </View>
           <Text style={{ marginTop: 28, color: ink, fontSize: 36, fontWeight: '900', lineHeight: 42 }}>
-            Savings and fair credit for Nairobi's motor trade.
+            Where Grogon mechanics and spare shops save, borrow and grow.
           </Text>
           <Text style={{ marginTop: 14, color: '#44474d', fontSize: 16, lineHeight: 25 }}>
-            For mechanics, panel beaters, painters, auto electricians, spare-part shops and garage
-            owners around Grogon and Kirinyaga Road.
+            For mechanics, panel beaters, painters, auto electricians, spare-part dealers and garage owners around Grogon, Kirinyaga Road and Kamukunji.
           </Text>
           <View style={{ marginTop: 24, gap: 10 }}>
             <PublicPoint icon="people-outline" text="Member-owned savings and dividends" />
@@ -239,3 +238,5 @@ function Metric({ icon, label: itemLabel, value }: { icon: any; label: string; v
     </View>
   );
 }
+
+

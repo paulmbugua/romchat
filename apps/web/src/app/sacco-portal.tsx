@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -220,7 +220,7 @@ export default function GrogonSaccoPortal() {
                 Built for mechanics and auto shops
               </p>
               <h2 className="font-mont mt-4 max-w-3xl text-4xl font-bold leading-tight md:text-6xl">
-                Savings, credit and dividends for the Grogon motor trade.
+                Member services for the Grogon auto trade.
               </h2>
               <p className="mt-5 max-w-2xl text-lg text-[#44474d]">
                 Register members, collect deposits, process equipment finance, track repayments and
@@ -239,7 +239,7 @@ export default function GrogonSaccoPortal() {
               <p className="font-bold text-[#44474d]">Active member</p>
               <h3 className="font-mont mt-2 text-2xl font-bold">{activeMember?.fullName || 'Grogon Member'}</h3>
               <p className="text-sm text-[#44474d]">
-                {activeMember?.memberNo} · {activeMember?.shopLocation}
+                {activeMember?.memberNo} - {activeMember?.shopLocation}
               </p>
               <div className="mt-6 grid gap-3">
                 <Metric label="Savings" value={fmt(activeMember?.savingsBalance || 0)} icon={<PiggyBank />} />
@@ -297,7 +297,7 @@ export default function GrogonSaccoPortal() {
           <select className="mb-3 w-full rounded-lg border border-[#c5c6cd] p-3" value={memberId} onChange={(event) => setMemberId(event.target.value)}>
             {summary.members.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.memberNo} · {item.fullName}
+                {item.memberNo} - {item.fullName}
               </option>
             ))}
           </select>
@@ -409,3 +409,4 @@ function Panel({ title, rows }: { title: string; rows: string[][] }) {
     </div>
   );
 }
+
