@@ -24,7 +24,7 @@ export type MarketplaceProduct = {
   brand?: string | null;
   category?: string | null;
   vehicleType?: string | null;
-  condition?: string | null;
+  condition?: string | string[] | null;
   description?: string | null;
   imageUrl?: string | null;
   imageUrls?: string[] | string | null;
@@ -101,6 +101,15 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
 
 export function formatKes(value: number | string | null | undefined) {
   return `KES ${Number(value || 0).toLocaleString('en-KE')}`;
+}
+
+export function productConditions(product: MarketplaceProduct) {
+  return Array.isArray(product.condition)
+    ? product.condition.filter(Boolean)
+    : String(product.condition || '')
+        .split(/[,/]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
 }
 
 export function productImages(product: MarketplaceProduct) {
