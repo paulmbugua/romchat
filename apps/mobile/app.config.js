@@ -1,3 +1,25 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const appDir = path.dirname(fileURLToPath(import.meta.url));
+
+function materializeGoogleServicesJson() {
+  const raw = process.env.GOOGLE_SERVICES_JSON;
+  if (!raw || raw.startsWith('@')) return undefined;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error('GOOGLE_SERVICES_JSON must be the raw JSON content from the Firebase google-services.json file, supplied as an EAS secret. Do not set it to a local file path.');
+  }
+
+  const outputPath = path.join(appDir, 'google-services.generated.json');
+  fs.writeFileSync(outputPath, JSON.stringify(parsed, null, 2));
+  return './google-services.generated.json';
+}
+
 export default function expoConfig({ config }) {
   const appEnv =
     process.env.EXPO_PUBLIC_APP_ENV ||
@@ -28,6 +50,7 @@ export default function expoConfig({ config }) {
   const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
   const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
   const GOOGLE_REVERSED_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID || '';
+  const googleServicesFile = materializeGoogleServicesJson();
 
   return {
     ...config,
@@ -50,7 +73,7 @@ export default function expoConfig({ config }) {
       ...config.android,
       package: 'com.paulmbugua2.grogon',
       permissions: ['INTERNET', 'POST_NOTIFICATIONS', 'CAMERA', 'READ_MEDIA_IMAGES'],
-      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || undefined,
+      googleServicesFile,
       notification: {
         icon: './assets/notification-icon.png',
         color: '#ff5a00',
