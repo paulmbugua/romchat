@@ -26,7 +26,7 @@ module.exports = function expoConfig({ config }) {
   return {
     ...config,
     owner: 'paulmbugua2',
-    name: 'Grogon SACCO',
+    name: 'Grogon Sacco',
     slug: 'grogonsacco',
     version: '1.0.0',
     scheme: 'grogonsacco',
@@ -66,6 +66,8 @@ module.exports = function expoConfig({ config }) {
       bundleIdentifier: 'com.paulmbugua2.grogonsacco',
       infoPlist: {
         ...(config?.ios?.infoPlist ?? {}),
+        CFBundleDisplayName: 'Grogon Sacco',
+        CFBundleName: 'Grogon Sacco',
         UIBackgroundModes: (config?.ios?.infoPlist?.UIBackgroundModes ?? []).filter((mode) => mode !== 'audio'),
       },
     },

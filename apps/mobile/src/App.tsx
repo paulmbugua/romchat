@@ -72,7 +72,7 @@ export default function App() {
   const [token, setToken] = useState('');
   const [dashboard, setDashboard] = useState<MemberDashboard | null>(null);
   const [tab, setTab] = useState<Tab>('home');
-  const [status, setStatus] = useState('Welcome to Grogon SACCO');
+  const [status, setStatus] = useState('Welcome to Grogon Sacco');
   const [booting, setBooting] = useState(true);
   const [memberNo, setMemberNo] = useState('GS-0001');
   const [phone, setPhone] = useState('+254711204480');
@@ -219,7 +219,7 @@ export default function App() {
     return (
       <View style={{ flex: 1, backgroundColor: ink, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <Ionicons name="construct-outline" size={34} color={orange} />
-        <Text style={{ color: white, fontSize: 24, fontWeight: '900', marginTop: 14 }}>Opening Grogon SACCO</Text>
+        <Text style={{ color: white, fontSize: 24, fontWeight: '900', marginTop: 14 }}>Opening Grogon Sacco</Text>
         <Text style={{ color: blue, marginTop: 8, textAlign: 'center' }}>Checking your saved member session.</Text>
       </View>
     );
@@ -232,7 +232,7 @@ export default function App() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View>
               <Text style={{ color: '#9d4300', fontWeight: '900', letterSpacing: 1 }}>GROGON AUTO INDUSTRY</Text>
-              <Text style={{ color: ink, fontSize: 30, fontWeight: '900' }}>Grogon SACCO</Text>
+              <Text style={{ color: ink, fontSize: 30, fontWeight: '900' }}>Grogon Sacco</Text>
             </View>
             <View style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: ink, alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="construct-outline" size={26} color={orange} />
