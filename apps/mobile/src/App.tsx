@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Linking, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiBaseUrl, apiFetch, formatKes } from './lib/api';
 
 const ink = '#08132a';
@@ -69,6 +70,14 @@ type MemberDashboard = {
 type Tab = 'home' | 'savings' | 'loans' | 'dividends' | 'support' | 'statement';
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <MemberApp />
+    </SafeAreaProvider>
+  );
+}
+
+function MemberApp() {
   const [token, setToken] = useState('');
   const [dashboard, setDashboard] = useState<MemberDashboard | null>(null);
   const [tab, setTab] = useState<Tab>('home');
@@ -97,6 +106,9 @@ export default function App() {
     return activeLoan?.monthlyRepayment || 0;
   }, [dashboard?.loans]);
   const openTickets = dashboard?.support.filter((item) => item.status !== 'resolved' && item.status !== 'closed').length || 0;
+  const insets = useSafeAreaInsets();
+  const keyboardBehavior = Platform.OS === 'ios' ? 'padding' : 'height';
+  const keyboardOffset = Platform.OS === 'ios' ? Math.max(insets.top, 12) : 0;
 
   useEffect(() => {
     restoreSession();
@@ -217,18 +229,23 @@ export default function App() {
 
   if (booting) {
     return (
-      <View style={{ flex: 1, backgroundColor: ink, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: ink, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <Ionicons name="construct-outline" size={34} color={orange} />
         <Text style={{ color: white, fontSize: 24, fontWeight: '900', marginTop: 14 }}>Opening Grogon Sacco</Text>
         <Text style={{ color: blue, marginTop: 8, textAlign: 'center' }}>Checking your saved member session.</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (!token || !dashboard || !member) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#f8f9ff' }}>
-        <ScrollView contentContainerStyle={{ padding: 18, paddingTop: 58, paddingBottom: 34 }}>
+      <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: '#f8f9ff' }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={keyboardBehavior} keyboardVerticalOffset={keyboardOffset}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            contentContainerStyle={{ padding: 18, paddingTop: 22, paddingBottom: Math.max(42, insets.bottom + 30) }}
+          >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View>
               <Text style={{ color: '#9d4300', fontWeight: '900', letterSpacing: 1 }}>GROGON AUTO INDUSTRY</Text>
@@ -262,15 +279,21 @@ export default function App() {
             </TouchableOpacity>
             <Text style={{ marginTop: 12, color: '#44474d', lineHeight: 21 }}>{status}</Text>
           </Card>
-        </ScrollView>
-      </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     );
   }
 
   if (mustSetPassword) {
     return (
-      <View style={{ flex: 1, backgroundColor: ink }}>
-        <ScrollView contentContainerStyle={{ padding: 18, paddingTop: 58, paddingBottom: 34 }}>
+      <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: ink }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={keyboardBehavior} keyboardVerticalOffset={keyboardOffset}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            contentContainerStyle={{ padding: 18, paddingTop: 22, paddingBottom: Math.max(42, insets.bottom + 30) }}
+          >
           <Text style={label}>FIRST LOGIN</Text>
           <Text style={{ color: white, fontSize: 32, fontWeight: '900', lineHeight: 38, marginTop: 8 }}>
             Create your private password, {member.fullName}.
@@ -288,14 +311,20 @@ export default function App() {
             </TouchableOpacity>
             <Text style={{ marginTop: 12, color: blue }}>{status}</Text>
           </Card>
-        </ScrollView>
-      </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: ink }}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 54, paddingBottom: 106 }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: ink }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={keyboardBehavior} keyboardVerticalOffset={keyboardOffset}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          contentContainerStyle={{ padding: 16, paddingTop: 18, paddingBottom: 110 + insets.bottom }}
+        >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: orange, fontWeight: '900', letterSpacing: 1 }}>{member.memberNo}</Text>
@@ -480,9 +509,9 @@ export default function App() {
             />
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
 
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 82, backgroundColor: '#151f37', borderTopWidth: 1, borderColor: '#2a344d', flexDirection: 'row', justifyContent: 'space-around', paddingTop: 8 }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 78 + insets.bottom, backgroundColor: '#151f37', borderTopWidth: 1, borderColor: '#2a344d', flexDirection: 'row', justifyContent: 'space-around', paddingTop: 9, paddingBottom: Math.max(insets.bottom, 14) }}>
         {[
           ['home', 'home-outline', 'Home'],
           ['savings', 'wallet-outline', 'Savings'],
@@ -496,8 +525,9 @@ export default function App() {
             <Text style={{ color: tab === key ? orange : blue, fontSize: 9, fontWeight: '800' }}>{title}</Text>
           </TouchableOpacity>
         ))}
-      </View>
-    </View>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
