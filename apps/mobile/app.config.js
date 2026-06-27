@@ -15,7 +15,7 @@ module.exports = function expoConfig({ config }) {
     iosSim: 'http://localhost:4001',
     lan1: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://192.168.137.1:4001',
     hotspot: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.254.198.47:4001',
-    prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://server.grogondigital.co.ke',
+    prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://server.grogonsacco.co.ke',
   };
 
   const DEFAULT_BACKEND =
