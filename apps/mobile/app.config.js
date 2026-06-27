@@ -8,7 +8,7 @@ module.exports = function expoConfig({ config }) {
     process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
     process.env.EAS_PROJECT_ID ||
     config?.extra?.eas?.projectId ||
-    '';
+    'e49ebd72-b672-411d-a8c6-e30476d2346c';
 
   const BACKENDS = {
     androidEmu: 'http://10.0.2.2:4001',
@@ -26,10 +26,10 @@ module.exports = function expoConfig({ config }) {
   return {
     ...config,
     owner: 'paulmbugua2',
-    name: 'Grogon',
-    slug: 'grogon',
+    name: 'Grogon SACCO',
+    slug: 'grogonsacco',
     version: '1.0.0',
-    scheme: 'grogon',
+    scheme: 'grogonsacco',
     runtimeVersion: { policy: 'appVersion' },
     userInterfaceStyle: 'automatic',
     newArchEnabled: true,
@@ -42,7 +42,7 @@ module.exports = function expoConfig({ config }) {
     assetBundlePatterns: ['**/*'],
     android: {
       ...config.android,
-      package: 'com.paulmbugua2.grogon',
+      package: 'com.paulmbugua2.grogonsacco',
       permissions: ['INTERNET', 'POST_NOTIFICATIONS', 'CAMERA', 'READ_MEDIA_IMAGES'],
       notification: {
         icon: './assets/notification-icon.png',
@@ -57,13 +57,13 @@ module.exports = function expoConfig({ config }) {
         {
           action: 'VIEW',
           category: ['BROWSABLE', 'DEFAULT'],
-          data: [{ scheme: 'grogon' }],
+          data: [{ scheme: 'grogonsacco' }],
         },
       ],
     },
     ios: {
       ...config.ios,
-      bundleIdentifier: 'com.paulmbugua2.grogon',
+      bundleIdentifier: 'com.paulmbugua2.grogonsacco',
       infoPlist: {
         ...(config?.ios?.infoPlist ?? {}),
         UIBackgroundModes: (config?.ios?.infoPlist?.UIBackgroundModes ?? []).filter((mode) => mode !== 'audio'),
