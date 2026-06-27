@@ -251,9 +251,12 @@ export default function App() {
           </View>
           <Card light>
             <Text style={{ color: '#9d4300', fontWeight: '900', letterSpacing: 1 }}>MEMBER LOGIN</Text>
-            <TextInput value={memberNo} onChangeText={setMemberNo} placeholder="Member number" style={lightInput} autoCapitalize="characters" />
-            <TextInput value={phone} onChangeText={setPhone} placeholder="Registered phone" style={lightInput} keyboardType="phone-pad" />
-            <TextInput value={password} onChangeText={setPassword} placeholder="Password, leave blank on first login" style={lightInput} secureTextEntry />
+            <LoginFieldLabel text="Member number" />
+            <TextInput value={memberNo} onChangeText={setMemberNo} placeholder="Example: GS-0001" placeholderTextColor={lightPlaceholder} selectionColor={orange} style={lightInput} autoCapitalize="characters" autoCorrect={false} />
+            <LoginFieldLabel text="Registered phone" />
+            <TextInput value={phone} onChangeText={setPhone} placeholder="Example: +254711204480" placeholderTextColor={lightPlaceholder} selectionColor={orange} style={lightInput} keyboardType="phone-pad" />
+            <LoginFieldLabel text="Password" />
+            <TextInput value={password} onChangeText={setPassword} placeholder="First login? Leave password blank" placeholderTextColor={lightPlaceholder} selectionColor={orange} style={lightInput} secureTextEntry />
             <TouchableOpacity style={publicPrimary} onPress={login}>
               <Text style={{ color: '#351000', fontWeight: '900' }}>LOGIN TO DASHBOARD</Text>
             </TouchableOpacity>
@@ -502,7 +505,8 @@ const label = { color: '#ffb690', fontSize: 12, fontWeight: '900' as const, lett
 const h2 = { color: white, fontSize: 24, fontWeight: '900' as const, marginTop: 6 };
 const muted = { color: '#c5c6cd', marginTop: 4, lineHeight: 21 };
 const input = { marginTop: 10, backgroundColor: '#030d25', borderWidth: 1, borderColor: '#44474d', borderRadius: 8, padding: 14, color: white, fontWeight: '800' as const };
-const lightInput = { marginTop: 12, backgroundColor: '#f8f9ff', borderWidth: 1, borderColor: '#c5c6cd', borderRadius: 8, padding: 14, color: ink, fontWeight: '800' as const };
+const lightPlaceholder = '#596172';
+const lightInput = { marginTop: 7, backgroundColor: white, borderWidth: 1.4, borderColor: '#9aa3b2', borderRadius: 8, padding: 14, color: ink, fontSize: 15, fontWeight: '900' as const };
 const primary = { marginTop: 16, backgroundColor: orange, borderRadius: 8, padding: 14, alignItems: 'center' as const };
 const publicPrimary = { marginTop: 16, backgroundColor: orange, borderRadius: 8, padding: 14, alignItems: 'center' as const };
 const secondary = { marginTop: 10, backgroundColor: '#0d1c32', borderWidth: 1, borderColor: '#44474d', borderRadius: 8, padding: 14, alignItems: 'center' as const };
@@ -527,6 +531,10 @@ function Field({ label, value, onChange, keyboardType }: { label: string; value:
       <TextInput value={value} onChangeText={onChange} keyboardType={keyboardType || 'default'} placeholderTextColor="#8790a3" style={input} />
     </View>
   );
+}
+
+function LoginFieldLabel({ text }: { text: string }) {
+  return <Text style={{ color: '#363b46', fontWeight: '900', fontSize: 12, marginTop: 13 }}>{text}</Text>;
 }
 
 function PublicPoint({ icon, text }: { icon: any; text: string }) {
