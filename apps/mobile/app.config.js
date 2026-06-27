@@ -1,38 +1,14 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const appDir = path.dirname(fileURLToPath(import.meta.url));
-
-function materializeGoogleServicesJson() {
-  const raw = process.env.GOOGLE_SERVICES_JSON;
-  if (!raw || raw.startsWith('@')) return undefined;
-
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error('GOOGLE_SERVICES_JSON must be the raw JSON content from the Firebase google-services.json file, supplied as an EAS secret. Do not set it to a local file path.');
-  }
-
-  const outputPath = path.join(appDir, 'google-services.generated.json');
-  fs.writeFileSync(outputPath, JSON.stringify(parsed, null, 2));
-  return './google-services.generated.json';
-}
-
-export default function expoConfig({ config }) {
+module.exports = function expoConfig({ config }) {
   const appEnv =
     process.env.EXPO_PUBLIC_APP_ENV ||
     (process.env.NODE_ENV === 'production' ? 'production' : 'development');
 
   const isProduction = appEnv === 'production';
-  const isDevClient = process.env.EXPO_DEV_CLIENT === 'true';
-  const enableGooglePlugin = isProduction || isDevClient;
-
   const EAS_PROJECT_ID =
     process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
     process.env.EAS_PROJECT_ID ||
-    '9926dcae-ad3c-4e30-b818-6a02f8c08ac7';
+    config?.extra?.eas?.projectId ||
+    '';
 
   const BACKENDS = {
     androidEmu: 'http://10.0.2.2:4001',
@@ -46,11 +22,6 @@ export default function expoConfig({ config }) {
     process.env.EXPO_PUBLIC_DEFAULT_BACKEND || process.env.BACKEND || (isProduction ? 'prod' : 'androidEmu');
   const RESOLVED_BACKEND_URL = BACKENDS[DEFAULT_BACKEND] || BACKENDS.prod;
   const usesCleartextTraffic = !isProduction && String(RESOLVED_BACKEND_URL).startsWith('http://');
-
-  const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
-  const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
-  const GOOGLE_REVERSED_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID || '';
-  const googleServicesFile = materializeGoogleServicesJson();
 
   return {
     ...config,
@@ -73,7 +44,6 @@ export default function expoConfig({ config }) {
       ...config.android,
       package: 'com.paulmbugua2.grogon',
       permissions: ['INTERNET', 'POST_NOTIFICATIONS', 'CAMERA', 'READ_MEDIA_IMAGES'],
-      googleServicesFile,
       notification: {
         icon: './assets/notification-icon.png',
         color: '#ff5a00',
@@ -133,36 +103,25 @@ export default function expoConfig({ config }) {
           ios: { deploymentTarget: '15.1' },
         },
       ],
-      enableGooglePlugin && GOOGLE_WEB_CLIENT_ID && [
-        '@react-native-google-signin/google-signin',
-        {
-          scopes: ['email', 'profile'],
-          webClientId: GOOGLE_WEB_CLIENT_ID,
-          offlineAccess: true,
-          forceCodeForRefreshToken: true,
-          iosClientId: GOOGLE_IOS_CLIENT_ID,
-          iosUrlScheme: GOOGLE_REVERSED_CLIENT_ID,
-        },
-      ],
     ].filter(Boolean),
     extra: {
       ...config.extra,
       EXPO_PUBLIC_APP_ENV: appEnv,
       EXPO_PUBLIC_BACKEND_URL: RESOLVED_BACKEND_URL,
       EXPO_PUBLIC_PROD_BACKEND_URL: BACKENDS.prod,
-      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: GOOGLE_WEB_CLIENT_ID,
-      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: GOOGLE_IOS_CLIENT_ID,
-      EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID: GOOGLE_REVERSED_CLIENT_ID,
-      EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID,
-      eas: { projectId: EAS_PROJECT_ID },
+      ...(EAS_PROJECT_ID ? { EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID, eas: { projectId: EAS_PROJECT_ID } } : {}),
       BACKENDS,
       DEFAULT_BACKEND,
     },
-    updates: {
-      url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
-      fallbackToCacheTimeout: 0,
-      checkAutomatically: 'ON_LOAD',
-    },
+    ...(EAS_PROJECT_ID
+      ? {
+          updates: {
+            url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
+            fallbackToCacheTimeout: 0,
+            checkAutomatically: 'ON_LOAD',
+          },
+        }
+      : {}),
     experiments: {
       typedRoutes: true,
       tsconfigPaths: true,
