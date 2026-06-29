@@ -11,7 +11,10 @@
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "cf:build": "vite build",
+    "cf:deploy": "wrangler deploy",
+    "cf:preview": "vite build && wrangler dev"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "6.4.0",

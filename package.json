@@ -34,7 +34,11 @@
     "format:check": "prettier . --check",
     "install:natives": "node scripts/check-native-modules.js",
     "reset:expo": "node reset-health.js",
-    "health:android": "node android-health.js"
+    "health:android": "node android-health.js",
+    "cf:build:web": "yarn workspace @mindcare/web cf:build",
+    "cf:deploy:web": "yarn workspace @mindcare/web cf:deploy",
+    "cf:build:admin": "yarn workspace @mindcare/admin cf:build",
+    "cf:deploy:admin": "yarn workspace @mindcare/admin cf:deploy"
   },
   "devDependencies": {
     "@babel/plugin-proposal-nullish-coalescing-operator": "^7.18.6",

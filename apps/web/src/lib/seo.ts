@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-const FALLBACK_SITE_URL = 'https://mindcareonlinetherapy.com';
+const FALLBACK_SITE_URL = 'https://grogonsacco.co.ke';
 const DEFAULT_OG_IMAGE = '/assets/logo.png';
 
 export function getSiteUrl(): string {
@@ -46,13 +46,13 @@ export function buildPageMetadata(params: {
       url: canonical,
       title: params.title,
       description: params.description,
-      siteName: 'MindCare',
+      siteName: 'Grogon SACCO',
       images: [
         {
           url: absoluteUrl(DEFAULT_OG_IMAGE),
           width: 1200,
           height: 630,
-          alt: 'MindCare online therapy',
+          alt: 'Grogon SACCO',
         },
       ],
     },
@@ -70,7 +70,7 @@ export function buildOrganizationSchema() {
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: 'MindCare',
+    name: 'Grogon SACCO',
     url: siteUrl,
     logo: absoluteUrl('/assets/logo.png'),
     sameAs: [],
@@ -82,9 +82,9 @@ export function buildWebsiteSchema() {
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'MindCare',
+    name: 'Grogon SACCO',
     url: siteUrl,
-    description: 'Online therapy access for clients and licensed therapists.',
+    description: 'Savings, loans and member services for mechanics and auto businesses around Grogon.',
   };
 }
 

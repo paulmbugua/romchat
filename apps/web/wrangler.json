@@ -1,0 +1,32 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "grogonsacco",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-06-29",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "NEXTJS_ENV": "production",
+    "NEXT_PUBLIC_SITE_URL": "https://grogonsacco.co.ke",
+    "NEXT_PUBLIC_APP_ORIGIN": "https://grogonsacco.co.ke",
+    "NEXT_PUBLIC_BACKEND_URL": "https://server.grogonsacco.co.ke",
+    "NEXT_PUBLIC_API_URL": "https://server.grogonsacco.co.ke",
+    "NEXT_PUBLIC_API_BASE_URL": "https://server.grogonsacco.co.ke"
+  },
+  "routes": [
+    {
+      "pattern": "grogonsacco.co.ke",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.grogonsacco.co.ke",
+      "custom_domain": true
+    }
+  ]
+}
