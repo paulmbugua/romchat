@@ -30,7 +30,7 @@ module.exports = function expoConfig({ config }) {
     slug: 'grogonsacco',
     version: '1.0.0',
     scheme: 'grogonsacco',
-    runtimeVersion: { policy: 'appVersion' },
+    runtimeVersion: '1.0.0',
     userInterfaceStyle: 'automatic',
     newArchEnabled: true,
     icon: './assets/icon.png',
