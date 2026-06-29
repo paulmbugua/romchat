@@ -7,6 +7,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: absoluteUrl('/'), lastModified: now, changeFrequency: 'daily', priority: 1 },
     { url: absoluteUrl('/help'), lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
+    { url: absoluteUrl('/terms'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
+    { url: absoluteUrl('/privacy'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
+    { url: absoluteUrl('/policies'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
+    { url: absoluteUrl('/delete-account'), lastModified: now, changeFrequency: 'yearly', priority: 0.3 },
     { url: absoluteUrl('/cookie-policy'), lastModified: now, changeFrequency: 'yearly', priority: 0.3 },
     { url: absoluteUrl('/anti-spam-policy'), lastModified: now, changeFrequency: 'yearly', priority: 0.3 },
     { url: absoluteUrl('/complaints-feedback'), lastModified: now, changeFrequency: 'monthly', priority: 0.4 },

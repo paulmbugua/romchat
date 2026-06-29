@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadgeCheck,
   Banknote,
   ClipboardCheck,
@@ -189,9 +189,15 @@ export default function Page() {
             <p className="font-mont text-2xl font-black text-white">Grogon SACCO</p>
             <p className="mt-2">Kirinyaga Road, Nairobi - +254 711 204 480 - members@grogonsacco.co.ke</p>
           </div>
-          <a href="/login" className="rounded-lg border border-white/20 px-5 py-3 font-black text-white">
-            Member Login
-          </a>
+          <div className="flex flex-wrap items-center gap-4 text-sm font-bold text-white">
+            <a href="/terms">Terms</a>
+            <a href="/privacy">Privacy</a>
+            <a href="/policies">Policies</a>
+            <a href="/delete-account">Delete account</a>
+            <a href="/login" className="rounded-lg border border-white/20 px-5 py-3 font-black text-white">
+              Member Login
+            </a>
+          </div>
         </div>
       </footer>
     </main>
