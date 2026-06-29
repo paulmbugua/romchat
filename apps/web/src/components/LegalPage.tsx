@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowLeft, FileText, Landmark, LockKeyhole, Mail, ShieldCheck, Trash2, Wrench } from 'lucide-react';
+import { ArrowLeft, FileText, Landmark, LockKeyhole, Mail, Phone, ShieldCheck, Trash2, Wrench } from 'lucide-react';
 
 type LegalSection = {
   title: string;
@@ -62,6 +62,7 @@ export function LegalPage({ eyebrow, title, intro, updated, icon, sections, chil
             <p className="mt-2 text-2xl font-black">{updated}</p>
             <div className="mt-5 space-y-3 text-sm font-semibold text-[#d6e3ff]">
               <p className="flex gap-2"><Landmark className="shrink-0 text-[#fd761a]" size={18} /> Member-owned SACCO services</p>
+              <p className="flex gap-2"><Phone className="shrink-0 text-[#fd761a]" size={18} /> 0114330356</p>
               <p className="flex gap-2"><Mail className="shrink-0 text-[#fd761a]" size={18} /> members@grogonsacco.co.ke</p>
             </div>
           </aside>

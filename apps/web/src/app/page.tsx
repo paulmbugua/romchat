@@ -187,7 +187,7 @@ export default function Page() {
         <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="font-mont text-2xl font-black text-white">Grogon SACCO</p>
-            <p className="mt-2">Kirinyaga Road, Nairobi - +254 711 204 480 - members@grogonsacco.co.ke</p>
+            <p className="mt-2">Kirinyaga Road, Nairobi - 0114330356 - members@grogonsacco.co.ke</p>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-sm font-bold text-white">
             <a href="/terms">Terms</a>

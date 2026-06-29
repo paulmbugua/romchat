@@ -45,6 +45,7 @@ const sha = (value) => crypto.createHash('sha256').update(String(value)).digest(
 const randomToken = () => crypto.randomBytes(32).toString('hex');
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '').replace(/^0/, '254');
 const paybillNumber = process.env.MPESA_PAYBILL || '522522';
+const supportPhoneNumber = process.env.SUPPORT_PHONE || '0114330356';
 const accountForMember = (memberNo) => `GROGON-${String(memberNo || '').toUpperCase()}`;
 const authTokenFrom = (req) => String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') || String(req.query.token || '');
 const adminRights = {
@@ -213,6 +214,8 @@ async function initDatabase() {
     ALTER TABLE members ADD COLUMN IF NOT EXISTS trade_category TEXT;
     ALTER TABLE members ADD COLUMN IF NOT EXISTS member_password_hash TEXT;
     ALTER TABLE members ADD COLUMN IF NOT EXISTS last_member_login_at TIMESTAMPTZ;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS digital_deleted_at TIMESTAMPTZ;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS deletion_reason TEXT;
     CREATE TABLE IF NOT EXISTS member_sessions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       member_id UUID REFERENCES members(id) ON DELETE CASCADE,
@@ -522,6 +525,51 @@ app.post('/api/member/auth/set-password', requireMember, async (req, res, next) 
     res.json({ dashboard: await buildMemberDashboard(req.member.id), member: memberShape(rows[0]), message: 'Password created. Your member portal is ready.' });
   } catch (error) {
     next(error);
+  }
+});
+
+app.delete('/api/member/account', requireMember, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const confirmation = String(req.body.confirmation || '').trim().toUpperCase();
+    const password = String(req.body.password || '');
+    const reason = String(req.body.reason || 'Member requested digital account deletion').trim().slice(0, 500);
+    if (confirmation !== 'DELETE MY ACCOUNT') return res.status(400).json({ message: 'Type DELETE MY ACCOUNT to confirm account deletion.' });
+    if (req.member.member_password_hash && req.member.member_password_hash !== sha(password)) return res.status(401).json({ message: 'Password confirmation failed.' });
+
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE members
+       SET status = 'deleted',
+           member_password_hash = NULL,
+           onboarding_stage = 'digital_account_deleted',
+           digital_deleted_at = now(),
+           deletion_reason = $2
+       WHERE id = $1`,
+      [req.member.id, reason || null],
+    );
+    await client.query('DELETE FROM member_sessions WHERE member_id = $1', [req.member.id]);
+    await client.query(
+      'INSERT INTO support_tickets (member_id, subject, message, status, resolution) VALUES ($1,$2,$3,$4,$5)',
+      [
+        req.member.id,
+        'Digital account deleted by member',
+        `Member ${req.member.member_no} deleted portal/app access directly. Reason: ${reason || 'Not provided'}`,
+        'closed',
+        'Digital access revoked automatically. Statutory SACCO records retained.',
+      ],
+    );
+    await client.query(
+      'INSERT INTO audit_logs (admin_id, action, entity_type, entity_id, details) VALUES ($1,$2,$3,$4,$5)',
+      [null, 'member.digital_account_deleted', 'member', req.member.id, JSON.stringify({ memberNo: req.member.member_no, reason, supportPhone: supportPhoneNumber })],
+    );
+    await client.query('COMMIT');
+    res.json({ message: `Your digital account access has been deleted. SACCO statutory records are retained. For membership closure, call ${supportPhoneNumber}.` });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(error);
+  } finally {
+    client.release();
   }
 });
 

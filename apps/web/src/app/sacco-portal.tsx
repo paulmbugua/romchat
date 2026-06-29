@@ -16,6 +16,7 @@ import {
   PiggyBank,
   ReceiptText,
   ShieldCheck,
+  Trash2,
   TrendingUp,
   WalletCards,
   Wrench,
@@ -79,7 +80,8 @@ type Ticket = {
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const fmt = (value: number) => `KES ${Number(value || 0).toLocaleString('en-KE')}`;
-const tabs = ['Overview', 'Savings', 'Loans', 'Dividends', 'Support', 'Statement'];
+const tabs = ['Overview', 'Savings', 'Loans', 'Dividends', 'Support', 'Statement', 'Account'];
+const supportPhone = '0114330356';
 
 export default function GrogonSaccoPortal() {
   const router = useRouter();
@@ -97,6 +99,7 @@ export default function GrogonSaccoPortal() {
     purpose: 'Spare parts stock and garage cash flow',
   });
   const [ticket, setTicket] = useState({ subject: 'Account support', message: 'Please assist me with my SACCO account.' });
+  const [deleteAccount, setDeleteAccount] = useState({ password: '', confirmation: '', reason: '' });
 
   const token = typeof window === 'undefined' ? '' : localStorage.getItem('grogon-member-token') || '';
   const member = dashboard?.member;
@@ -216,6 +219,31 @@ export default function GrogonSaccoPortal() {
       setMessage(print ? 'Printable statement opened.' : 'Statement downloaded.');
     } catch (error: any) {
       setMessage(error.message || 'Statement download failed.');
+    }
+  }
+
+  async function deleteDigitalAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (deleteAccount.confirmation.trim().toUpperCase() !== 'DELETE MY ACCOUNT') {
+      setMessage('Type DELETE MY ACCOUNT to confirm.');
+      return;
+    }
+    setMessage('Deleting your digital account access...');
+    try {
+      const res = await fetch(`${apiBase}/api/member/account`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('grogon-member-token') || ''}` },
+        body: JSON.stringify(deleteAccount),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Account deletion failed.');
+      localStorage.removeItem('grogon-member-token');
+      localStorage.removeItem('grogon-member-dashboard');
+      localStorage.removeItem('grogon-sacco-session');
+      setMessage(data.message || 'Your digital account has been deleted.');
+      router.replace('/login?deleted=1');
+    } catch (error: any) {
+      setMessage(error.message || 'Account deletion failed.');
     }
   }
 
@@ -534,6 +562,31 @@ export default function GrogonSaccoPortal() {
               <Panel title="Account statement" rows={dashboard.transactions.map((item) => [item.kind.replace(/_/g, ' '), fmt(item.amount), item.reference, item.status])} />
             </section>
           )}
+
+          {active === 'Account' && (
+            <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+              <div className="rounded-xl border border-[#c5c6cd] bg-white p-6 shadow-sm">
+                <SectionTitle icon={<Trash2 />} title="Delete digital account" />
+                <p className="leading-7 text-[#44474d]">
+                  You can delete your web and mobile app access directly. This revokes login sessions and removes your portal password.
+                  SACCO membership, savings, loan, dividend, KYC and audit records are retained where required by law and SACCO operations.
+                </p>
+                <div className="mt-5 rounded-lg bg-[#fff2e6] p-4 text-sm font-bold text-[#8f4b00]">
+                  For full membership closure, unresolved loans, guarantor issues or payment disputes, call {supportPhone}.
+                </div>
+              </div>
+              <form onSubmit={deleteDigitalAccount} className="rounded-xl border border-[#c5c6cd] bg-white p-6 shadow-sm">
+                <p className="text-sm font-black uppercase tracking-[0.16em] text-[#9d4300]">Final confirmation</p>
+                <Input label="Current password" type="password" value={deleteAccount.password} onChange={(value) => setDeleteAccount({ ...deleteAccount, password: value })} />
+                <Input label="Reason optional" value={deleteAccount.reason} onChange={(value) => setDeleteAccount({ ...deleteAccount, reason: value })} />
+                <Input label="Type DELETE MY ACCOUNT" value={deleteAccount.confirmation} onChange={(value) => setDeleteAccount({ ...deleteAccount, confirmation: value })} />
+                <button className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#8f1d1d] px-5 py-3 font-black text-white">
+                  <Trash2 size={18} />
+                  Delete my digital account
+                </button>
+              </form>
+            </section>
+          )}
         </div>
       </section>
     </main>
@@ -581,11 +634,12 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Input({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function Input({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
   return (
     <label className="mt-3 block text-sm font-bold text-[#44474d]">
       {label}
       <input
+        type={type}
         className="mt-1 w-full rounded-lg border border-[#c5c6cd] bg-white p-3 text-[#0b1c30]"
         value={value}
         onChange={(event) => onChange(event.target.value)}

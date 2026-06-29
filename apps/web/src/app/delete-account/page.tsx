@@ -4,7 +4,7 @@ import { buildBreadcrumbSchema, buildPageMetadata } from '../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
   title: 'Delete Account | Grogon SACCO',
-  description: 'Request deactivation or deletion review for a Grogon SACCO member digital account.',
+  description: 'Delete Grogon SACCO web and mobile app access directly from the member portal, with SACCO records retained where legally required.',
   path: '/delete-account',
   keywords: ['delete Grogon SACCO account', 'SACCO account deletion', 'Grogon SACCO data request'],
 });
@@ -16,12 +16,12 @@ const breadcrumbSchema = buildBreadcrumbSchema([
 
 const sections = [
   {
-    title: '1. What this request does',
+    title: '1. What direct deletion does',
     body:
-      'This page explains how a member can request deactivation of digital access or review of personal data held in the Grogon SACCO website, member portal and mobile app.',
+      'A logged-in member can delete digital account access directly from the member portal. This revokes web and mobile app login sessions and removes the member portal password.',
   },
   {
-    title: '2. Before you request deletion',
+    title: '2. Before you delete digital access',
     items: [
       'Make sure you have downloaded or requested any savings, loan or dividend statements you need for your records.',
       'Clear any pending loan, guarantor, dividend, complaint, repayment, dispute or account reconciliation issue where applicable.',
@@ -29,20 +29,20 @@ const sections = [
     ],
   },
   {
-    title: '3. How to request account deletion or deactivation',
+    title: '3. How to delete your account directly',
     items: [
-      'Email members@grogonsacco.co.ke using the phone number or email linked to your member account.',
-      'Use the subject line: Delete my Grogon SACCO digital account.',
-      'Include your full name, member number, registered phone number, national ID or business registration reference, and a short reason for the request.',
-      'If you cannot access your registered phone or email, visit or contact the SACCO desk for identity verification before the request is processed.',
+      'Log in to the member portal with your member number, registered phone and password.',
+      'Open the Account tab and choose Delete digital account.',
+      'Enter your current password and type DELETE MY ACCOUNT to confirm.',
+      'The system immediately revokes your sessions and disables future web or mobile app login.',
     ],
   },
   {
-    title: '4. What we may delete or deactivate',
+    title: '4. What is deleted or deactivated',
     items: [
-      'Mobile app and web portal access credentials may be disabled.',
-      'Optional profile preferences, device tokens, notification preferences and non-essential support metadata may be removed or anonymized where possible.',
-      'Marketing or non-essential communication preferences may be disabled.',
+      'Mobile app and web portal sessions are revoked.',
+      'The member portal password is removed so the deleted digital account cannot be used for future login.',
+      'A closed support record and audit entry are created to show that the member performed the deletion directly.',
     ],
   },
   {
@@ -54,9 +54,9 @@ const sections = [
     ],
   },
   {
-    title: '6. Processing time',
+    title: '6. When support is still needed',
     body:
-      'We aim to acknowledge account deletion or deactivation requests within 7 working days after receiving enough information to verify the member. Complex requests involving loans, guarantors, disputes or payment reconciliation may take longer.',
+      'If you cannot log in, need full SACCO membership closure, have unresolved loans, guarantor issues, payment disputes or identity verification problems, call the SACCO desk on 0114330356.',
   },
   {
     title: '7. Reopening access',
@@ -71,17 +71,18 @@ export default function Page() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
       <LegalPage
         eyebrow="Account deletion"
-        title="Request deletion or deactivation of your digital account."
-        intro="Members can request removal of digital access while understanding that SACCO financial and legal records may need to be retained."
+        title="Delete your digital account access."
+        intro="Logged-in members can delete web and mobile app access directly from the member portal. SACCO financial, KYC and audit records may still be retained where required."
         updated="29 June 2026"
         icon="delete"
         sections={sections}
       >
         <div className="mt-6 rounded-xl border border-[#f5b47d] bg-[#fff4ea] p-6 text-[#351000]">
-          <h2 className="font-mont text-2xl font-black">Quick request template</h2>
+          <h2 className="font-mont text-2xl font-black">Need help?</h2>
           <p className="mt-3 leading-7 font-semibold">
-            Send this to members@grogonsacco.co.ke: My name is [full name]. My member number is [member number]. My registered phone number is [phone]. Please deactivate or review deletion of my Grogon SACCO digital account.
+            Members who cannot log in or need full SACCO membership closure should call 0114330356 with their member number and registered phone details ready.
           </p>
+          <a href="/login" className="mt-4 inline-flex rounded-lg bg-[#0d1c32] px-5 py-3 font-black text-white">Login to delete directly</a>
         </div>
       </LegalPage>
     </>
