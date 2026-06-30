@@ -37,7 +37,7 @@ module.exports = function expoConfig({ config }) {
     splash: {
       image: './assets/splash.png',
       resizeMode: 'contain',
-      backgroundColor: '#050505',
+      backgroundColor: '#0d1c32',
     },
     assetBundlePatterns: ['**/*'],
     android: {
@@ -51,7 +51,8 @@ module.exports = function expoConfig({ config }) {
       },
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon-foreground.png',
-        backgroundColor: '#050505',
+        monochromeImage: './assets/adaptive-icon-monochrome.png',
+        backgroundColor: '#0d1c32',
       },
       intentFilters: [
         {
@@ -79,13 +80,13 @@ module.exports = function expoConfig({ config }) {
     },
     plugins: [
       'expo-router',
-      ['expo-system-ui', { lightBackgroundColor: '#ffffff', darkBackgroundColor: '#050505' }],
+      ['expo-system-ui', { lightBackgroundColor: '#ffffff', darkBackgroundColor: '#0d1c32' }],
       [
         'expo-splash-screen',
         {
           image: './assets/splash.png',
           resizeMode: 'contain',
-          backgroundColor: '#050505',
+          backgroundColor: '#0d1c32',
         },
       ],
       'expo-notifications',
