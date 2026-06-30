@@ -43,7 +43,14 @@ module.exports = function expoConfig({ config }) {
     android: {
       ...config.android,
       package: 'com.paulmbugua2.grogonsacco',
-      permissions: ['INTERNET', 'POST_NOTIFICATIONS', 'CAMERA', 'READ_MEDIA_IMAGES'],
+      permissions: ['INTERNET', 'POST_NOTIFICATIONS'],
+      blockedPermissions: [
+        'android.permission.READ_MEDIA_IMAGES',
+        'android.permission.READ_MEDIA_VIDEO',
+        'android.permission.READ_EXTERNAL_STORAGE',
+        'android.permission.WRITE_EXTERNAL_STORAGE',
+        'android.permission.CAMERA',
+      ],
       notification: {
         icon: './assets/notification-icon.png',
         color: '#ff5a00',
