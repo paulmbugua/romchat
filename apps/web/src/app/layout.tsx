@@ -2,10 +2,10 @@
 import '../index.css';
 
 export const metadata: Metadata = {
-  title: 'Grogon SACCO | Auto Trade Savings and Workshop Finance',
+  title: 'Grogon Sacco Demo | SACCO App Portfolio',
   description:
-    'Savings, dividends, tool finance and working-capital support for mechanics, garages and spare shops around Grogon and Kirinyaga Road, Nairobi.',
-  applicationName: 'Grogon SACCO',
+    'A demo SACCO mobile and web app concept using sample data only for mechanics, garages and spare shops around Grogon and Kirinyaga Road, Nairobi.',
+  applicationName: 'Grogon Sacco Demo',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

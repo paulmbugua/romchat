@@ -11,6 +11,9 @@ const blue = '#d6e3ff';
 const white = '#ffffff';
 const storageToken = 'grogon-member-token';
 const storageDashboard = 'grogon-member-dashboard';
+const appMode = process.env.EXPO_PUBLIC_APP_MODE || 'demo';
+const isDemoMode = appMode !== 'live';
+const demoToken = 'demo-grogon-member-token';
 
 type Member = {
   id: string;
@@ -69,6 +72,46 @@ type MemberDashboard = {
 
 type Tab = 'home' | 'savings' | 'loans' | 'dividends' | 'support' | 'statement';
 
+const demoDashboard: MemberDashboard = {
+  member: {
+    id: 'demo-member-001',
+    memberNo: 'DEMO-0001',
+    fullName: 'Peter Mwangi',
+    phone: '+254711204480',
+    email: 'demo@grogonsacco.co.ke',
+    shopLocation: 'Kirinyaga Road Garage',
+    membershipTier: 'Demo workshop member',
+    savingsBalance: 184500,
+    loanBalance: 62000,
+    dividendBalance: 8420,
+    kycStatus: 'sample only',
+    onboardingStage: 'Demo mode',
+    mustSetPassword: false,
+  },
+  savings: {
+    balance: 184500,
+    monthlyTarget: 12000,
+    deposits: [
+      { id: 'demo-saving-1', kind: 'savings_deposit', channel: 'Sample PayBill feed', amount: 5000, reference: 'DEMO-MPESA-9JK2', status: 'sample posted' },
+      { id: 'demo-saving-2', kind: 'savings_deposit', channel: 'Sample PayBill feed', amount: 3000, reference: 'DEMO-MPESA-9HJ8', status: 'sample posted' },
+    ],
+  },
+  loans: [
+    { id: 'demo-loan-1', loanType: 'Working Capital', amount: 250000, termMonths: 12, purpose: 'Spare parts stock and garage cash flow', status: 'sample committee review', monthlyRepayment: 23800 },
+    { id: 'demo-loan-2', loanType: 'Tools Facility', amount: 62000, termMonths: 10, purpose: 'Garage tools', status: 'sample disbursed', monthlyRepayment: 7200 },
+  ],
+  dividends: { balance: 8420, lastDeclared: 'Sample June 2026 pool', payoutStatus: 'Demo payout status only' },
+  transactions: [
+    { id: 'demo-tx-1', kind: 'savings_deposit', amount: 5000, reference: 'DEMO-MPESA-9JK2', status: 'sample posted' },
+    { id: 'demo-tx-2', kind: 'loan_repayment', amount: 7200, reference: 'DEMO-LR-2026-0628', status: 'sample posted' },
+    { id: 'demo-tx-3', kind: 'dividend_credit', amount: 420, reference: 'DEMO-DIV-2026', status: 'sample posted' },
+  ],
+  support: [
+    { id: 'demo-ticket-1', subject: 'Deposit confirmation', message: 'Sample support ticket only.', status: 'sample open' },
+    { id: 'demo-ticket-2', subject: 'KYC document update', message: 'Sample resolved ticket.', status: 'sample resolved', resolution: 'Updated by demo admin.' },
+  ],
+};
+
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -115,6 +158,13 @@ function MemberApp() {
   }, []);
 
   async function restoreSession() {
+    if (isDemoMode) {
+      setToken(demoToken);
+      setDashboard(demoDashboard);
+      setStatus('Demo mode: sample data only. No real savings, loans, deposits, payments or SACCO services are provided.');
+      setBooting(false);
+      return;
+    }
     try {
       const [savedToken, savedDashboard] = await Promise.all([
         AsyncStorage.getItem(storageToken),
@@ -146,6 +196,12 @@ function MemberApp() {
       setStatus('Enter member number and registered phone.');
       return;
     }
+    if (isDemoMode) {
+      await persist(demoToken, demoDashboard);
+      setPassword('');
+      setStatus('Demo dashboard opened with sample data only. Licensed SACCO operations are disabled in this build.');
+      return;
+    }
     setStatus('Checking member access...');
     try {
       const data = await apiFetch<{ token: string; mustSetPassword: boolean; dashboard: MemberDashboard; message: string }>(
@@ -162,6 +218,11 @@ function MemberApp() {
 
   async function load(nextToken = token) {
     if (!nextToken) return;
+    if (isDemoMode) {
+      setDashboard(demoDashboard);
+      setStatus('Demo data refreshed. Live backend sync is disabled until licensed activation.');
+      return;
+    }
     try {
       const data = await apiFetch<MemberDashboard>('/api/member/dashboard', { token: nextToken });
       setDashboard(data);
@@ -199,6 +260,13 @@ function MemberApp() {
 
   async function post(path: string, body: any, successTab?: Tab) {
     setStatus('Submitting...');
+    if (isDemoMode) {
+      if (successTab) setTab(successTab);
+      const action = path.includes('loans') ? 'loan request' : path.includes('support') ? 'support ticket' : 'request';
+      setStatus(`Demo mode: sample ${action} captured locally. No real SACCO record, credit decision, payment or financial service was created.`);
+      setDashboard({ ...demoDashboard, support: path.includes('support') ? [{ id: 'demo-ticket-new', subject: body?.subject || 'Sample ticket', message: body?.message || 'Sample message', status: 'sample open' }, ...demoDashboard.support] : demoDashboard.support });
+      return;
+    }
     try {
       const data: any = await apiFetch(path, { method: 'POST', body: JSON.stringify(body) });
       setStatus(data.message || 'Posted successfully.');
@@ -211,6 +279,10 @@ function MemberApp() {
 
   function openStatement(type: 'full' | 'savings' | 'loans' | 'dividends' | 'transactions') {
     if (!token) return;
+    if (isDemoMode) {
+      setStatus(`Demo mode: ${type} statement preview only. PDF downloads activate after licensing and organization approval.`);
+      return;
+    }
     const url = `${apiBaseUrl}/api/member/statements/${type}.pdf?token=${encodeURIComponent(token)}`;
     Linking.openURL(url);
     setStatus('Opening PDF statement...');
@@ -231,7 +303,7 @@ function MemberApp() {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: ink, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <Ionicons name="construct-outline" size={34} color={orange} />
-        <Text style={{ color: white, fontSize: 24, fontWeight: '900', marginTop: 14 }}>Opening Grogon Sacco</Text>
+        <Text style={{ color: white, fontSize: 24, fontWeight: '900', marginTop: 14 }}>Opening Grogon Sacco Demo</Text>
         <Text style={{ color: blue, marginTop: 8, textAlign: 'center' }}>Checking your saved member session.</Text>
       </SafeAreaView>
     );
@@ -248,26 +320,26 @@ function MemberApp() {
           >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View>
-              <Text style={{ color: '#9d4300', fontWeight: '900', letterSpacing: 1 }}>GROGON AUTO INDUSTRY</Text>
-              <Text style={{ color: ink, fontSize: 30, fontWeight: '900' }}>Grogon Sacco</Text>
+              <Text style={{ color: '#9d4300', fontWeight: '900', letterSpacing: 1 }}>PORTFOLIO DEMO APP</Text>
+              <Text style={{ color: ink, fontSize: 30, fontWeight: '900' }}>Grogon Sacco Demo</Text>
             </View>
             <View style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: ink, alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="construct-outline" size={26} color={orange} />
             </View>
           </View>
           <Text style={{ marginTop: 28, color: ink, fontSize: 34, fontWeight: '900', lineHeight: 40 }}>
-            Private SACCO services for Grogon mechanics and spare shops.
+            SACCO-style mobile app concept for Grogon mechanics and spare shops.
           </Text>
           <Text style={{ marginTop: 14, color: '#44474d', fontSize: 16, lineHeight: 25 }}>
-            Members manage savings, loans, dividends, statements and support after SACCO admin onboarding.
+            Demo screens use sample data only. This build does not provide real savings, loans, payments, dividends or financial services.
           </Text>
           <View style={{ marginTop: 24, gap: 10 }}>
-            <PublicPoint icon="wallet-outline" text="Auto-posted M-Pesa PayBill savings" />
-            <PublicPoint icon="cash-outline" text="Equipment and working-capital credit" />
-            <PublicPoint icon="document-text-outline" text="PDF savings, loan, dividend and full statements" />
+            <PublicPoint icon="wallet-outline" text="Sample member dashboard and savings UI" />
+            <PublicPoint icon="cash-outline" text="Sample loan request and balance screens" />
+            <PublicPoint icon="document-text-outline" text="Sample statements, dividends and support flows" />
           </View>
           <Card light>
-            <Text style={{ color: '#9d4300', fontWeight: '900', letterSpacing: 1 }}>MEMBER LOGIN</Text>
+            <Text style={{ color: '#9d4300', fontWeight: '900', letterSpacing: 1 }}>DEMO LOGIN</Text>
             <LoginFieldLabel text="Member number" />
             <TextInput value={memberNo} onChangeText={setMemberNo} placeholder="Example: GS-0001" placeholderTextColor={lightPlaceholder} selectionColor={orange} style={lightInput} autoCapitalize="characters" autoCorrect={false} />
             <LoginFieldLabel text="Registered phone" />
@@ -275,7 +347,7 @@ function MemberApp() {
             <LoginFieldLabel text="Password" />
             <TextInput value={password} onChangeText={setPassword} placeholder="First login? Leave password blank" placeholderTextColor={lightPlaceholder} selectionColor={orange} style={lightInput} secureTextEntry />
             <TouchableOpacity style={publicPrimary} onPress={login}>
-              <Text style={{ color: '#351000', fontWeight: '900' }}>LOGIN TO DASHBOARD</Text>
+              <Text style={{ color: '#351000', fontWeight: '900' }}>OPEN DEMO DASHBOARD</Text>
             </TouchableOpacity>
             <Text style={{ marginTop: 12, color: '#44474d', lineHeight: 21 }}>{status}</Text>
           </Card>
@@ -341,6 +413,7 @@ function MemberApp() {
           </View>
         </View>
         <Text style={{ marginTop: 10, color: blue }}>{status}</Text>
+        {isDemoMode && <DemoNotice />}
 
         <View style={{ marginTop: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           <Pill text={member.membershipTier} />
@@ -488,7 +561,7 @@ function MemberApp() {
             <Card>
               <Text style={label}>STATEMENTS</Text>
               <Text style={h2}>Download account records</Text>
-              <Text style={muted}>PDF records match the web member portal and are generated from your live SACCO account.</Text>
+              <Text style={muted}>{isDemoMode ? 'Statement buttons are visible for UI demonstration. PDF generation activates only in licensed live mode.' : 'PDF records match the web member portal and are generated from your live SACCO account.'}</Text>
               <ActionRow>
                 <ActionButton text="Full PDF" icon="document-text-outline" onPress={() => openStatement('full')} />
                 <ActionButton text="Transactions" icon="receipt-outline" dark onPress={() => openStatement('transactions')} />
@@ -622,5 +695,17 @@ function ListCard({ title, rows, empty }: { title: string; rows: Array<{ id: str
         </View>
       ))}
     </Card>
+  );
+}
+
+
+function DemoNotice() {
+  return (
+    <View style={{ marginTop: 14, backgroundColor: '#fff7ed', borderColor: '#fd761a', borderWidth: 1, borderRadius: 12, padding: 12 }}>
+      <Text style={{ color: '#9d4300', fontWeight: '900', fontSize: 12, letterSpacing: 1 }}>DEMO MODE</Text>
+      <Text style={{ color: '#351000', marginTop: 4, lineHeight: 20 }}>
+        Sample data only. No real SACCO account, savings, loan, dividend, payment, statement or support service is provided until licensed live activation.
+      </Text>
+    </View>
   );
 }

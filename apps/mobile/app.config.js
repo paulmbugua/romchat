@@ -2,6 +2,8 @@ module.exports = function expoConfig({ config }) {
   const appEnv =
     process.env.EXPO_PUBLIC_APP_ENV ||
     (process.env.NODE_ENV === 'production' ? 'production' : 'development');
+  const appMode = process.env.EXPO_PUBLIC_APP_MODE || 'demo';
+  const isDemoMode = appMode !== 'live';
 
   const isProduction = appEnv === 'production';
   const EAS_PROJECT_ID =
@@ -26,7 +28,7 @@ module.exports = function expoConfig({ config }) {
   return {
     ...config,
     owner: 'paulmbugua2',
-    name: 'Grogon Sacco',
+    name: isDemoMode ? 'Grogon Sacco Demo' : 'Grogon Sacco',
     slug: 'grogonsacco',
     version: '1.0.0',
     scheme: 'grogonsacco',
@@ -50,6 +52,10 @@ module.exports = function expoConfig({ config }) {
         'android.permission.READ_EXTERNAL_STORAGE',
         'android.permission.WRITE_EXTERNAL_STORAGE',
         'android.permission.CAMERA',
+        'android.permission.RECORD_AUDIO',
+        'android.permission.MODIFY_AUDIO_SETTINGS',
+        'android.permission.FOREGROUND_SERVICE',
+        'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
       ],
       notification: {
         icon: './assets/notification-icon.png',
@@ -74,8 +80,8 @@ module.exports = function expoConfig({ config }) {
       bundleIdentifier: 'com.paulmbugua2.grogonsacco',
       infoPlist: {
         ...(config?.ios?.infoPlist ?? {}),
-        CFBundleDisplayName: 'Grogon Sacco',
-        CFBundleName: 'Grogon Sacco',
+        CFBundleDisplayName: isDemoMode ? 'Grogon Sacco Demo' : 'Grogon Sacco',
+        CFBundleName: isDemoMode ? 'Grogon Sacco Demo' : 'Grogon Sacco',
         UIBackgroundModes: (config?.ios?.infoPlist?.UIBackgroundModes ?? []).filter((mode) => mode !== 'audio'),
       },
     },
@@ -117,6 +123,8 @@ module.exports = function expoConfig({ config }) {
     extra: {
       ...config.extra,
       EXPO_PUBLIC_APP_ENV: appEnv,
+      EXPO_PUBLIC_APP_MODE: appMode,
+      EXPO_PUBLIC_FINANCIAL_SERVICES_ENABLED: String(!isDemoMode),
       EXPO_PUBLIC_BACKEND_URL: RESOLVED_BACKEND_URL,
       EXPO_PUBLIC_PROD_BACKEND_URL: BACKENDS.prod,
       ...(EAS_PROJECT_ID ? { EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID, eas: { projectId: EAS_PROJECT_ID } } : {}),
