@@ -44,7 +44,7 @@ module.exports = function expoConfig({ config }) {
     assetBundlePatterns: ['**/*'],
     android: {
       ...config.android,
-      package: 'com.paulmbugua2.grogonsacco',
+      package: isDemoMode ? 'com.paulmbugua2.grogonsaccodemo' : 'com.paulmbugua2.grogonsacco',
       permissions: ['INTERNET', 'POST_NOTIFICATIONS'],
       blockedPermissions: [
         'android.permission.READ_MEDIA_IMAGES',
@@ -77,7 +77,7 @@ module.exports = function expoConfig({ config }) {
     },
     ios: {
       ...config.ios,
-      bundleIdentifier: 'com.paulmbugua2.grogonsacco',
+      bundleIdentifier: isDemoMode ? 'com.paulmbugua2.grogonsaccodemo' : 'com.paulmbugua2.grogonsacco',
       infoPlist: {
         ...(config?.ios?.infoPlist ?? {}),
         CFBundleDisplayName: isDemoMode ? 'Grogon Sacco Demo' : 'Grogon Sacco',
