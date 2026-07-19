@@ -1,5 +1,5 @@
 {
-  "name": "@grogonsacco/mobile",
+  "name": "@romchat/mobile",
   "version": "1.0.0",
   "private": true,
   "main": "./src/index.tsx",

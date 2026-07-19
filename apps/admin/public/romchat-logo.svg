@@ -1,0 +1,10 @@
+<svg width="720" height="180" viewBox="0 0 720 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="720" height="180" rx="36" fill="#1A1C1E"/>
+<rect x="24" y="24" width="132" height="132" rx="34" fill="url(#g)"/>
+<path d="M54 76C54 56 70 44 91 44H103C124 44 139 57 139 76V95C139 115 123 128 102 128H92L70 145L76 126C63 122 54 111 54 95V76Z" stroke="white" stroke-width="10" stroke-linejoin="round"/>
+<path d="M96 100C78 87 76 72 88 66C95 62 102 66 106 72C110 66 118 62 125 67C137 75 132 90 106 105C103 103 100 102 96 100Z" fill="white"/>
+<circle cx="126" cy="57" r="9" fill="#26C6C4"/>
+<text x="184" y="101" fill="white" font-family="Inter, Arial, sans-serif" font-size="62" font-weight="800">RomChat</text>
+<text x="188" y="133" fill="#FFDADB" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="600">Intentional dating. Verified chemistry.</text>
+<defs><linearGradient id="g" x1="24" y1="24" x2="156" y2="156"><stop stop-color="#F4717F"/><stop offset="0.58" stop-color="#A63646"/><stop offset="1" stop-color="#26C6C4"/></linearGradient></defs>
+</svg>

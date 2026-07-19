@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -17,24 +17,28 @@ html {
 
 body {
   margin: 0;
-  background: #f8f9ff;
+  background: #f9f9fc;
   font-family: Inter, system-ui, sans-serif;
 }
 
-.font-mont {
-  font-family: Montserrat, Inter, system-ui, sans-serif;
-}
-
-.hex-pattern {
-  background-image: url("data:image/svg+xml,%3Csvg width='72' height='72' viewBox='0 0 72 72' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M36 2 67 20v32L36 70 5 52V20z' fill='none' stroke='%230d1c32' stroke-opacity='.045'/%3E%3C/svg%3E");
+h1,
+h2,
+h3 {
+  font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+  letter-spacing: 0;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
 button {
   cursor: pointer;
+}
+
+img {
+  max-width: 100%;
 }

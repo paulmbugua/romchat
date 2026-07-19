@@ -1,11 +1,14 @@
-﻿import type { Metadata } from 'next';
+import type { Metadata } from 'next';
 import '../index.css';
 
 export const metadata: Metadata = {
-  title: 'Grogon Sacco Demo | SACCO App Portfolio',
-  description:
-    'A demo SACCO mobile and web app concept using sample data only for mechanics, garages and spare shops around Grogon and Kirinyaga Road, Nairobi.',
-  applicationName: 'Grogon Sacco Demo',
+  title: 'RomChat | Intentional Dating and Chat',
+  description: 'RomChat is a premium dating and chatting app with verified discovery, real-time messaging, events, wallet, calls, and safety tools.',
+  applicationName: 'RomChat',
+  icons: {
+    icon: '/assets/romchat/favicon.png',
+    apple: '/assets/romchat/icon.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -15,4 +18,3 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
-

@@ -2,9 +2,6 @@ module.exports = function expoConfig({ config }) {
   const appEnv =
     process.env.EXPO_PUBLIC_APP_ENV ||
     (process.env.NODE_ENV === 'production' ? 'production' : 'development');
-  const appMode = process.env.EXPO_PUBLIC_APP_MODE || 'demo';
-  const isDemoMode = appMode !== 'live';
-
   const isProduction = appEnv === 'production';
   const EAS_PROJECT_ID =
     process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
@@ -13,11 +10,10 @@ module.exports = function expoConfig({ config }) {
     'e49ebd72-b672-411d-a8c6-e30476d2346c';
 
   const BACKENDS = {
-    androidEmu: 'http://10.0.2.2:4001',
-    iosSim: 'http://localhost:4001',
-    lan1: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://192.168.137.1:4001',
-    hotspot: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.254.198.47:4001',
-    prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://server.grogonsacco.co.ke',
+    androidEmu: 'http://10.0.2.2:4000',
+    iosSim: 'http://localhost:4000',
+    lan1: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://192.168.137.1:4000',
+    prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://api.romchat.app',
   };
 
   const DEFAULT_BACKEND =
@@ -28,10 +24,10 @@ module.exports = function expoConfig({ config }) {
   return {
     ...config,
     owner: 'paulmbugua2',
-    name: isDemoMode ? 'Grogon Sacco Demo' : 'Grogon Sacco',
-    slug: 'grogonsacco',
+    name: 'RomChat',
+    slug: 'romchat',
     version: '1.0.0',
-    scheme: 'grogonsacco',
+    scheme: 'romchat',
     runtimeVersion: '1.0.0',
     userInterfaceStyle: 'automatic',
     newArchEnabled: true,
@@ -39,50 +35,40 @@ module.exports = function expoConfig({ config }) {
     splash: {
       image: './assets/splash.png',
       resizeMode: 'contain',
-      backgroundColor: '#0d1c32',
+      backgroundColor: '#1a1c1e',
     },
     assetBundlePatterns: ['**/*'],
     android: {
       ...config.android,
-      package: isDemoMode ? 'com.paulmbugua2.grogonsaccodemo' : 'com.paulmbugua2.grogonsacco',
-      permissions: ['INTERNET', 'POST_NOTIFICATIONS'],
-      blockedPermissions: [
-        'android.permission.READ_MEDIA_IMAGES',
-        'android.permission.READ_MEDIA_VIDEO',
-        'android.permission.READ_EXTERNAL_STORAGE',
-        'android.permission.WRITE_EXTERNAL_STORAGE',
-        'android.permission.CAMERA',
-        'android.permission.RECORD_AUDIO',
-        'android.permission.MODIFY_AUDIO_SETTINGS',
-        'android.permission.FOREGROUND_SERVICE',
-        'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
-      ],
+      package: 'com.paulmbugua2.romchat',
+      permissions: ['INTERNET', 'POST_NOTIFICATIONS', 'CAMERA', 'RECORD_AUDIO'],
       notification: {
         icon: './assets/notification-icon.png',
-        color: '#ff5a00',
-        defaultChannel: 'default',
+        color: '#a63646',
+        defaultChannel: 'romchat-default',
       },
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon-foreground.png',
         monochromeImage: './assets/adaptive-icon-monochrome.png',
-        backgroundColor: '#0d1c32',
+        backgroundColor: '#1a1c1e',
       },
       intentFilters: [
         {
           action: 'VIEW',
           category: ['BROWSABLE', 'DEFAULT'],
-          data: [{ scheme: 'grogonsacco' }],
+          data: [{ scheme: 'romchat' }],
         },
       ],
     },
     ios: {
       ...config.ios,
-      bundleIdentifier: isDemoMode ? 'com.paulmbugua2.grogonsaccodemo' : 'com.paulmbugua2.grogonsacco',
+      bundleIdentifier: 'com.paulmbugua2.romchat',
       infoPlist: {
         ...(config?.ios?.infoPlist ?? {}),
-        CFBundleDisplayName: isDemoMode ? 'Grogon Sacco Demo' : 'Grogon Sacco',
-        CFBundleName: isDemoMode ? 'Grogon Sacco Demo' : 'Grogon Sacco',
-        UIBackgroundModes: (config?.ios?.infoPlist?.UIBackgroundModes ?? []).filter((mode) => mode !== 'audio'),
+        CFBundleDisplayName: 'RomChat',
+        CFBundleName: 'RomChat',
+        NSCameraUsageDescription: 'RomChat uses the camera for profile photos, liveness verification, and consent-based video calls.',
+        NSMicrophoneUsageDescription: 'RomChat uses the microphone for consent-based voice and video calls.',
       },
     },
     web: {
@@ -93,13 +79,13 @@ module.exports = function expoConfig({ config }) {
     },
     plugins: [
       'expo-router',
-      ['expo-system-ui', { lightBackgroundColor: '#ffffff', darkBackgroundColor: '#0d1c32' }],
+      ['expo-system-ui', { lightBackgroundColor: '#ffffff', darkBackgroundColor: '#1a1c1e' }],
       [
         'expo-splash-screen',
         {
           image: './assets/splash.png',
           resizeMode: 'contain',
-          backgroundColor: '#0d1c32',
+          backgroundColor: '#1a1c1e',
         },
       ],
       'expo-notifications',
@@ -123,8 +109,6 @@ module.exports = function expoConfig({ config }) {
     extra: {
       ...config.extra,
       EXPO_PUBLIC_APP_ENV: appEnv,
-      EXPO_PUBLIC_APP_MODE: appMode,
-      EXPO_PUBLIC_FINANCIAL_SERVICES_ENABLED: String(!isDemoMode),
       EXPO_PUBLIC_BACKEND_URL: RESOLVED_BACKEND_URL,
       EXPO_PUBLIC_PROD_BACKEND_URL: BACKENDS.prod,
       ...(EAS_PROJECT_ID ? { EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID, eas: { projectId: EAS_PROJECT_ID } } : {}),
@@ -145,4 +129,4 @@ module.exports = function expoConfig({ config }) {
       tsconfigPaths: true,
     },
   };
-}
+};

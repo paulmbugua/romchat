@@ -1,5 +1,5 @@
 {
-  "name": "@grogonsacco/backend",
+  "name": "@romchat/backend",
   "version": "1.0.0",
   "private": true,
   "main": "server.js",
@@ -19,7 +19,7 @@
   },
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "RomChat dating and messaging API",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.862.0",
     "@aws-sdk/s3-request-presigner": "^3.862.0",
