@@ -41,6 +41,7 @@ module.exports = function expoConfig({ config }) {
     android: {
       ...config.android,
       package: 'com.paulmbugua2.romchat1',
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || './google-services.json',
       permissions: ['INTERNET', 'POST_NOTIFICATIONS', 'CAMERA', 'RECORD_AUDIO'],
       notification: {
         icon: './assets/notification-icon.png',
