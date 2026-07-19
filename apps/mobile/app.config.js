@@ -7,7 +7,7 @@ module.exports = function expoConfig({ config }) {
     process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
     process.env.EAS_PROJECT_ID ||
     config?.extra?.eas?.projectId ||
-    'e49ebd72-b672-411d-a8c6-e30476d2346c';
+    'aaa9b53a-8fe8-4883-8033-cb972942ec37';
 
   const BACKENDS = {
     androidEmu: 'http://10.0.2.2:4000',
@@ -40,7 +40,7 @@ module.exports = function expoConfig({ config }) {
     assetBundlePatterns: ['**/*'],
     android: {
       ...config.android,
-      package: 'com.paulmbugua2.romchat',
+      package: 'com.paulmbugua2.romchat1',
       permissions: ['INTERNET', 'POST_NOTIFICATIONS', 'CAMERA', 'RECORD_AUDIO'],
       notification: {
         icon: './assets/notification-icon.png',
@@ -62,7 +62,7 @@ module.exports = function expoConfig({ config }) {
     },
     ios: {
       ...config.ios,
-      bundleIdentifier: 'com.paulmbugua2.romchat',
+      bundleIdentifier: 'com.paulmbugua2.romchat1',
       infoPlist: {
         ...(config?.ios?.infoPlist ?? {}),
         CFBundleDisplayName: 'RomChat',
