@@ -5,3 +5,5 @@ export * from './paymentApi';
 export * from './profileActionsApi';
 export * from './profileApi';
 export * from './profileCardApi';
+
+export * from './romchatFeaturesApi';

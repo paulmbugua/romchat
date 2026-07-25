@@ -46,6 +46,9 @@ const profiles = [
     interests: ['Architecture', 'Jazz', 'Mindful dating', 'Travel'],
     prompt: 'A perfect Sunday is coffee, galleries, and dinner where phones stay away.',
     trust: { identity: 'verified', liveness: 'passed', reports: 0, conversationPace: 'healthy' },
+    voiceNote: 'Saturday jazz, morning markets, quiet confidence.',
+    videoPrompt: 'Golden-hour walk through a design district.',
+    vibePoll: { id: 'poll_elena_pizza', question: 'Pineapple on pizza?', options: [{ id: 'yes', label: 'Yes', votes: 62 }, { id: 'no', label: 'No', votes: 38 }] },
   },
   {
     id: 'amara',
@@ -59,6 +62,9 @@ const profiles = [
     interests: ['Cooking', 'Design', 'Film', 'Live music'],
     prompt: 'I plan tiny rituals, host thoughtful dinners, and remember the details.',
     trust: { identity: 'verified', liveness: 'passed', reports: 0, conversationPace: 'healthy' },
+    voiceNote: 'I will remember your coffee order.',
+    videoPrompt: 'Candlelit pasta night with a film queue.',
+    vibePoll: { id: 'poll_amara_plans', question: 'Plan the date or freestyle?', options: [{ id: 'plan', label: 'Plan', votes: 74 }, { id: 'free', label: 'Freestyle', votes: 26 }] },
   },
   {
     id: 'noah',
@@ -72,6 +78,9 @@ const profiles = [
     interests: ['Startups', 'Running', 'Books', 'Rooftops'],
     prompt: 'Builder, runner, and the friend who books the table before anyone asks.',
     trust: { identity: 'verified', liveness: 'passed', reports: 0, conversationPace: 'healthy' },
+    voiceNote: 'Sunday run, bookstore, rooftop sunset.',
+    videoPrompt: 'City run ending at a skyline cafe.',
+    vibePoll: { id: 'poll_noah_travel', question: 'Early flight or late checkout?', options: [{ id: 'early', label: 'Early flight', votes: 57 }, { id: 'late', label: 'Late checkout', votes: 43 }] },
   },
 ];
 
@@ -97,6 +106,42 @@ const verificationQueue = [
   { id: 'rv_102', memberId: 'amara', name: 'Amara Stone', status: 'manual_review', risk: 'medium', updatedAt: now() },
   { id: 'rv_103', memberId: 'noah', name: 'Noah Carter', status: 'verified', risk: 'low', updatedAt: now() },
 ];
+
+
+const privacySettings = {
+  incognito: true,
+  screenshotsBlocked: true,
+  disappearingDefaultSeconds: 86400,
+  visibleToLikedOnly: true,
+};
+
+const premiumPlans = [
+  { id: 'free', name: 'Free', priceUsd: 0, billing: 'monthly', perks: ['Verified browsing', 'Limited likes', 'Safety hub'] },
+  { id: 'gold', name: 'Gold', priceUsd: 19, billing: 'monthly', perks: ['Unlimited likes', 'See who liked you', 'Undo swipes', 'Read receipts'], priorityLikes: 5 },
+  { id: 'platinum', name: 'Platinum', priceUsd: 39, billing: 'monthly', perks: ['Priority likes', 'Passport mode', 'Weekly boost', 'Incognito included'], spotlightMinutes: 30, priorityLikes: 20 },
+];
+
+const gifts = [
+  { id: 'rose', name: 'Rose', tokenCost: 12, redeemableUsd: 0.4, animation: 'petal_burst' },
+  { id: 'coffee', name: 'Digital coffee', tokenCost: 30, redeemableUsd: 1.2, animation: 'steam_heart' },
+  { id: 'spotlight', name: 'Spotlight note', tokenCost: 80, redeemableUsd: 3.5, animation: 'golden_ribbon' },
+];
+
+const boosts = [
+  { id: 'local_peak_30', name: 'Peak-hour spotlight', priceUsd: 6, durationMinutes: 30, multiplier: 8 },
+  { id: 'passport_weekend', name: 'Passport weekend', priceUsd: 12, durationMinutes: 4320, multiplier: 3 },
+];
+
+const addOns = [
+  { id: 'unblur_one', name: 'Unblur one admirer', priceUsd: 1.99, description: 'Reveal one blurred like without a subscription.' },
+  { id: 'undo_swipe', name: 'Undo swipe', priceUsd: 0.99, description: 'Reverse the latest accidental pass.' },
+  { id: 'priority_like', name: 'Priority like', priceUsd: 2.49, description: 'Move a like to the top of the inbox.' },
+  { id: 'single_read_receipt', name: 'Single read receipt', priceUsd: 0.49, description: 'See whether one message was read.' },
+];
+
+const subscriptions = [];
+const boostLedger = [];
+const giftLedger = [];
 
 const wallet = {
   balance: 46,
@@ -127,10 +172,14 @@ function bootstrap() {
     wallet,
     safety: {
       verifiedOnlyDefault: true,
-      screenshotWarnings: true,
+      screenshotWarnings: privacySettings.screenshotsBlocked,
       consentRequiredForCalls: true,
       reportSlaMinutes: 15,
+      mandatorySelfieVerification: true,
+      antiScreengrab: privacySettings.screenshotsBlocked,
     },
+    premium: { activeTier: 'gold', plans: premiumPlans },
+    privacy: privacySettings,
   };
 }
 
@@ -167,10 +216,10 @@ app.get('/api/romchat/messages/:matchId', (req, res) => {
 });
 
 app.post('/api/romchat/messages', (req, res) => {
-  const { matchId = 'match_elena', text } = req.body || {};
+  const { matchId = 'match_elena', text, expiresInSeconds = null, viewOnce = false, mediaUrl = null, giftId = null, priority = false } = req.body || {};
   if (!String(text || '').trim()) return res.status(400).json({ message: 'Message text is required.' });
   const risk = /money|wire|crypto|password/i.test(text) ? 'review' : 'clear';
-  const message = { id: id('msg'), matchId, from: 'me', text: String(text).trim(), createdAt: now(), risk };
+  const message = { id: id('msg'), matchId, from: 'me', text: String(text).trim(), mediaUrl, giftId, priority, viewOnce: Boolean(viewOnce), expiresAt: expiresInSeconds ? new Date(Date.now() + Number(expiresInSeconds) * 1000).toISOString() : null, readAt: null, createdAt: now(), risk };
   messages.push(message);
   io.to(matchId).emit('romchat:message', message);
   res.status(201).json({ message, trustInsight: risk === 'review' ? 'Message queued for trust review.' : 'Message delivered.' });
@@ -220,6 +269,150 @@ app.post('/api/romchat/reports', (req, res) => {
   reports.unshift(report);
   io.emit('romchat:report', report);
   res.status(201).json({ report, message: 'Report received by RomChat safety.' });
+});
+
+
+app.get('/api/romchat/features', (_req, res) => {
+  res.json({
+    premiumPlans,
+    gifts,
+    boosts,
+    addOns,
+    privacy: privacySettings,
+    conversation: {
+      readReceipts: true,
+      typingIndicators: true,
+      disappearingMessages: true,
+      antiScamRisk: 'clear',
+    },
+    vibePolls: profiles.map((profile) => profile.vibePoll),
+  });
+});
+
+app.post('/api/romchat/ai/icebreakers', (req, res) => {
+  const { profileId, myInterests = [], tone = 'warm' } = req.body || {};
+  const profile = profiles.find((item) => item.id === profileId) || profiles[0];
+  const overlap = profile.interests.filter((interest) => myInterests.map(String).includes(interest));
+  const anchor = overlap[0] || profile.interests[0] || 'your profile';
+  res.json({
+    openers: [
+      `I noticed ${anchor} on your profile. What made it stick for you?`,
+      `Your "${profile.intent}" energy feels rare. What does a good pace look like for you?`,
+      tone === 'playful'
+        ? `Quick vibe check: defend your answer to "${profile.vibePoll.question}" in one sentence.`
+        : `Your prompt feels intentional. What kind of date would make that side of you show up?`,
+    ],
+  });
+});
+
+app.post('/api/romchat/ai/bio', (req, res) => {
+  const { intent = 'intentional connection', interests = [], values = [] } = req.body || {};
+  const interestText = interests.slice(0, 3).join(', ') || 'good conversation';
+  const valueText = values.slice(0, 2).join(' and ') || 'kindness and consistency';
+  res.json({
+    bios: [
+      `Looking for ${intent}. I light up around ${interestText}, and I care most about ${valueText}.`,
+      `Dating with intention, humor, and follow-through. Best with someone who values ${valueText} and can make space for ${interestText}.`,
+    ],
+  });
+});
+
+app.patch('/api/romchat/privacy', (req, res) => {
+  Object.assign(privacySettings, {
+    incognito: typeof req.body?.incognito === 'boolean' ? req.body.incognito : privacySettings.incognito,
+    screenshotsBlocked: typeof req.body?.screenshotsBlocked === 'boolean' ? req.body.screenshotsBlocked : privacySettings.screenshotsBlocked,
+    visibleToLikedOnly: typeof req.body?.visibleToLikedOnly === 'boolean' ? req.body.visibleToLikedOnly : privacySettings.visibleToLikedOnly,
+    disappearingDefaultSeconds: req.body?.disappearingDefaultSeconds === null || Number(req.body?.disappearingDefaultSeconds) > 0
+      ? req.body.disappearingDefaultSeconds
+      : privacySettings.disappearingDefaultSeconds,
+  });
+  io.emit('romchat:privacy', privacySettings);
+  res.json({ privacy: privacySettings });
+});
+
+app.patch('/api/romchat/profile/prompts', (req, res) => {
+  const profile = profiles.find((item) => item.id === (req.body?.profileId || 'elena')) || profiles[0];
+  if (typeof req.body?.voiceNote === 'string') profile.voiceNote = req.body.voiceNote.slice(0, 240);
+  if (typeof req.body?.videoPrompt === 'string') profile.videoPrompt = req.body.videoPrompt.slice(0, 240);
+  if (req.body?.vibePoll?.question) profile.vibePoll = req.body.vibePoll;
+  res.json({ profile });
+});
+
+app.post('/api/romchat/vibe-polls/:pollId/votes', (req, res) => {
+  const profile = profiles.find((item) => item.vibePoll?.id === req.params.pollId);
+  if (!profile) return res.status(404).json({ message: 'Vibe poll not found.' });
+  const option = profile.vibePoll.options.find((entry) => entry.id === req.body?.optionId);
+  if (!option) return res.status(400).json({ message: 'Valid optionId is required.' });
+  option.votes += 1;
+  io.emit('romchat:vibe-poll', profile.vibePoll);
+  res.status(201).json({ poll: profile.vibePoll });
+});
+
+app.post('/api/romchat/messages/typing', (req, res) => {
+  const event = { matchId: req.body?.matchId || 'match_elena', userId: req.body?.userId || 'me', typing: req.body?.typing !== false, at: now() };
+  io.to(event.matchId).emit('romchat:typing', event);
+  res.status(202).json(event);
+});
+
+app.post('/api/romchat/messages/read-receipts', (req, res) => {
+  const messageIds = Array.isArray(req.body?.messageIds) ? req.body.messageIds : [];
+  const readAt = now();
+  messages.forEach((message) => {
+    if (messageIds.includes(message.id) || message.matchId === req.body?.matchId) message.readAt = readAt;
+  });
+  const receipt = { matchId: req.body?.matchId || 'match_elena', messageIds, readAt };
+  io.to(receipt.matchId).emit('romchat:read', receipt);
+  res.json(receipt);
+});
+
+app.post('/api/romchat/messages/disappearing', (req, res) => {
+  const { matchId = 'match_elena', text = '', mediaUrl = null, expiresInSeconds = 86400, viewOnce = false } = req.body || {};
+  if (!String(text || mediaUrl || '').trim()) return res.status(400).json({ message: 'Text or mediaUrl is required.' });
+  const message = {
+    id: id('msg'),
+    matchId,
+    from: 'me',
+    text: String(text).trim(),
+    mediaUrl,
+    viewOnce: Boolean(viewOnce),
+    expiresAt: new Date(Date.now() + Number(expiresInSeconds) * 1000).toISOString(),
+    readAt: null,
+    createdAt: now(),
+    risk: 'clear',
+  };
+  messages.push(message);
+  io.to(matchId).emit('romchat:message', message);
+  res.status(201).json({ message });
+});
+
+app.get('/api/romchat/premium', (_req, res) => {
+  res.json({ plans: premiumPlans, addOns, subscriptions, activeTier: subscriptions[0]?.planId || 'gold' });
+});
+
+app.post('/api/romchat/subscriptions', (req, res) => {
+  const plan = premiumPlans.find((item) => item.id === req.body?.planId);
+  if (!plan || plan.id === 'free') return res.status(400).json({ message: 'A paid planId is required.' });
+  const subscription = { id: id('sub'), planId: plan.id, status: 'active', startedAt: now(), renewsAt: new Date(Date.now() + 30 * 86400 * 1000).toISOString() };
+  subscriptions.unshift(subscription);
+  res.status(201).json({ subscription, plan });
+});
+
+app.post('/api/romchat/boosts', (req, res) => {
+  const boost = boosts.find((item) => item.id === req.body?.boostId) || boosts[0];
+  const activation = { id: id('boost'), boostId: boost.id, profileId: req.body?.profileId || 'me', startsAt: now(), endsAt: new Date(Date.now() + boost.durationMinutes * 60000).toISOString() };
+  boostLedger.unshift(activation);
+  io.emit('romchat:boost', activation);
+  res.status(201).json({ boost: activation, catalog: boost });
+});
+
+app.post('/api/romchat/gifts', (req, res) => {
+  const gift = gifts.find((item) => item.id === req.body?.giftId);
+  if (!gift) return res.status(400).json({ message: 'Valid giftId is required.' });
+  const entry = { id: id('gift'), giftId: gift.id, matchId: req.body?.matchId || 'match_elena', note: req.body?.note || '', tokenCost: gift.tokenCost, redeemableUsd: gift.redeemableUsd, createdAt: now() };
+  giftLedger.unshift(entry);
+  wallet.balance = Math.max(0, wallet.balance - gift.tokenCost);
+  io.to(entry.matchId).emit('romchat:gift', entry);
+  res.status(201).json({ gift: entry, wallet });
 });
 
 app.get('/api/admin/romchat/operations', (_req, res) => {
