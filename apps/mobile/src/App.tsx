@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   Image,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -10,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Tab = 'discover' | 'chat' | 'premium' | 'safety' | 'profile';
 type MessageMode = 'standard' | 'timed' | 'viewOnce';
@@ -87,6 +87,8 @@ export default function App() {
   const [tokens, setTokens] = useState(146);
   const [boosted, setBoosted] = useState(false);
   const [pollYes, setPollYes] = useState(true);
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 12);
   const profile = profiles[index % profiles.length];
   const strength = useMemo(() => 86 + (verifiedOnly ? 4 : 0) + (incognito ? 3 : 0), [verifiedOnly, incognito]);
   const activePlan = boosted ? 'Platinum' : 'Gold';
@@ -97,8 +99,8 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" />
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f9f9fc" />
       <View style={styles.header}>
         <View style={styles.brandRow}>
           <Image source={require('../assets/icon.png')} style={styles.logo} />
@@ -112,7 +114,12 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: 112 + bottomInset }]}
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {tab === 'discover' && (
           <Discover
             profile={profile}
@@ -142,7 +149,7 @@ export default function App() {
         {tab === 'profile' && <Profile strength={strength} incognito={incognito} />}
       </ScrollView>
 
-      <View style={styles.nav}>
+      <View style={[styles.nav, { bottom: bottomInset }]}>
         {(['discover', 'chat', 'premium', 'safety', 'profile'] as Tab[]).map((item) => (
           <TouchableOpacity key={item} onPress={() => setTab(item)} style={[styles.navItem, tab === item && styles.navItemActive]}>
             <Text style={[styles.navText, tab === item && styles.navTextActive]}>{item}</Text>
@@ -356,7 +363,7 @@ const styles = StyleSheet.create({
   caption: { color: '#574142', fontWeight: '600', lineHeight: 19 },
   verifyButton: { backgroundColor: '#a63646', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999 },
   verifyText: { color: 'white', fontWeight: '900' },
-  content: { padding: 16, paddingBottom: 110 },
+  content: { paddingHorizontal: 16, paddingTop: 16 },
   profileCard: { minHeight: 560, borderRadius: 28, padding: 20, justifyContent: 'flex-end', overflow: 'hidden' },
   cardBadge: { position: 'absolute', top: 18, right: 18, backgroundColor: 'white', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
   cardBadgeText: { color: '#a63646', fontWeight: '900' },
