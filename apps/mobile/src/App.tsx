@@ -98,11 +98,11 @@ const profiles: ProfileSeed[] = [
   },
 ];
 
-const sectionCards: Array<{ id: Section; label: string; title: string; meta: string }> = [
-  { id: 'chat', label: 'Inbox', title: 'After-match help', meta: 'Prompts, gifts, timers' },
-  { id: 'premium', label: 'Plus', title: 'Stand out', meta: 'Boosts and priority likes' },
-  { id: 'safety', label: 'Safe', title: 'Trust center', meta: 'Verify, report, block' },
-  { id: 'profile', label: 'You', title: 'Completion studio', meta: 'Bio, photos, prompts' },
+const shortcuts: Array<{ id: Section; label: string; title: string }> = [
+  { id: 'chat', label: 'Inbox', title: 'Matches' },
+  { id: 'premium', label: 'Plus', title: 'Boost' },
+  { id: 'safety', label: 'Safe', title: 'Trust' },
+  { id: 'profile', label: 'Me', title: 'Profile' },
 ];
 
 const plans = [
@@ -122,10 +122,8 @@ const starterMessages = [
   ['Elena', 'That deserves a golden-hour walk. Saturday?', 'Typing now'],
 ];
 
-const onboardingSteps = ['Photos', 'Intent', 'Voice', 'Polls', 'Safety', 'Bio', 'Start'];
-
 export default function App() {
-  const [activeSection, setActiveSection] = useState<Section>('chat');
+  const [activeSection, setActiveSection] = useState<Section | null>(null);
   const [index, setIndex] = useState(0);
   const [verifiedOnly, setVerifiedOnly] = useState(true);
   const [incognito, setIncognito] = useState(true);
@@ -134,7 +132,6 @@ export default function App() {
   const [messageMode, setMessageMode] = useState<MessageMode>('timed');
   const [tokens, setTokens] = useState(146);
   const [boosted, setBoosted] = useState(false);
-  const [pollYes, setPollYes] = useState(true);
   const [showMatch, setShowMatch] = useState(false);
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 16);
@@ -144,19 +141,19 @@ export default function App() {
 
   function passProfile() {
     setIndex((value) => (value + 1) % profiles.length);
-    setPollYes(true);
     setShowMatch(false);
+    setActiveSection(null);
   }
 
   function previous() {
     setIndex((value) => (value - 1 + profiles.length) % profiles.length);
-    setPollYes(true);
     setShowMatch(false);
+    setActiveSection(null);
   }
 
   function likeProfile() {
     setShowMatch(true);
-    setPollYes(true);
+    setActiveSection(null);
   }
 
   const swipeHandlers = useMemo(
@@ -164,14 +161,11 @@ export default function App() {
       PanResponder.create({
         onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 18 && Math.abs(gesture.dy) < 24,
         onPanResponderRelease: (_event, gesture) => {
-          if (gesture.dx > 48) {
-            setShowMatch(true);
-            setPollYes(true);
-          }
+          if (gesture.dx > 48) setShowMatch(true);
           if (gesture.dx < -48) {
             setIndex((value) => (value + 1) % profiles.length);
-            setPollYes(true);
             setShowMatch(false);
+            setActiveSection(null);
           }
         },
       }).panHandlers,
@@ -180,37 +174,31 @@ export default function App() {
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#ff2f73" />
+      <StatusBar barStyle="dark-content" backgroundColor="#fff6f9" />
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: 34 + bottomInset }]}
+        contentContainerStyle={[styles.content, { paddingBottom: 30 + bottomInset }]}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient colors={['#ff2f73', '#ff6a3d']} style={styles.header}>
+        <View style={styles.topBar}>
           <View style={styles.brandRow}>
             <Image source={require('../assets/icon.png')} style={styles.logo} />
             <View>
               <Text style={styles.brand}>RomChat</Text>
-              <Text style={styles.captionLight}>Bright, safe, real chemistry</Text>
+              <Text style={styles.caption}>Swipe. Match. Chat.</Text>
             </View>
           </View>
-          <View style={styles.brandMark}>
-            <Text style={styles.brandMarkText}>RC</Text>
-          </View>
-        </LinearGradient>
-
-        <ProgressHero strength={strength} />
+          <TouchableOpacity onPress={() => setActiveSection('safety')} style={styles.safePill}>
+            <Text style={styles.safePillText}>Safe</Text>
+          </TouchableOpacity>
+        </View>
 
         <Discover
           profile={profile}
           passProfile={passProfile}
           likeProfile={likeProfile}
           previous={previous}
-          verifiedOnly={verifiedOnly}
-          setVerifiedOnly={setVerifiedOnly}
-          pollYes={pollYes}
-          setPollYes={setPollYes}
           swipeHandlers={swipeHandlers}
           showMatch={showMatch}
           dismissMatch={passProfile}
@@ -220,20 +208,9 @@ export default function App() {
           }}
         />
 
-        <View style={styles.homeRail}>
-          {sectionCards.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              onPress={() => setActiveSection(item.id)}
-              style={[styles.sectionCard, activeSection === item.id && styles.sectionCardActive]}
-            >
-              <Text style={[styles.sectionLabel, activeSection === item.id && styles.sectionLabelActive]}>{item.label}</Text>
-              <Text style={[styles.sectionTitle, activeSection === item.id && styles.sectionTitleActive]}>{item.title}</Text>
-              <Text style={[styles.sectionMeta, activeSection === item.id && styles.sectionMetaActive]}>{item.meta}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <ShortcutRail activeSection={activeSection} setActiveSection={setActiveSection} />
 
+        {activeSection == null && <HomeNudge profile={profile} openProfile={() => setActiveSection('profile')} />}
         {activeSection === 'chat' && (
           <Chat
             readReceipts={readReceipts}
@@ -248,30 +225,18 @@ export default function App() {
           <Premium tokens={tokens} setTokens={setTokens} boosted={boosted} setBoosted={setBoosted} activePlan={activePlan} />
         )}
         {activeSection === 'safety' && (
-          <Safety incognito={incognito} setIncognito={setIncognito} antiGrab={antiGrab} setAntiGrab={setAntiGrab} />
+          <Safety
+            incognito={incognito}
+            setIncognito={setIncognito}
+            antiGrab={antiGrab}
+            setAntiGrab={setAntiGrab}
+            verifiedOnly={verifiedOnly}
+            setVerifiedOnly={setVerifiedOnly}
+          />
         )}
         {activeSection === 'profile' && <Profile strength={strength} incognito={incognito} />}
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function ProgressHero({ strength }: { strength: number }) {
-  return (
-    <View style={styles.progressHero}>
-      <View style={styles.progressHeader}>
-        <Text style={styles.progressTitle}>Profile readiness</Text>
-        <Text style={styles.progressPercent}>{strength}%</Text>
-      </View>
-      <View style={styles.progress}><View style={[styles.progressFill, { width: `${strength}%` }]} /></View>
-      <View style={styles.stepRow}>
-        {onboardingSteps.map((step, position) => (
-          <View key={step} style={[styles.stepPill, position < 6 && styles.stepPillDone]}>
-            <Text style={[styles.stepText, position < 6 && styles.stepTextDone]}>{step}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
   );
 }
 
@@ -280,10 +245,6 @@ function Discover({
   passProfile,
   likeProfile,
   previous,
-  verifiedOnly,
-  setVerifiedOnly,
-  pollYes,
-  setPollYes,
   swipeHandlers,
   showMatch,
   dismissMatch,
@@ -293,110 +254,93 @@ function Discover({
   passProfile: () => void;
   likeProfile: () => void;
   previous: () => void;
-  verifiedOnly: boolean;
-  setVerifiedOnly: (value: boolean) => void;
-  pollYes: boolean;
-  setPollYes: (value: boolean) => void;
   swipeHandlers: GestureResponderHandlers;
   showMatch: boolean;
   dismissMatch: () => void;
   openChat: () => void;
 }) {
   const openers = [
-    `Ask ${profile.name} about ${profile.tags[0]?.toLowerCase()} and the one place that changed their taste.`,
-    `Start easy with the poll: "${profile.poll.question}"`,
-    `Connect on intent: "${profile.intent}" without making it feel like an interview.`,
+    `Ask ${profile.name} about ${profile.tags[0]?.toLowerCase()}.`,
+    `Start with: "${profile.poll.question}"`,
   ];
 
   return (
-    <View>
+    <View style={styles.discovery}>
       <TouchableOpacity activeOpacity={0.96} onPress={likeProfile} style={styles.deckShadow} {...swipeHandlers}>
         <ImageBackground source={profile.photo} resizeMode="cover" style={styles.profileCard} imageStyle={styles.profilePhoto}>
-          <LinearGradient colors={['rgba(255,47,115,0.04)', 'rgba(120,10,52,0.08)', 'rgba(36,0,20,0.88)']} style={styles.photoOverlay} />
-          <View style={styles.cardTopRow}>
-            <View style={styles.verifiedBadge}>
-              <Text style={styles.verifiedText}>Verified</Text>
-            </View>
-            <View style={styles.cardBadge}>
-              <Text style={styles.cardBadgeText}>{profile.match}% match</Text>
-            </View>
-          </View>
+          <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(42,0,18,0.18)', 'rgba(28,0,14,0.9)']} style={styles.photoOverlay} />
           <View style={styles.photoDots}>
             {profiles.map((item) => (
               <View key={item.id} style={[styles.photoDot, item.id === profile.id && styles.photoDotActive]} />
             ))}
+          </View>
+          <View style={styles.cardTopRow}>
+            <Text style={styles.verifiedBadge}>Verified</Text>
+            <Text style={styles.cardBadge}>{profile.match}%</Text>
           </View>
           <View style={styles.cardCopy}>
             <Text style={styles.cardTitle}>{profile.name}, {profile.age}</Text>
             <Text style={styles.cardSub}>{profile.city} - {profile.intent}</Text>
             <Text style={styles.cardPrompt}>{profile.prompt}</Text>
             <View style={styles.tagRow}>{profile.tags.map((tag) => <Text key={tag} style={styles.photoTag}>{tag}</Text>)}</View>
-            <View style={styles.profileStats}>
-              <Text style={styles.statPill}>{profile.gallery} photos</Text>
-              <Text style={styles.statPill}>Voice intro</Text>
-              <Text style={styles.statPill}>Video loop</Text>
-            </View>
           </View>
         </ImageBackground>
       </TouchableOpacity>
 
-      <View style={styles.thumbZone}>
-        <TouchableOpacity onPress={previous} style={styles.roundAction}><Text style={styles.roundActionText}>Back</Text></TouchableOpacity>
+      <View style={styles.actionDock}>
+        <TouchableOpacity onPress={previous} style={styles.smallAction}><Text style={styles.smallActionText}>Back</Text></TouchableOpacity>
         <TouchableOpacity onPress={passProfile} style={styles.passAction}><Text style={styles.passActionText}>Pass</Text></TouchableOpacity>
         <TouchableOpacity onPress={likeProfile} style={styles.likeAction}><Text style={styles.likeActionText}>Like</Text></TouchableOpacity>
-        <TouchableOpacity onPress={likeProfile} style={styles.sparkAction}><Text style={styles.sparkActionText}>Top</Text></TouchableOpacity>
+        <TouchableOpacity onPress={likeProfile} style={styles.topAction}><Text style={styles.topActionText}>Top</Text></TouchableOpacity>
       </View>
 
       {showMatch && (
-        <LinearGradient colors={['#ff2f73', '#ff7a59']} style={styles.matchCard}>
-          <Text style={styles.matchKicker}>You matched</Text>
-          <Text style={styles.matchTitle}>Start with {profile.name}</Text>
-          <Text style={styles.matchCopy}>Reply window: 23h 42m. Use a prompt now while the match is warm.</Text>
-          <View style={styles.matchPromptRow}>
-            {openers.slice(0, 2).map((item) => <Text key={item} style={styles.matchPrompt}>{item}</Text>)}
-          </View>
+        <LinearGradient colors={['#ff2f73', '#ff7a59']} style={styles.matchSheet}>
+          <Text style={styles.matchKicker}>It is a match</Text>
+          <Text style={styles.matchTitle}>Say hi to {profile.name}</Text>
+          {openers.map((item) => <Text key={item} style={styles.matchPrompt}>{item}</Text>)}
           <View style={styles.matchActions}>
             <TouchableOpacity onPress={dismissMatch} style={styles.matchSecondary}><Text style={styles.matchSecondaryText}>Keep swiping</Text></TouchableOpacity>
-            <TouchableOpacity onPress={openChat} style={styles.matchPrimary}><Text style={styles.matchPrimaryText}>Open chat</Text></TouchableOpacity>
+            <TouchableOpacity onPress={openChat} style={styles.matchPrimary}><Text style={styles.matchPrimaryText}>Chat</Text></TouchableOpacity>
           </View>
         </LinearGradient>
       )}
-
-      <View style={styles.expressionGrid}>
-        <View style={styles.expressionCard}>
-          <Text style={styles.kicker}>Voice prompt</Text>
-          <Text style={styles.expressionText}>{profile.voiceNote}</Text>
-        </View>
-        <View style={styles.expressionCard}>
-          <Text style={styles.kicker}>Music</Text>
-          <Text style={styles.expressionText}>{profile.song}</Text>
-        </View>
-      </View>
-
-      <View style={styles.panelBlush}>
-        <View style={styles.panelHeader}>
-          <Text style={styles.kicker}>Compatibility answers</Text>
-          <Text style={styles.smallBadge}>6 of 7 aligned</Text>
-        </View>
-        {profile.answers.map((answer) => <Text key={answer} style={styles.insight}>{answer}</Text>)}
-        <Text style={styles.quoteText}>"{profile.quote}"</Text>
-      </View>
-
-      <View style={styles.pollCard}>
-        <Text style={styles.kickerLight}>Vibe check</Text>
-        <Text style={styles.pollTitle}>{profile.poll.question}</Text>
-        <View style={styles.pollSplit}>
-          <TouchableOpacity onPress={() => setPollYes(true)} style={[styles.pollChoice, pollYes && styles.pollChoiceActive]}>
-            <Text style={[styles.pollText, pollYes && styles.pollTextActive]}>Yes {profile.poll.yes}%</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setPollYes(false)} style={[styles.pollChoice, !pollYes && styles.pollChoiceActive]}>
-            <Text style={[styles.pollText, !pollYes && styles.pollTextActive]}>No {profile.poll.no}%</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ToggleRow title="Verified-only discovery" value={verifiedOnly} onPress={() => setVerifiedOnly(!verifiedOnly)} />
     </View>
+  );
+}
+
+function ShortcutRail({
+  activeSection,
+  setActiveSection,
+}: {
+  activeSection: Section | null;
+  setActiveSection: (section: Section | null) => void;
+}) {
+  return (
+    <View style={styles.shortcutRail}>
+      {shortcuts.map((item) => (
+        <TouchableOpacity
+          key={item.id}
+          onPress={() => setActiveSection(activeSection === item.id ? null : item.id)}
+          style={[styles.shortcut, activeSection === item.id && styles.shortcutActive]}
+        >
+          <Text style={[styles.shortcutLabel, activeSection === item.id && styles.shortcutLabelActive]}>{item.label}</Text>
+          <Text style={[styles.shortcutTitle, activeSection === item.id && styles.shortcutTitleActive]}>{item.title}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+function HomeNudge({ profile, openProfile }: { profile: ProfileSeed; openProfile: () => void }) {
+  return (
+    <TouchableOpacity onPress={openProfile} style={styles.homeNudge}>
+      <View>
+        <Text style={styles.kicker}>Today</Text>
+        <Text style={styles.nudgeTitle}>{profile.name} likes thoughtful openers</Text>
+      </View>
+      <Text style={styles.nudgeAction}>View</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -413,9 +357,8 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.kicker}>After-match inbox</Text>
+      <Text style={styles.kicker}>Inbox</Text>
       <Text style={styles.title}>Elena is typing</Text>
-      <Text style={styles.notice}>New matches stay pinned for 24 hours so users are not left alone after the match.</Text>
       <View style={styles.newMatches}>
         {profiles.map((profile) => (
           <View key={profile.id} style={styles.matchAvatarWrap}>
@@ -425,7 +368,7 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
         ))}
       </View>
       <View style={styles.signalRow}>
-        <Text style={styles.signal}>Read receipts {readReceipts ? 'on' : 'off'}</Text>
+        <Text style={styles.signal}>Read {readReceipts ? 'on' : 'off'}</Text>
         <Text style={styles.signal}>Typing live</Text>
         <Text style={styles.signal}>{modeLabel}</Text>
       </View>
@@ -472,9 +415,9 @@ function Premium({ tokens, setTokens, boosted, setBoosted, activePlan }: {
   return (
     <View>
       <LinearGradient colors={['#ff2f73', '#ff7a59', '#8a3ffc']} style={styles.walletHero}>
-        <Text style={styles.kickerLight}>RomChat wallet</Text>
+        <Text style={styles.kickerLight}>RomChat Plus</Text>
         <Text style={styles.balance}>{tokens} tokens</Text>
-        <Text style={styles.heroCopy}>Active tier: {activePlan}. Gifts, boosts, unblur, and priority likes stay in one place.</Text>
+        <Text style={styles.heroCopy}>Boost, unblur admirers, and send priority likes without crowding discovery.</Text>
       </LinearGradient>
       {plans.map((plan) => (
         <View key={plan.name} style={styles.planCard}>
@@ -485,14 +428,6 @@ function Premium({ tokens, setTokens, boosted, setBoosted, activePlan }: {
           {plan.perks.map((perk) => <Text key={perk} style={styles.planPerk}>{perk}</Text>)}
         </View>
       ))}
-      <View style={styles.panel}>
-        <Text style={styles.kicker}>A la carte</Text>
-        {['Unblur one admirer - 25 tokens', 'Undo last pass - 10 tokens', 'Priority like - 18 tokens', 'Specific read receipt - 8 tokens'].map((item) => (
-          <TouchableOpacity key={item} onPress={() => setTokens((value) => Math.max(0, value - 8))} style={styles.listItem}>
-            <Text style={styles.listTitle}>{item}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
       <TouchableOpacity onPress={() => setBoosted(!boosted)} style={[styles.boostButton, boosted && styles.boostButtonActive]}>
         <Text style={styles.boostText}>{boosted ? 'Spotlight active for 30 minutes' : 'Boost profile for peak hour'}</Text>
       </TouchableOpacity>
@@ -500,20 +435,23 @@ function Premium({ tokens, setTokens, boosted, setBoosted, activePlan }: {
   );
 }
 
-function Safety({ incognito, setIncognito, antiGrab, setAntiGrab }: {
+function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, setVerifiedOnly }: {
   incognito: boolean;
   setIncognito: (value: boolean) => void;
   antiGrab: boolean;
   setAntiGrab: (value: boolean) => void;
+  verifiedOnly: boolean;
+  setVerifiedOnly: (value: boolean) => void;
 }) {
   return (
     <View>
       <View style={styles.panel}>
-        <Text style={styles.kicker}>Trust center</Text>
-        <Text style={styles.title}>Feel safe before you flirt</Text>
+        <Text style={styles.kicker}>Trust</Text>
+        <Text style={styles.title}>Date safely</Text>
+        <ToggleRow title="Verified-only discovery" value={verifiedOnly} onPress={() => setVerifiedOnly(!verifiedOnly)} />
         <ToggleRow title="Incognito visibility" value={incognito} onPress={() => setIncognito(!incognito)} />
         <ToggleRow title="Anti-screengrab blocks" value={antiGrab} onPress={() => setAntiGrab(!antiGrab)} />
-        {['Selfie verification required', 'Report profile', 'Block this member', 'Block phone contacts', 'Private media watermarking'].map((item) => (
+        {['Selfie verification', 'Report profile', 'Block contacts'].map((item) => (
           <TouchableOpacity key={item} style={styles.listItem}>
             <Text style={styles.listTitle}>{item}</Text>
             <Text style={styles.caption}>Ready</Text>
@@ -524,7 +462,7 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab }: {
         <Text style={styles.score}>97</Text>
         <View style={{ flex: 1 }}>
           <Text style={styles.scoreTitle}>Safety score</Text>
-          <Text style={styles.caption}>Identity, pace, content, and consent signals are healthy.</Text>
+          <Text style={styles.caption}>Identity and consent signals are healthy.</Text>
         </View>
       </View>
     </View>
@@ -532,32 +470,23 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab }: {
 }
 
 function Profile({ strength, incognito }: { strength: number; incognito: boolean }) {
-  const bioDrafts = [
-    'I am looking for something warm, direct, and built around small rituals.',
-    'Best dates: a walk with room for honest conversation, then food worth remembering.',
-  ];
-
   return (
     <View>
       <View style={styles.panel}>
-        <Text style={styles.kicker}>Profile completion</Text>
-        <Text style={styles.title}>Profile strength {strength}%</Text>
+        <Text style={styles.kicker}>Profile</Text>
+        <Text style={styles.title}>Strength {strength}%</Text>
         <View style={styles.progress}><View style={[styles.progressFill, { width: `${strength}%` }]} /></View>
-        <View style={styles.profileTaskGrid}>
-          {['Add 6 photos', 'Record voice', 'Pick a song', 'Answer 7 prompts'].map((item) => (
-            <View key={item} style={styles.profileTask}><Text style={styles.profileTaskText}>{item}</Text></View>
-          ))}
-        </View>
-        {bioDrafts.map((bio) => <Text key={bio} style={styles.insight}>{bio}</Text>)}
-      </View>
-      <View style={styles.panel}>
-        <Text style={styles.kicker}>Authenticity studio</Text>
-        {['10-second voice intro', 'Short looping video prompt', 'Three vibe polls', 'Intent badge', 'Selfie verification'].map((item) => (
+        {['Add 6 photos', 'Record voice', 'Pick a song', 'Answer 7 prompts'].map((item) => (
           <View key={item} style={styles.listItem}>
             <Text style={styles.listTitle}>{item}</Text>
-            <Text style={styles.caption}>{item === 'Intent badge' && incognito ? 'Visible after like' : 'Ready'}</Text>
+            <Text style={styles.caption}>{item === 'Answer 7 prompts' && incognito ? 'Visible after like' : 'Ready'}</Text>
           </View>
         ))}
+      </View>
+      <View style={styles.panel}>
+        <Text style={styles.kicker}>Bio assistant</Text>
+        <Text style={styles.insight}>I am looking for something warm, direct, and built around small rituals.</Text>
+        <Text style={styles.insight}>Best dates: a walk with room for honest conversation, then food worth remembering.</Text>
       </View>
     </View>
   );
@@ -575,94 +504,65 @@ function ToggleRow({ title, value, onPress }: { title: string; value: boolean; o
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#ff2f73' },
-  content: { paddingHorizontal: 16, paddingTop: 14, backgroundColor: '#fff4f8' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 28, padding: 14, marginBottom: 12 },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  logo: { width: 48, height: 48, borderRadius: 16, borderWidth: 2, borderColor: 'rgba(255,255,255,0.9)' },
-  brand: { fontSize: 28, fontWeight: '900', color: 'white' },
-  caption: { color: '#8a2947', fontWeight: '800', lineHeight: 19 },
-  captionLight: { color: '#ffe6ef', fontWeight: '800', lineHeight: 19 },
-  brandMark: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center' },
-  brandMarkText: { color: '#ff2f73', fontWeight: '900', fontSize: 18 },
-  progressHero: { backgroundColor: 'white', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#ffd0df', marginBottom: 14 },
-  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  progressTitle: { color: '#2b0716', fontSize: 18, fontWeight: '900' },
-  progressPercent: { color: '#ff2f73', fontWeight: '900' },
-  stepRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12 },
-  stepPill: { backgroundColor: '#fff0f6', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: '#ffd0df' },
-  stepPillDone: { backgroundColor: '#ff2f73', borderColor: '#ff2f73' },
-  stepText: { color: '#8a2947', fontWeight: '900', fontSize: 11 },
-  stepTextDone: { color: 'white' },
-  deckShadow: { borderRadius: 34, marginBottom: 12, shadowColor: '#a0003a', shadowOpacity: 0.28, shadowRadius: 20, shadowOffset: { width: 0, height: 14 }, elevation: 10 },
-  profileCard: { height: 590, borderRadius: 34, overflow: 'hidden', justifyContent: 'space-between' },
-  profilePhoto: { borderRadius: 34 },
+  safe: { flex: 1, backgroundColor: '#fff6f9' },
+  content: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: '#fff6f9' },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  logo: { width: 42, height: 42, borderRadius: 14 },
+  brand: { color: '#ff2f73', fontSize: 28, fontWeight: '900' },
+  caption: { color: '#9a5269', fontWeight: '800', lineHeight: 18 },
+  safePill: { backgroundColor: '#ffe4ee', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
+  safePillText: { color: '#8a2947', fontWeight: '900' },
+  discovery: { marginBottom: 10 },
+  deckShadow: { borderRadius: 30, marginBottom: 12, shadowColor: '#a0003a', shadowOpacity: 0.24, shadowRadius: 18, shadowOffset: { width: 0, height: 12 }, elevation: 8 },
+  profileCard: { height: 610, borderRadius: 30, overflow: 'hidden', justifyContent: 'space-between' },
+  profilePhoto: { borderRadius: 30 },
   photoOverlay: { ...StyleSheet.absoluteFillObject },
-  cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18 },
-  verifiedBadge: { backgroundColor: '#1da1f2', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
-  verifiedText: { color: 'white', fontWeight: '900' },
-  cardBadge: { backgroundColor: 'rgba(255,255,255,0.94)', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
-  cardBadgeText: { color: '#ff2f73', fontWeight: '900' },
-  photoDots: { position: 'absolute', left: 18, right: 18, top: 62, flexDirection: 'row', gap: 6 },
-  photoDot: { flex: 1, height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.38)' },
+  photoDots: { position: 'absolute', left: 18, right: 18, top: 14, flexDirection: 'row', gap: 6 },
+  photoDot: { flex: 1, height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.35)' },
   photoDotActive: { backgroundColor: 'white' },
+  cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, paddingTop: 30 },
+  verifiedBadge: { color: 'white', backgroundColor: '#1da1f2', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, fontWeight: '900' },
+  cardBadge: { color: '#ff2f73', backgroundColor: 'white', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8, fontWeight: '900' },
   cardCopy: { padding: 20 },
-  cardTitle: { color: 'white', fontSize: 46, fontWeight: '900' },
-  cardSub: { color: '#ffd1df', fontSize: 16, fontWeight: '900', marginTop: 6 },
-  cardPrompt: { color: 'white', fontSize: 18, lineHeight: 27, marginTop: 12, fontWeight: '700' },
-  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 },
+  cardTitle: { color: 'white', fontSize: 48, fontWeight: '900' },
+  cardSub: { color: '#ffd1df', fontSize: 16, fontWeight: '900', marginTop: 5 },
+  cardPrompt: { color: 'white', fontSize: 18, lineHeight: 26, marginTop: 12, fontWeight: '800' },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
   photoTag: { color: 'white', backgroundColor: 'rgba(255,255,255,0.2)', overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, fontWeight: '900' },
-  profileStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  statPill: { color: '#2b0716', backgroundColor: 'rgba(255,255,255,0.88)', overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, fontWeight: '900', fontSize: 12 },
-  thumbZone: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 16 },
-  roundAction: { backgroundColor: 'white', paddingHorizontal: 13, paddingVertical: 13, borderRadius: 999, borderWidth: 1, borderColor: '#ffd0df' },
-  roundActionText: { color: '#8a2947', fontWeight: '900' },
-  passAction: { backgroundColor: 'white', paddingHorizontal: 22, paddingVertical: 15, borderRadius: 999, borderWidth: 1, borderColor: '#ffd0df' },
+  actionDock: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  smallAction: { backgroundColor: 'white', paddingHorizontal: 14, paddingVertical: 14, borderRadius: 999, borderWidth: 1, borderColor: '#ffd0df' },
+  smallActionText: { color: '#8a2947', fontWeight: '900' },
+  passAction: { backgroundColor: 'white', paddingHorizontal: 24, paddingVertical: 15, borderRadius: 999, borderWidth: 1, borderColor: '#ffd0df' },
   passActionText: { color: '#8a2947', fontWeight: '900' },
-  likeAction: { backgroundColor: '#ff2f73', paddingHorizontal: 36, paddingVertical: 16, borderRadius: 999 },
+  likeAction: { backgroundColor: '#ff2f73', paddingHorizontal: 38, paddingVertical: 16, borderRadius: 999 },
   likeActionText: { color: 'white', fontWeight: '900' },
-  sparkAction: { backgroundColor: '#ffcf33', paddingHorizontal: 18, paddingVertical: 15, borderRadius: 999 },
-  sparkActionText: { color: '#4a2600', fontWeight: '900' },
-  matchCard: { borderRadius: 28, padding: 18, marginBottom: 14 },
+  topAction: { backgroundColor: '#ffcf33', paddingHorizontal: 18, paddingVertical: 15, borderRadius: 999 },
+  topActionText: { color: '#4a2600', fontWeight: '900' },
+  matchSheet: { borderRadius: 26, padding: 18, marginTop: 14 },
   matchKicker: { color: '#ffe9f1', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
-  matchTitle: { color: 'white', fontSize: 30, fontWeight: '900', marginTop: 6 },
-  matchCopy: { color: '#ffe9f1', fontWeight: '800', lineHeight: 22, marginTop: 8 },
-  matchPromptRow: { gap: 8, marginTop: 12 },
-  matchPrompt: { color: '#2b0716', backgroundColor: 'white', borderRadius: 16, padding: 12, fontWeight: '800', lineHeight: 20 },
+  matchTitle: { color: 'white', fontSize: 30, fontWeight: '900', marginTop: 5, marginBottom: 10 },
+  matchPrompt: { color: '#2b0716', backgroundColor: 'white', borderRadius: 16, padding: 12, fontWeight: '800', lineHeight: 20, marginTop: 8 },
   matchActions: { flexDirection: 'row', gap: 10, marginTop: 14 },
   matchSecondary: { flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.18)' },
   matchSecondaryText: { color: 'white', fontWeight: '900' },
   matchPrimary: { flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 999, backgroundColor: 'white' },
   matchPrimaryText: { color: '#ff2f73', fontWeight: '900' },
-  expressionGrid: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  expressionCard: { flex: 1, backgroundColor: '#ffe4ee', borderRadius: 22, padding: 14, borderWidth: 1, borderColor: '#ffc0d5' },
-  expressionText: { color: '#8a2947', fontWeight: '900', lineHeight: 20 },
-  homeRail: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
-  sectionCard: { width: '48.5%', backgroundColor: 'white', borderRadius: 22, padding: 14, borderWidth: 1, borderColor: '#ffd0df' },
-  sectionCardActive: { backgroundColor: '#ff2f73', borderColor: '#ff2f73' },
-  sectionLabel: { color: '#ff2f73', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
-  sectionLabelActive: { color: '#ffe9f1' },
-  sectionTitle: { color: '#2b0716', fontWeight: '900', fontSize: 17, marginTop: 6 },
-  sectionTitleActive: { color: 'white' },
-  sectionMeta: { color: '#9c5a70', fontWeight: '700', lineHeight: 18, marginTop: 5, fontSize: 12 },
-  sectionMetaActive: { color: '#ffe9f1' },
-  panel: { backgroundColor: 'white', borderRadius: 26, borderWidth: 1, borderColor: '#ffd0df', padding: 18, marginBottom: 14 },
-  panelBlush: { backgroundColor: '#fffafd', borderRadius: 26, borderWidth: 1, borderColor: '#ffd0df', padding: 18, marginBottom: 14 },
-  panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  shortcutRail: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  shortcut: { flex: 1, backgroundColor: 'white', borderRadius: 18, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#ffd0df' },
+  shortcutActive: { backgroundColor: '#ff2f73', borderColor: '#ff2f73' },
+  shortcutLabel: { color: '#ff2f73', fontWeight: '900', fontSize: 12 },
+  shortcutLabelActive: { color: '#ffe9f1' },
+  shortcutTitle: { color: '#2b0716', fontWeight: '900', marginTop: 4, fontSize: 12 },
+  shortcutTitleActive: { color: 'white' },
+  homeNudge: { backgroundColor: 'white', borderRadius: 22, padding: 16, borderWidth: 1, borderColor: '#ffd0df', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  nudgeTitle: { color: '#2b0716', fontWeight: '900', fontSize: 16, marginTop: 3 },
+  nudgeAction: { color: '#ff2f73', fontWeight: '900' },
+  panel: { backgroundColor: 'white', borderRadius: 24, borderWidth: 1, borderColor: '#ffd0df', padding: 18, marginBottom: 14 },
   kicker: { color: '#ff2f73', fontWeight: '900', textTransform: 'uppercase', marginBottom: 8, fontSize: 12 },
   kickerLight: { color: '#ffe9f1', fontWeight: '900', textTransform: 'uppercase', marginBottom: 8, fontSize: 12 },
-  smallBadge: { color: '#4a2600', backgroundColor: '#ffcf33', overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, fontWeight: '900', fontSize: 12 },
-  title: { color: '#2b0716', fontSize: 30, fontWeight: '900', marginBottom: 12 },
-  notice: { backgroundColor: '#fff0f6', color: '#8a2947', padding: 14, borderRadius: 18, fontWeight: '800', lineHeight: 22, marginBottom: 12 },
+  title: { color: '#2b0716', fontSize: 28, fontWeight: '900', marginBottom: 12 },
   insight: { color: '#5f1730', backgroundColor: '#fff0f6', borderRadius: 16, padding: 13, marginTop: 8, fontWeight: '800', lineHeight: 21 },
-  quoteText: { color: '#2b0716', fontSize: 18, fontWeight: '900', lineHeight: 25, marginTop: 12 },
-  pollCard: { backgroundColor: '#2b0716', borderRadius: 26, padding: 18, marginBottom: 14 },
-  pollTitle: { color: 'white', fontSize: 22, fontWeight: '900', marginBottom: 14 },
-  pollSplit: { flexDirection: 'row', gap: 10 },
-  pollChoice: { flex: 1, borderWidth: 1, borderColor: '#8a5970', padding: 14, borderRadius: 18, alignItems: 'center' },
-  pollChoiceActive: { backgroundColor: '#ffcf33', borderColor: '#ffcf33' },
-  pollText: { color: '#ffe4ee', fontWeight: '900' },
-  pollTextActive: { color: '#2b0716' },
   newMatches: { flexDirection: 'row', gap: 12, marginBottom: 14 },
   matchAvatarWrap: { alignItems: 'center', gap: 6 },
   matchAvatar: { width: 54, height: 54, borderRadius: 27, borderWidth: 3, borderColor: '#ff2f73' },
@@ -691,10 +591,10 @@ const styles = StyleSheet.create({
   input: { flex: 1, borderWidth: 1, borderColor: '#ffc0d5', borderRadius: 999, paddingHorizontal: 16, color: '#2b0716', backgroundColor: '#fffafd' },
   send: { backgroundColor: '#2b0716', borderRadius: 999, paddingHorizontal: 16, justifyContent: 'center' },
   sendText: { color: 'white', fontWeight: '900' },
-  walletHero: { borderRadius: 28, padding: 20, marginBottom: 14 },
-  balance: { color: 'white', fontSize: 48, fontWeight: '900' },
+  walletHero: { borderRadius: 26, padding: 20, marginBottom: 14 },
+  balance: { color: 'white', fontSize: 46, fontWeight: '900' },
   heroCopy: { color: '#ffe9f1', fontWeight: '800', lineHeight: 22, marginTop: 8 },
-  planCard: { backgroundColor: 'white', borderRadius: 24, padding: 18, borderWidth: 1, borderColor: '#ffd0df', marginBottom: 12 },
+  planCard: { backgroundColor: 'white', borderRadius: 22, padding: 18, borderWidth: 1, borderColor: '#ffd0df', marginBottom: 12 },
   planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   planName: { color: '#2b0716', fontSize: 24, fontWeight: '900' },
   planPrice: { color: '#ff2f73', fontWeight: '900', fontSize: 18 },
@@ -715,7 +615,4 @@ const styles = StyleSheet.create({
   scoreTitle: { color: '#2b0716', fontSize: 20, fontWeight: '900', marginBottom: 4 },
   progress: { height: 9, backgroundColor: '#ffe4ee', borderRadius: 999, overflow: 'hidden', marginVertical: 12 },
   progressFill: { height: 9, backgroundColor: '#ff2f73' },
-  profileTaskGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  profileTask: { width: '48%', backgroundColor: '#fff0f6', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#ffd0df' },
-  profileTaskText: { color: '#8a2947', fontWeight: '900', lineHeight: 18 },
 });
