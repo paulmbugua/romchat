@@ -1,0 +1,141 @@
+import {
+  activateBoost,
+  addOns,
+  boosts,
+  createReport,
+  createSwipe,
+  createVerification,
+  getBootstrap,
+  getMessages,
+  getProfiles,
+  getPrivacy,
+  getWallet,
+  gifts,
+  premiumPlans,
+  sendGift,
+  sendMessage,
+  topUpWallet,
+  updatePrivacy,
+} from '../services/romchatRepository.js';
+
+function sendError(res, error) {
+  res.status(error.status || 500).json({ message: error.message || 'RomChat request failed.' });
+}
+
+export function createRomchatController(io) {
+  return {
+    async bootstrap(_req, res) {
+      res.json(await getBootstrap());
+    },
+    async discovery(req, res) {
+      const verifiedOnly = String(req.query.verifiedOnly ?? 'true') !== 'false';
+      res.json({ profiles: await getProfiles({ verifiedOnly }), generatedAt: new Date().toISOString() });
+    },
+    async swipe(req, res) {
+      try {
+        const result = await createSwipe(req.body || {});
+        io?.emit('romchat:swipe', { ...req.body, ...result, createdAt: new Date().toISOString() });
+        res.status(201).json(result);
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async messages(req, res) {
+      res.json({ messages: await getMessages(req.params.matchId), generatedAt: new Date().toISOString() });
+    },
+    async sendMessage(req, res) {
+      try {
+        const message = await sendMessage(req.body || {});
+        io?.to(message.matchId).emit('romchat:message', message);
+        res.status(201).json({ message, trustInsight: message.risk === 'review' ? 'Message queued for trust review.' : 'Message delivered.' });
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async disappearingMessage(req, res) {
+      try {
+        const message = await sendMessage({ ...(req.body || {}), expiresInSeconds: req.body?.expiresInSeconds || 86400, viewOnce: Boolean(req.body?.viewOnce) });
+        io?.to(message.matchId).emit('romchat:message', message);
+        res.status(201).json({ message });
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async typing(req, res) {
+      const event = { matchId: req.body?.matchId || 'match_elena', userId: req.body?.userId || 'me', typing: req.body?.typing !== false, at: new Date().toISOString() };
+      io?.to(event.matchId).emit('romchat:typing', event);
+      res.status(202).json(event);
+    },
+    async readReceipts(req, res) {
+      const receipt = { matchId: req.body?.matchId || 'match_elena', messageIds: Array.isArray(req.body?.messageIds) ? req.body.messageIds : [], readAt: new Date().toISOString() };
+      io?.to(receipt.matchId).emit('romchat:read', receipt);
+      res.json(receipt);
+    },
+    async privacy(req, res) {
+      res.json({ privacy: await getPrivacy() });
+    },
+    async updatePrivacy(req, res) {
+      const privacy = await updatePrivacy(req.body || {});
+      io?.emit('romchat:privacy', privacy);
+      res.json({ privacy });
+    },
+    async report(req, res) {
+      const report = await createReport(req.body || {});
+      io?.emit('romchat:report', report);
+      res.status(201).json({ report, message: 'Report received by RomChat safety.' });
+    },
+    async verification(req, res) {
+      const request = await createVerification(req.body || {});
+      res.status(201).json({ request, message: 'Verification submitted for review.' });
+    },
+    async features(_req, res) {
+      res.json({ premiumPlans, gifts, boosts, addOns, privacy: await getPrivacy(), conversation: { readReceipts: true, typingIndicators: true, disappearingMessages: true } });
+    },
+    async premium(_req, res) {
+      res.json({ plans: premiumPlans, addOns, activeTier: 'gold' });
+    },
+    async subscribe(req, res) {
+      const plan = premiumPlans.find((item) => item.id === req.body?.planId);
+      if (!plan || plan.id === 'free') return res.status(400).json({ message: 'A paid planId is required.' });
+      res.status(201).json({ subscription: { id: `sub_${Date.now()}`, planId: plan.id, status: 'active', startedAt: new Date().toISOString() }, plan });
+    },
+    async boost(req, res) {
+      const result = await activateBoost(req.body || {});
+      io?.emit('romchat:boost', result.boost);
+      res.status(201).json(result);
+    },
+    async gift(req, res) {
+      try {
+        const result = await sendGift(req.body || {});
+        io?.to(result.gift.matchId).emit('romchat:gift', result.gift);
+        res.status(201).json(result);
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async wallet(_req, res) {
+      res.json(await getWallet());
+    },
+    async topUp(req, res) {
+      try {
+        res.status(201).json(await topUpWallet(req.body?.amount));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async icebreakers(req, res) {
+      const profiles = await getProfiles({ verifiedOnly: false });
+      const profile = profiles.find((item) => item.id === req.body?.profileId) || profiles[0];
+      const anchor = profile?.tags?.[0] || 'your profile';
+      res.json({ openers: [`I noticed ${anchor}. What made it stick for you?`, `Your ${profile?.intent || 'dating'} energy feels rare. What pace feels good?`, `Quick vibe check: defend your poll answer in one sentence.`] });
+    },
+    async bio(req, res) {
+      const interestText = (req.body?.interests || []).slice(0, 3).join(', ') || 'good conversation';
+      const valueText = (req.body?.values || []).slice(0, 2).join(' and ') || 'kindness and consistency';
+      res.json({ bios: [`Looking for ${req.body?.intent || 'intentional connection'}. I light up around ${interestText}, and care about ${valueText}.`, `Dating with intention and humor. Best with someone who values ${valueText}.`] });
+    },
+    async votePoll(req, res) {
+      res.status(201).json({ pollId: req.params.pollId, optionId: req.body?.optionId, message: 'Vote saved.' });
+    },
+  };
+}

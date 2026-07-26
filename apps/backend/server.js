@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import http from 'http';
 import { Server } from 'socket.io';
 import crypto from 'crypto';
+import romchatRoutes from './routes/romchatRoutes.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -29,6 +30,7 @@ app.use(cors({
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '5mb' }));
+app.use('/api/romchat', romchatRoutes(io));
 
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomBytes(6).toString('hex')}`;

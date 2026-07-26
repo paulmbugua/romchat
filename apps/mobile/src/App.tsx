@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRomChatData } from './features/romchat/hooks';
 
 type Section = 'chat' | 'premium' | 'safety' | 'profile';
 type MessageMode = 'standard' | 'timed' | 'viewOnce';
@@ -38,7 +39,7 @@ type ProfileSeed = {
   photo: ImageSourcePropType;
 };
 
-const profiles: ProfileSeed[] = [
+const localProfiles: ProfileSeed[] = [
   {
     id: 'elena',
     name: 'Elena',
@@ -111,9 +112,9 @@ const plans = [
 ];
 
 const gifts = [
-  { name: 'Rose', tokens: 12 },
-  { name: 'Coffee', tokens: 30 },
-  { name: 'Spotlight', tokens: 80 },
+  { id: 'rose', name: 'Rose', tokens: 12 },
+  { id: 'coffee', name: 'Coffee', tokens: 30 },
+  { id: 'spotlight', name: 'Spotlight', tokens: 80 },
 ];
 
 const starterMessages = [
@@ -122,7 +123,15 @@ const starterMessages = [
   ['Elena', 'That deserves a golden-hour walk. Saturday?', 'Typing now'],
 ];
 
+const screenTitles: Record<Section, string> = {
+  chat: 'Inbox',
+  premium: 'RomChat Plus',
+  safety: 'Safety Center',
+  profile: 'My Profile',
+};
+
 export default function App() {
+  const romchat = useRomChatData(localProfiles);
   const [activeSection, setActiveSection] = useState<Section | null>(null);
   const [index, setIndex] = useState(0);
   const [verifiedOnly, setVerifiedOnly] = useState(true);
@@ -135,25 +144,25 @@ export default function App() {
   const [showMatch, setShowMatch] = useState(false);
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 16);
+  const profiles = romchat.profiles.length ? (romchat.profiles as ProfileSeed[]) : localProfiles;
   const profile = profiles[index % profiles.length]!;
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
   const activePlan = boosted ? 'Platinum' : 'Gold';
 
   function passProfile() {
+    void romchat.swipe(profile.id, 'pass');
     setIndex((value) => (value + 1) % profiles.length);
     setShowMatch(false);
-    setActiveSection(null);
   }
 
   function previous() {
     setIndex((value) => (value - 1 + profiles.length) % profiles.length);
     setShowMatch(false);
-    setActiveSection(null);
   }
 
-  function likeProfile() {
+  function likeProfile(action: 'like' | 'super_like' = 'like') {
+    void romchat.swipe(profile.id, action);
     setShowMatch(true);
-    setActiveSection(null);
   }
 
   const swipeHandlers = useMemo(
@@ -161,16 +170,74 @@ export default function App() {
       PanResponder.create({
         onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 18 && Math.abs(gesture.dy) < 24,
         onPanResponderRelease: (_event, gesture) => {
-          if (gesture.dx > 48) setShowMatch(true);
+          if (gesture.dx > 48) {
+            void romchat.swipe(profile.id, 'like');
+            setShowMatch(true);
+          }
           if (gesture.dx < -48) {
+            void romchat.swipe(profile.id, 'pass');
             setIndex((value) => (value + 1) % profiles.length);
             setShowMatch(false);
-            setActiveSection(null);
           }
         },
       }).panHandlers,
-    []
+    [profile.id, profiles.length, romchat]
   );
+
+  function renderSection(section: Section) {
+    if (section === 'chat') {
+      return (
+        <Chat
+          readReceipts={readReceipts}
+          setReadReceipts={setReadReceipts}
+          messageMode={messageMode}
+          setMessageMode={setMessageMode}
+          tokens={tokens}
+          setTokens={setTokens}
+          sendMessage={romchat.sendMessage}
+          sendGift={romchat.sendGift}
+          status={romchat.lastAction}
+        />
+      );
+    }
+    if (section === 'premium') {
+      return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} activateBoost={() => { setBoosted(true); void romchat.boost(); }} />;
+    }
+    if (section === 'safety') {
+      return (
+        <Safety
+          incognito={incognito}
+          setIncognito={setIncognito}
+          antiGrab={antiGrab}
+          setAntiGrab={setAntiGrab}
+          verifiedOnly={verifiedOnly}
+          setVerifiedOnly={setVerifiedOnly}
+          updatePrivacy={(next) => void romchat.updatePrivacy(next)}
+          report={() => void romchat.report(profile.id)}
+          verify={romchat.verify}
+          status={romchat.lastAction}
+        />
+      );
+    }
+    return <Profile strength={strength} incognito={incognito} verify={romchat.verify} status={romchat.lastAction} />;
+  }
+
+  if (activeSection) {
+    return (
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff6f9" />
+        <ScreenHeader title={screenTitles[activeSection]} onBack={() => setActiveSection(null)} apiOnline={romchat.apiOnline} />
+        <ScrollView
+          contentContainerStyle={[styles.screenContent, { paddingBottom: 30 + bottomInset }]}
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {renderSection(activeSection)}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
@@ -190,14 +257,15 @@ export default function App() {
             </View>
           </View>
           <TouchableOpacity onPress={() => setActiveSection('safety')} style={styles.safePill}>
-            <Text style={styles.safePillText}>Safe</Text>
+            <Text style={styles.safePillText}>{romchat.apiOnline ? 'Live' : 'Safe'}</Text>
           </TouchableOpacity>
         </View>
 
         <Discover
           profile={profile}
           passProfile={passProfile}
-          likeProfile={likeProfile}
+          likeProfile={() => likeProfile('like')}
+          topProfile={() => likeProfile('super_like')}
           previous={previous}
           swipeHandlers={swipeHandlers}
           showMatch={showMatch}
@@ -206,37 +274,23 @@ export default function App() {
             setShowMatch(false);
             setActiveSection('chat');
           }}
+          profiles={profiles}
         />
 
-        <ShortcutRail activeSection={activeSection} setActiveSection={setActiveSection} />
-
-        {activeSection == null && <HomeNudge profile={profile} openProfile={() => setActiveSection('profile')} />}
-        {activeSection === 'chat' && (
-          <Chat
-            readReceipts={readReceipts}
-            setReadReceipts={setReadReceipts}
-            messageMode={messageMode}
-            setMessageMode={setMessageMode}
-            tokens={tokens}
-            setTokens={setTokens}
-          />
-        )}
-        {activeSection === 'premium' && (
-          <Premium tokens={tokens} setTokens={setTokens} boosted={boosted} setBoosted={setBoosted} activePlan={activePlan} />
-        )}
-        {activeSection === 'safety' && (
-          <Safety
-            incognito={incognito}
-            setIncognito={setIncognito}
-            antiGrab={antiGrab}
-            setAntiGrab={setAntiGrab}
-            verifiedOnly={verifiedOnly}
-            setVerifiedOnly={setVerifiedOnly}
-          />
-        )}
-        {activeSection === 'profile' && <Profile strength={strength} incognito={incognito} />}
+        <ShortcutRail setActiveSection={setActiveSection} />
+        <HomeNudge profile={profile} openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function ScreenHeader({ title, onBack, apiOnline }: { title: string; onBack: () => void; apiOnline: boolean }) {
+  return (
+    <View style={styles.screenHeader}>
+      <TouchableOpacity onPress={onBack} style={styles.backButton}><Text style={styles.backButtonText}>Back</Text></TouchableOpacity>
+      <Text style={styles.screenTitle}>{title}</Text>
+      <Text style={styles.apiPill}>{apiOnline ? 'Live' : 'Local'}</Text>
+    </View>
   );
 }
 
@@ -244,25 +298,26 @@ function Discover({
   profile,
   passProfile,
   likeProfile,
+  topProfile,
   previous,
   swipeHandlers,
   showMatch,
   dismissMatch,
   openChat,
+  profiles,
 }: {
   profile: ProfileSeed;
   passProfile: () => void;
   likeProfile: () => void;
+  topProfile: () => void;
   previous: () => void;
   swipeHandlers: GestureResponderHandlers;
   showMatch: boolean;
   dismissMatch: () => void;
   openChat: () => void;
+  profiles: ProfileSeed[];
 }) {
-  const openers = [
-    `Ask ${profile.name} about ${profile.tags[0]?.toLowerCase()}.`,
-    `Start with: "${profile.poll.question}"`,
-  ];
+  const openers = [`Ask ${profile.name} about ${profile.tags[0]?.toLowerCase()}.`, `Start with: "${profile.poll.question}"`];
 
   return (
     <View style={styles.discovery}>
@@ -291,7 +346,7 @@ function Discover({
         <TouchableOpacity onPress={previous} style={styles.smallAction}><Text style={styles.smallActionText}>Back</Text></TouchableOpacity>
         <TouchableOpacity onPress={passProfile} style={styles.passAction}><Text style={styles.passActionText}>Pass</Text></TouchableOpacity>
         <TouchableOpacity onPress={likeProfile} style={styles.likeAction}><Text style={styles.likeActionText}>Like</Text></TouchableOpacity>
-        <TouchableOpacity onPress={likeProfile} style={styles.topAction}><Text style={styles.topActionText}>Top</Text></TouchableOpacity>
+        <TouchableOpacity onPress={topProfile} style={styles.topAction}><Text style={styles.topActionText}>Top</Text></TouchableOpacity>
       </View>
 
       {showMatch && (
@@ -309,34 +364,24 @@ function Discover({
   );
 }
 
-function ShortcutRail({
-  activeSection,
-  setActiveSection,
-}: {
-  activeSection: Section | null;
-  setActiveSection: (section: Section | null) => void;
-}) {
+function ShortcutRail({ setActiveSection }: { setActiveSection: (section: Section) => void }) {
   return (
     <View style={styles.shortcutRail}>
       {shortcuts.map((item) => (
-        <TouchableOpacity
-          key={item.id}
-          onPress={() => setActiveSection(activeSection === item.id ? null : item.id)}
-          style={[styles.shortcut, activeSection === item.id && styles.shortcutActive]}
-        >
-          <Text style={[styles.shortcutLabel, activeSection === item.id && styles.shortcutLabelActive]}>{item.label}</Text>
-          <Text style={[styles.shortcutTitle, activeSection === item.id && styles.shortcutTitleActive]}>{item.title}</Text>
+        <TouchableOpacity key={item.id} onPress={() => setActiveSection(item.id)} style={styles.shortcut}>
+          <Text style={styles.shortcutLabel}>{item.label}</Text>
+          <Text style={styles.shortcutTitle}>{item.title}</Text>
         </TouchableOpacity>
       ))}
     </View>
   );
 }
 
-function HomeNudge({ profile, openProfile }: { profile: ProfileSeed; openProfile: () => void }) {
+function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; openProfile: () => void; status: string }) {
   return (
     <TouchableOpacity onPress={openProfile} style={styles.homeNudge}>
-      <View>
-        <Text style={styles.kicker}>Today</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.kicker}>{status}</Text>
         <Text style={styles.nudgeTitle}>{profile.name} likes thoughtful openers</Text>
       </View>
       <Text style={styles.nudgeAction}>View</Text>
@@ -344,23 +389,34 @@ function HomeNudge({ profile, openProfile }: { profile: ProfileSeed; openProfile
   );
 }
 
-function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens }: {
+function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, sendMessage, sendGift, status }: {
   readReceipts: boolean;
   setReadReceipts: (value: boolean) => void;
   messageMode: MessageMode;
   setMessageMode: (value: MessageMode) => void;
   tokens: number;
   setTokens: React.Dispatch<React.SetStateAction<number>>;
+  sendMessage: (text: string) => Promise<unknown>;
+  sendGift: (giftId: string) => Promise<void>;
+  status: string;
 }) {
+  const [draft, setDraft] = useState('');
   const modeLabel = messageMode === 'standard' ? 'Standard' : messageMode === 'timed' ? 'Vanishes in 24h' : 'View once';
   const promptChips = ['Ask about the gallery date', 'Send a rose', 'Suggest Saturday coffee'];
 
+  function submit() {
+    const text = draft.trim();
+    if (!text) return;
+    setDraft('');
+    void sendMessage(text);
+  }
+
   return (
     <View style={styles.panel}>
-      <Text style={styles.kicker}>Inbox</Text>
+      <Text style={styles.kicker}>{status}</Text>
       <Text style={styles.title}>Elena is typing</Text>
       <View style={styles.newMatches}>
-        {profiles.map((profile) => (
+        {localProfiles.map((profile) => (
           <View key={profile.id} style={styles.matchAvatarWrap}>
             <Image source={profile.photo} style={styles.matchAvatar} />
             <Text style={styles.matchAvatarText}>{profile.name}</Text>
@@ -375,10 +431,10 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
       <View style={styles.promptRow}>
         {promptChips.map((prompt) => <Text key={prompt} style={styles.promptChip}>{prompt}</Text>)}
       </View>
-      {starterMessages.map(([from, text, status]) => (
+      {starterMessages.map(([from, text, messageStatus]) => (
         <View key={text} style={[styles.bubble, from === 'You' ? styles.sent : styles.received]}>
           <Text style={from === 'You' ? styles.sentText : styles.receivedText}>{text}</Text>
-          <Text style={from === 'You' ? styles.sentMeta : styles.receivedMeta}>{status}</Text>
+          <Text style={from === 'You' ? styles.sentMeta : styles.receivedMeta}>{messageStatus}</Text>
         </View>
       ))}
       <View style={styles.segment}>
@@ -391,31 +447,25 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
       <ToggleRow title="Read receipt add-on" value={readReceipts} onPress={() => setReadReceipts(!readReceipts)} />
       <View style={styles.giftRow}>
         {gifts.map((gift) => (
-          <TouchableOpacity key={gift.name} onPress={() => setTokens((value) => Math.max(0, value - gift.tokens))} style={styles.giftButton}>
+          <TouchableOpacity key={gift.id} onPress={() => { setTokens((value) => Math.max(0, value - gift.tokens)); void sendGift(gift.id); }} style={styles.giftButton}>
             <Text style={styles.giftName}>{gift.name}</Text>
             <Text style={styles.giftMeta}>{gift.tokens} tokens</Text>
           </TouchableOpacity>
         ))}
       </View>
       <View style={styles.composer}>
-        <TextInput placeholder="Send a charming message" style={styles.input} placeholderTextColor="#a45a72" />
-        <TouchableOpacity style={styles.send}><Text style={styles.sendText}>Send</Text></TouchableOpacity>
+        <TextInput value={draft} onChangeText={setDraft} placeholder="Send a charming message" style={styles.input} placeholderTextColor="#a45a72" />
+        <TouchableOpacity onPress={submit} style={styles.send}><Text style={styles.sendText}>Send</Text></TouchableOpacity>
       </View>
     </View>
   );
 }
 
-function Premium({ tokens, setTokens, boosted, setBoosted, activePlan }: {
-  tokens: number;
-  setTokens: React.Dispatch<React.SetStateAction<number>>;
-  boosted: boolean;
-  setBoosted: (value: boolean) => void;
-  activePlan: string;
-}) {
+function Premium({ tokens, boosted, activePlan, activateBoost }: { tokens: number; boosted: boolean; activePlan: string; activateBoost: () => void }) {
   return (
     <View>
       <LinearGradient colors={['#ff2f73', '#ff7a59', '#8a3ffc']} style={styles.walletHero}>
-        <Text style={styles.kickerLight}>RomChat Plus</Text>
+        <Text style={styles.kickerLight}>Active tier: {activePlan}</Text>
         <Text style={styles.balance}>{tokens} tokens</Text>
         <Text style={styles.heroCopy}>Boost, unblur admirers, and send priority likes without crowding discovery.</Text>
       </LinearGradient>
@@ -428,35 +478,48 @@ function Premium({ tokens, setTokens, boosted, setBoosted, activePlan }: {
           {plan.perks.map((perk) => <Text key={perk} style={styles.planPerk}>{perk}</Text>)}
         </View>
       ))}
-      <TouchableOpacity onPress={() => setBoosted(!boosted)} style={[styles.boostButton, boosted && styles.boostButtonActive]}>
+      <TouchableOpacity onPress={activateBoost} style={[styles.boostButton, boosted && styles.boostButtonActive]}>
         <Text style={styles.boostText}>{boosted ? 'Spotlight active for 30 minutes' : 'Boost profile for peak hour'}</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, setVerifiedOnly }: {
+function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, setVerifiedOnly, updatePrivacy, report, verify, status }: {
   incognito: boolean;
   setIncognito: (value: boolean) => void;
   antiGrab: boolean;
   setAntiGrab: (value: boolean) => void;
   verifiedOnly: boolean;
   setVerifiedOnly: (value: boolean) => void;
+  updatePrivacy: (payload: { incognito: boolean; screenshotsBlocked: boolean; visibleToLikedOnly: boolean }) => void;
+  report: () => void;
+  verify: () => Promise<void>;
+  status: string;
 }) {
+  function setPrivacy(next: { verifiedOnly?: boolean; incognito?: boolean; antiGrab?: boolean }) {
+    const values = {
+      verifiedOnly: next.verifiedOnly ?? verifiedOnly,
+      incognito: next.incognito ?? incognito,
+      antiGrab: next.antiGrab ?? antiGrab,
+    };
+    setVerifiedOnly(values.verifiedOnly);
+    setIncognito(values.incognito);
+    setAntiGrab(values.antiGrab);
+    updatePrivacy({ incognito: values.incognito, screenshotsBlocked: values.antiGrab, visibleToLikedOnly: values.verifiedOnly });
+  }
+
   return (
     <View>
       <View style={styles.panel}>
-        <Text style={styles.kicker}>Trust</Text>
+        <Text style={styles.kicker}>{status}</Text>
         <Text style={styles.title}>Date safely</Text>
-        <ToggleRow title="Verified-only discovery" value={verifiedOnly} onPress={() => setVerifiedOnly(!verifiedOnly)} />
-        <ToggleRow title="Incognito visibility" value={incognito} onPress={() => setIncognito(!incognito)} />
-        <ToggleRow title="Anti-screengrab blocks" value={antiGrab} onPress={() => setAntiGrab(!antiGrab)} />
-        {['Selfie verification', 'Report profile', 'Block contacts'].map((item) => (
-          <TouchableOpacity key={item} style={styles.listItem}>
-            <Text style={styles.listTitle}>{item}</Text>
-            <Text style={styles.caption}>Ready</Text>
-          </TouchableOpacity>
-        ))}
+        <ToggleRow title="Verified-only discovery" value={verifiedOnly} onPress={() => setPrivacy({ verifiedOnly: !verifiedOnly })} />
+        <ToggleRow title="Incognito visibility" value={incognito} onPress={() => setPrivacy({ incognito: !incognito })} />
+        <ToggleRow title="Anti-screengrab blocks" value={antiGrab} onPress={() => setPrivacy({ antiGrab: !antiGrab })} />
+        <TouchableOpacity onPress={() => void verify()} style={styles.listItem}><Text style={styles.listTitle}>Selfie verification</Text><Text style={styles.caption}>Submit</Text></TouchableOpacity>
+        <TouchableOpacity onPress={report} style={styles.listItem}><Text style={styles.listTitle}>Report profile</Text><Text style={styles.caption}>Safety team</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.listItem}><Text style={styles.listTitle}>Block contacts</Text><Text style={styles.caption}>Ready</Text></TouchableOpacity>
       </View>
       <View style={styles.safetyScore}>
         <Text style={styles.score}>97</Text>
@@ -469,11 +532,11 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
   );
 }
 
-function Profile({ strength, incognito }: { strength: number; incognito: boolean }) {
+function Profile({ strength, incognito, verify, status }: { strength: number; incognito: boolean; verify: () => Promise<void>; status: string }) {
   return (
     <View>
       <View style={styles.panel}>
-        <Text style={styles.kicker}>Profile</Text>
+        <Text style={styles.kicker}>{status}</Text>
         <Text style={styles.title}>Strength {strength}%</Text>
         <View style={styles.progress}><View style={[styles.progressFill, { width: `${strength}%` }]} /></View>
         {['Add 6 photos', 'Record voice', 'Pick a song', 'Answer 7 prompts'].map((item) => (
@@ -482,6 +545,7 @@ function Profile({ strength, incognito }: { strength: number; incognito: boolean
             <Text style={styles.caption}>{item === 'Answer 7 prompts' && incognito ? 'Visible after like' : 'Ready'}</Text>
           </View>
         ))}
+        <TouchableOpacity onPress={() => void verify()} style={styles.boostButton}><Text style={styles.boostText}>Submit selfie verification</Text></TouchableOpacity>
       </View>
       <View style={styles.panel}>
         <Text style={styles.kicker}>Bio assistant</Text>
@@ -506,6 +570,12 @@ function ToggleRow({ title, value, onPress }: { title: string; value: boolean; o
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff6f9' },
   content: { paddingHorizontal: 16, paddingTop: 12, backgroundColor: '#fff6f9' },
+  screenContent: { paddingHorizontal: 16, paddingTop: 10, backgroundColor: '#fff6f9' },
+  screenHeader: { paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff6f9' },
+  screenTitle: { color: '#2b0716', fontSize: 22, fontWeight: '900' },
+  backButton: { backgroundColor: 'white', borderWidth: 1, borderColor: '#ffd0df', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
+  backButtonText: { color: '#ff2f73', fontWeight: '900' },
+  apiPill: { color: '#8a2947', backgroundColor: '#ffe4ee', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, fontWeight: '900' },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   logo: { width: 42, height: 42, borderRadius: 14 },
@@ -550,11 +620,8 @@ const styles = StyleSheet.create({
   matchPrimaryText: { color: '#ff2f73', fontWeight: '900' },
   shortcutRail: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   shortcut: { flex: 1, backgroundColor: 'white', borderRadius: 18, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#ffd0df' },
-  shortcutActive: { backgroundColor: '#ff2f73', borderColor: '#ff2f73' },
   shortcutLabel: { color: '#ff2f73', fontWeight: '900', fontSize: 12 },
-  shortcutLabelActive: { color: '#ffe9f1' },
   shortcutTitle: { color: '#2b0716', fontWeight: '900', marginTop: 4, fontSize: 12 },
-  shortcutTitleActive: { color: 'white' },
   homeNudge: { backgroundColor: 'white', borderRadius: 22, padding: 16, borderWidth: 1, borderColor: '#ffd0df', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   nudgeTitle: { color: '#2b0716', fontWeight: '900', fontSize: 16, marginTop: 3 },
   nudgeAction: { color: '#ff2f73', fontWeight: '900' },
@@ -599,7 +666,7 @@ const styles = StyleSheet.create({
   planName: { color: '#2b0716', fontSize: 24, fontWeight: '900' },
   planPrice: { color: '#ff2f73', fontWeight: '900', fontSize: 18 },
   planPerk: { color: '#5f1730', fontWeight: '800', paddingVertical: 5 },
-  boostButton: { backgroundColor: '#ffcf33', padding: 18, borderRadius: 22, alignItems: 'center', marginBottom: 14 },
+  boostButton: { backgroundColor: '#ffcf33', padding: 18, borderRadius: 22, alignItems: 'center', marginTop: 12, marginBottom: 14 },
   boostButtonActive: { backgroundColor: '#ff7a59' },
   boostText: { color: '#4a2600', fontWeight: '900' },
   listItem: { backgroundColor: '#fff0f6', borderRadius: 18, padding: 15, marginTop: 10 },
