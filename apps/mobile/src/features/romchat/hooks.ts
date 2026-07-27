@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { romchatApi, type RomChatBootstrap, type RomChatProfile } from './api';
+import { romchatApi, type RomChatBootstrap, type RomChatMessage, type RomChatProfile, type RomChatVideoRequest } from './api';
 
 type LocalProfile = RomChatProfile & {
   photo: unknown;
@@ -50,6 +50,12 @@ export function useRomChatData(localProfiles: LocalProfile[]) {
   const [bootstrap, setBootstrap] = useState<RomChatBootstrap | null>(null);
   const [apiOnline, setApiOnline] = useState(false);
   const [lastAction, setLastAction] = useState('Ready');
+  const [paidMessages, setPaidMessages] = useState<RomChatMessage[]>([
+    { id: 'msg_locked_1', matchId: 'match_elena', from: 'elena', senderId: 'elena', text: 'I sent you a private reply. Unlock it and tell me if Saturday still works.', locked: true, unlockCostTokens: 18, unlockedByActor: false, messageKind: 'paid_reply' },
+  ]);
+  const [videoRequests, setVideoRequests] = useState<RomChatVideoRequest[]>([
+    { id: 'vr_elena_1', matchId: 'match_elena', senderProfileId: 'elena', title: 'Elena invited you to a 2-minute video vibe check', teaser: 'She is online now. Unlock to accept the request before it expires.', unlockCostTokens: 35, status: 'locked' },
+  ]);
 
   useEffect(() => {
     let mounted = true;
@@ -61,6 +67,8 @@ export function useRomChatData(localProfiles: LocalProfile[]) {
         setProfiles(payload.profiles?.length ? mergeProfiles(payload.profiles, localProfiles) : localProfiles);
         setApiOnline(true);
         setLastAction('Live API connected');
+        setPaidMessages((payload.messages || []).filter((message) => message.locked));
+        void romchatApi.videoRequests().then((result) => setVideoRequests(result.videoRequests || [])).catch(() => undefined);
       })
       .catch(() => {
         if (!mounted) return;
@@ -94,6 +102,34 @@ export function useRomChatData(localProfiles: LocalProfile[]) {
       return result;
     } catch {
       setLastAction('Message saved locally');
+      return null;
+    }
+  }, []);
+
+  const unlockMessage = useCallback(async (messageId: string) => {
+    setLastAction('Unlocking private reply');
+    try {
+      const result = await romchatApi.unlockMessage(messageId);
+      setPaidMessages((messages) => messages.map((message) => message.id === messageId ? { ...message, ...result.message, locked: false, unlockedByActor: true } : message));
+      setLastAction(`Unlocked reply for ${result.spent} tokens`);
+      return result;
+    } catch {
+      setPaidMessages((messages) => messages.map((message) => message.id === messageId ? { ...message, locked: false, unlockedByActor: true } : message));
+      setLastAction('Reply unlocked locally');
+      return null;
+    }
+  }, []);
+
+  const unlockVideoRequest = useCallback(async (requestId: string) => {
+    setLastAction('Unlocking video request');
+    try {
+      const result = await romchatApi.unlockVideoRequest(requestId);
+      setVideoRequests((requests) => requests.map((request) => request.id === requestId ? { ...request, ...result.videoRequest, status: 'unlocked' } : request));
+      setLastAction(`Video unlocked for ${result.spent} tokens`);
+      return result;
+    } catch {
+      setVideoRequests((requests) => requests.map((request) => request.id === requestId ? { ...request, status: 'unlocked' } : request));
+      setLastAction('Video request unlocked locally');
       return null;
     }
   }, []);
@@ -148,5 +184,5 @@ export function useRomChatData(localProfiles: LocalProfile[]) {
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, swipe, sendMessage, sendGift, boost, updatePrivacy, report, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, swipe, sendMessage, unlockMessage, unlockVideoRequest, sendGift, boost, updatePrivacy, report, verify };
 }

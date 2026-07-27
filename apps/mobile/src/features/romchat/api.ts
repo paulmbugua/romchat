@@ -30,6 +30,22 @@ export type RomChatMessage = {
   createdAt?: string;
   readAt?: string | null;
   risk?: string;
+  locked?: boolean;
+  unlockCostTokens?: number;
+  unlockedByActor?: boolean;
+  messageKind?: string;
+};
+
+export type RomChatVideoRequest = {
+  id: string;
+  matchId: string;
+  senderProfileId: string;
+  title: string;
+  teaser: string;
+  unlockCostTokens: number;
+  status: 'locked' | 'unlocked' | string;
+  unlockedAt?: string | null;
+  createdAt?: string;
 };
 
 export type RomChatBootstrap = {
@@ -59,6 +75,18 @@ export const romchatApi = {
       method: 'POST',
       body: JSON.stringify({ matchId, text }),
     }),
+  videoRequests: (matchId = 'match_elena') => apiFetch<{ videoRequests: RomChatVideoRequest[] }>(`/api/romchat/video-requests?matchId=${matchId}`),
+  unlockMessage: (messageId: string) =>
+    apiFetch<{ message: RomChatMessage; spent: number; wallet: { balance: number; currency: string } }>(`/api/romchat/messages/${messageId}/unlock`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  unlockVideoRequest: (requestId: string) =>
+    apiFetch<{ videoRequest: RomChatVideoRequest; spent: number; wallet: { balance: number; currency: string } }>(`/api/romchat/video-requests/${requestId}/unlock`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  revenue: () => apiFetch<{ revenue: Record<string, { costTokens: number; title: string; description: string }> }>('/api/romchat/revenue'),
   sendGift: (giftId: string, matchId = 'match_elena') =>
     apiFetch('/api/romchat/gifts', {
       method: 'POST',

@@ -9,11 +9,15 @@ import {
   getMessages,
   getProfiles,
   getPrivacy,
+  getRevenueCatalog,
+  getVideoRequests,
   getWallet,
   gifts,
   premiumPlans,
   sendGift,
   sendMessage,
+  unlockPaidMessage,
+  unlockVideoRequest,
   topUpWallet,
   updatePrivacy,
 } from '../services/romchatRepository.js';
@@ -89,7 +93,31 @@ export function createRomchatController(io) {
       res.status(201).json({ request, message: 'Verification submitted for review.' });
     },
     async features(_req, res) {
-      res.json({ premiumPlans, gifts, boosts, addOns, privacy: await getPrivacy(), conversation: { readReceipts: true, typingIndicators: true, disappearingMessages: true } });
+      res.json({ premiumPlans, gifts, boosts, addOns, revenue: await getRevenueCatalog(), privacy: await getPrivacy(), conversation: { readReceipts: true, typingIndicators: true, disappearingMessages: true, paidReplies: true, paidVideoRequests: true } });
+    },
+    async revenue(_req, res) {
+      res.json({ revenue: await getRevenueCatalog() });
+    },
+    async videoRequests(req, res) {
+      res.json({ videoRequests: await getVideoRequests(req.query.matchId || 'match_elena') });
+    },
+    async unlockMessage(req, res) {
+      try {
+        const result = await unlockPaidMessage(req.params.messageId);
+        io?.to(result.message.matchId).emit('romchat:unlock', { targetType: 'message', targetId: req.params.messageId });
+        res.status(201).json(result);
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async unlockVideo(req, res) {
+      try {
+        const result = await unlockVideoRequest(req.params.requestId);
+        io?.to(result.videoRequest.matchId).emit('romchat:unlock', { targetType: 'video_request', targetId: req.params.requestId });
+        res.status(201).json(result);
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async premium(_req, res) {
       res.json({ plans: premiumPlans, addOns, activeTier: 'gold' });

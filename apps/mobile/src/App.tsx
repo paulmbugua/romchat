@@ -196,6 +196,10 @@ export default function App() {
           setTokens={setTokens}
           sendMessage={romchat.sendMessage}
           sendGift={romchat.sendGift}
+          unlockMessage={romchat.unlockMessage}
+          unlockVideoRequest={romchat.unlockVideoRequest}
+          paidMessages={romchat.paidMessages}
+          videoRequests={romchat.videoRequests}
           status={romchat.lastAction}
         />
       );
@@ -389,7 +393,7 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, sendMessage, sendGift, status }: {
+function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, sendMessage, sendGift, unlockMessage, unlockVideoRequest, paidMessages, videoRequests, status }: {
   readReceipts: boolean;
   setReadReceipts: (value: boolean) => void;
   messageMode: MessageMode;
@@ -398,6 +402,10 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
   setTokens: React.Dispatch<React.SetStateAction<number>>;
   sendMessage: (text: string) => Promise<unknown>;
   sendGift: (giftId: string) => Promise<void>;
+  unlockMessage: (messageId: string) => Promise<unknown>;
+  unlockVideoRequest: (requestId: string) => Promise<unknown>;
+  paidMessages: Array<{ id: string; text: string; locked?: boolean; unlockCostTokens?: number; unlockedByActor?: boolean }>;
+  videoRequests: Array<{ id: string; title: string; teaser: string; unlockCostTokens: number; status: string }>;
   status: string;
 }) {
   const [draft, setDraft] = useState('');
@@ -431,10 +439,28 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
       <View style={styles.promptRow}>
         {promptChips.map((prompt) => <Text key={prompt} style={styles.promptChip}>{prompt}</Text>)}
       </View>
+      {videoRequests.map((request) => (
+        <View key={request.id} style={styles.videoInvite}>
+          <Text style={styles.videoTitle}>{request.title}</Text>
+          <Text style={styles.videoTeaser}>{request.status === 'unlocked' ? 'Video room unlocked. Tap to join when ready.' : request.teaser}</Text>
+          <TouchableOpacity onPress={() => { if (request.status !== 'unlocked') { setTokens((value) => Math.max(0, value - request.unlockCostTokens)); void unlockVideoRequest(request.id); } }} style={[styles.unlockButton, request.status === 'unlocked' && styles.unlockButtonDone]}>
+            <Text style={styles.unlockButtonText}>{request.status === 'unlocked' ? 'Join video' : `Unlock for ${request.unlockCostTokens} tokens`}</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
       {starterMessages.map(([from, text, messageStatus]) => (
         <View key={text} style={[styles.bubble, from === 'You' ? styles.sent : styles.received]}>
           <Text style={from === 'You' ? styles.sentText : styles.receivedText}>{text}</Text>
           <Text style={from === 'You' ? styles.sentMeta : styles.receivedMeta}>{messageStatus}</Text>
+        </View>
+      ))}
+      {paidMessages.map((message) => (
+        <View key={message.id} style={styles.lockedReply}>
+          <Text style={styles.lockedTitle}>Private reply from Elena</Text>
+          <Text style={styles.lockedText}>{message.locked && !message.unlockedByActor ? 'Message hidden. Unlock to read her full reply.' : message.text}</Text>
+          <TouchableOpacity onPress={() => { if (message.locked && !message.unlockedByActor) { setTokens((value) => Math.max(0, value - Number(message.unlockCostTokens || 0))); void unlockMessage(message.id); } }} style={[styles.unlockButton, message.unlockedByActor && styles.unlockButtonDone]}>
+            <Text style={styles.unlockButtonText}>{message.unlockedByActor ? 'Reply unlocked' : `Unlock for ${message.unlockCostTokens || 18} tokens`}</Text>
+          </TouchableOpacity>
         </View>
       ))}
       <View style={styles.segment}>
@@ -638,6 +664,15 @@ const styles = StyleSheet.create({
   signal: { backgroundColor: '#ffe4ee', color: '#8a2947', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, overflow: 'hidden', fontWeight: '900', fontSize: 12 },
   promptRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   promptChip: { backgroundColor: '#ffcf33', color: '#4a2600', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 8, fontWeight: '900', fontSize: 12 },
+  videoInvite: { backgroundColor: '#2b0716', borderRadius: 22, padding: 16, marginBottom: 12 },
+  videoTitle: { color: 'white', fontWeight: '900', fontSize: 18, lineHeight: 24 },
+  videoTeaser: { color: '#ffd1df', fontWeight: '800', lineHeight: 21, marginTop: 6 },
+  lockedReply: { backgroundColor: '#fff0f6', borderWidth: 1, borderColor: '#ffd0df', borderRadius: 22, padding: 16, marginVertical: 10 },
+  lockedTitle: { color: '#ff2f73', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
+  lockedText: { color: '#2b0716', fontWeight: '900', fontSize: 17, lineHeight: 24, marginTop: 7 },
+  unlockButton: { backgroundColor: '#ff2f73', borderRadius: 999, alignItems: 'center', paddingVertical: 13, marginTop: 12 },
+  unlockButtonDone: { backgroundColor: '#ffcf33' },
+  unlockButtonText: { color: 'white', fontWeight: '900' },
   bubble: { maxWidth: '84%', padding: 14, borderRadius: 22, marginVertical: 6 },
   sent: { alignSelf: 'flex-end', backgroundColor: '#ff2f73', borderBottomRightRadius: 4 },
   received: { alignSelf: 'flex-start', backgroundColor: '#fff0f6', borderBottomLeftRadius: 4 },
