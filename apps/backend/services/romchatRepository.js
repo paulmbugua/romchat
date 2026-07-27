@@ -100,10 +100,10 @@ const fallbackMessages = [
   { id: 'msg_1', matchId: 'match_elena', senderId: 'elena', from: 'elena', text: 'Your answer about building a life with room for quiet days was rare.', createdAt: now(), risk: 'clear' },
   { id: 'msg_2', matchId: 'match_elena', senderId: 'me', from: 'me', text: 'I meant it. The best connection feels calm before it feels exciting.', createdAt: now(), risk: 'clear' },
   { id: 'msg_3', matchId: 'match_elena', senderId: 'elena', from: 'elena', text: 'That deserves a golden-hour walk. Saturday?', createdAt: now(), risk: 'clear' },
-  { id: 'msg_locked_1', matchId: 'match_elena', senderId: 'elena', from: 'elena', text: 'I sent you a private reply. Unlock it and tell me if Saturday still works.', locked: true, unlockCostTokens: 18, unlockedByActor: false, messageKind: 'paid_reply', createdAt: now(), risk: 'clear' },
+  { id: 'media_locked_1', matchId: 'match_elena', senderId: 'elena', from: 'elena', text: 'I sent a private voice note preview. Basic text stays free; unlock this optional media when you want the full moment.', mediaUrl: 'romchat://demo/voice/elena-saturday-note', mediaType: 'voice', locked: true, unlockCostTokens: 18, unlockedByActor: false, messageKind: 'locked_media', createdAt: now(), risk: 'clear' },
 ];
 
-const schemaSql = "\nCREATE TABLE IF NOT EXISTS romchat_profiles (\n  id TEXT PRIMARY KEY,\n  name TEXT NOT NULL,\n  age INTEGER NOT NULL,\n  city TEXT NOT NULL,\n  match_score INTEGER NOT NULL DEFAULT 80,\n  intent TEXT NOT NULL DEFAULT '',\n  prompt TEXT NOT NULL DEFAULT '',\n  voice_note TEXT NOT NULL DEFAULT '',\n  video_prompt TEXT NOT NULL DEFAULT '',\n  quote TEXT NOT NULL DEFAULT '',\n  song TEXT NOT NULL DEFAULT '',\n  gallery_count INTEGER NOT NULL DEFAULT 0,\n  tags TEXT[] NOT NULL DEFAULT '{}',\n  answers TEXT[] NOT NULL DEFAULT '{}',\n  poll JSONB NOT NULL DEFAULT '{}'::jsonb,\n  color TEXT NOT NULL DEFAULT '#ff2f73',\n  photo_key TEXT,\n  verified BOOLEAN NOT NULL DEFAULT false,\n  online BOOLEAN NOT NULL DEFAULT false,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_swipes (\n  id TEXT PRIMARY KEY,\n  actor_id TEXT NOT NULL DEFAULT 'me',\n  profile_id TEXT NOT NULL REFERENCES romchat_profiles(id) ON DELETE CASCADE,\n  action TEXT NOT NULL CHECK (action IN ('pass', 'like', 'super_like')),\n  matched BOOLEAN NOT NULL DEFAULT false,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_matches (\n  id TEXT PRIMARY KEY,\n  actor_id TEXT NOT NULL DEFAULT 'me',\n  profile_id TEXT NOT NULL REFERENCES romchat_profiles(id) ON DELETE CASCADE,\n  status TEXT NOT NULL DEFAULT 'active',\n  expires_at TIMESTAMPTZ,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  UNIQUE(actor_id, profile_id)\n);\n\nCREATE TABLE IF NOT EXISTS romchat_messages (\n  id TEXT PRIMARY KEY,\n  match_id TEXT NOT NULL,\n  sender_id TEXT NOT NULL,\n  text TEXT NOT NULL DEFAULT '',\n  media_url TEXT,\n  gift_id TEXT,\n  priority BOOLEAN NOT NULL DEFAULT false,\n  view_once BOOLEAN NOT NULL DEFAULT false,\n  expires_at TIMESTAMPTZ,\n  read_at TIMESTAMPTZ,\n  risk TEXT NOT NULL DEFAULT 'clear',\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_privacy_settings (\n  member_id TEXT PRIMARY KEY DEFAULT 'me',\n  incognito BOOLEAN NOT NULL DEFAULT true,\n  screenshots_blocked BOOLEAN NOT NULL DEFAULT true,\n  visible_to_liked_only BOOLEAN NOT NULL DEFAULT true,\n  disappearing_default_seconds INTEGER NOT NULL DEFAULT 86400,\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_wallet_ledger (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  title TEXT NOT NULL,\n  amount NUMERIC(12,2) NOT NULL,\n  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_subscriptions (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  plan_id TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'active',\n  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  renews_at TIMESTAMPTZ\n);\n\nCREATE TABLE IF NOT EXISTS romchat_boosts (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  boost_id TEXT NOT NULL,\n  profile_id TEXT NOT NULL DEFAULT 'me',\n  starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  ends_at TIMESTAMPTZ NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS romchat_gifts (\n  id TEXT PRIMARY KEY,\n  gift_id TEXT NOT NULL,\n  match_id TEXT NOT NULL,\n  sender_id TEXT NOT NULL DEFAULT 'me',\n  note TEXT NOT NULL DEFAULT '',\n  token_cost INTEGER NOT NULL DEFAULT 0,\n  redeemable_usd NUMERIC(12,2) NOT NULL DEFAULT 0,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_reports (\n  id TEXT PRIMARY KEY,\n  reporter_id TEXT NOT NULL DEFAULT 'me',\n  profile_id TEXT,\n  type TEXT NOT NULL,\n  severity TEXT NOT NULL DEFAULT 'medium',\n  status TEXT NOT NULL DEFAULT 'open',\n  details TEXT,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_verification_requests (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  name TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'manual_review',\n  risk TEXT NOT NULL DEFAULT 'low',\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE INDEX IF NOT EXISTS idx_romchat_messages_match_created ON romchat_messages(match_id, created_at);\nCREATE INDEX IF NOT EXISTS idx_romchat_swipes_actor_created ON romchat_swipes(actor_id, created_at);\nCREATE INDEX IF NOT EXISTS idx_romchat_reports_status ON romchat_reports(status);\n\nALTER TABLE romchat_messages\n  ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS unlock_cost_tokens INTEGER NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS unlocked_by_actor BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS message_kind TEXT NOT NULL DEFAULT \'text\';\n\nCREATE TABLE IF NOT EXISTS romchat_video_requests (\n  id TEXT PRIMARY KEY,\n  match_id TEXT NOT NULL,\n  sender_profile_id TEXT NOT NULL,\n  title TEXT NOT NULL,\n  teaser TEXT NOT NULL,\n  unlock_cost_tokens INTEGER NOT NULL DEFAULT 0,\n  status TEXT NOT NULL DEFAULT \'locked\',\n  unlocked_at TIMESTAMPTZ,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_token_unlocks (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT \'me\',\n  target_type TEXT NOT NULL CHECK (target_type IN (\'message\', \'video_request\', \'admirer\', \'read_receipt\', \'undo_swipe\')),\n  target_id TEXT NOT NULL,\n  cost_tokens INTEGER NOT NULL,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  UNIQUE(member_id, target_type, target_id)\n);\n\nCREATE INDEX IF NOT EXISTS idx_romchat_video_requests_match_created ON romchat_video_requests(match_id, created_at DESC);\nCREATE INDEX IF NOT EXISTS idx_romchat_token_unlocks_member_created ON romchat_token_unlocks(member_id, created_at DESC);\n\n";
+const schemaSql = "\nCREATE TABLE IF NOT EXISTS romchat_profiles (\n  id TEXT PRIMARY KEY,\n  name TEXT NOT NULL,\n  age INTEGER NOT NULL,\n  city TEXT NOT NULL,\n  match_score INTEGER NOT NULL DEFAULT 80,\n  intent TEXT NOT NULL DEFAULT '',\n  prompt TEXT NOT NULL DEFAULT '',\n  voice_note TEXT NOT NULL DEFAULT '',\n  video_prompt TEXT NOT NULL DEFAULT '',\n  quote TEXT NOT NULL DEFAULT '',\n  song TEXT NOT NULL DEFAULT '',\n  gallery_count INTEGER NOT NULL DEFAULT 0,\n  tags TEXT[] NOT NULL DEFAULT '{}',\n  answers TEXT[] NOT NULL DEFAULT '{}',\n  poll JSONB NOT NULL DEFAULT '{}'::jsonb,\n  color TEXT NOT NULL DEFAULT '#ff2f73',\n  photo_key TEXT,\n  verified BOOLEAN NOT NULL DEFAULT false,\n  online BOOLEAN NOT NULL DEFAULT false,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_swipes (\n  id TEXT PRIMARY KEY,\n  actor_id TEXT NOT NULL DEFAULT 'me',\n  profile_id TEXT NOT NULL REFERENCES romchat_profiles(id) ON DELETE CASCADE,\n  action TEXT NOT NULL CHECK (action IN ('pass', 'like', 'super_like')),\n  matched BOOLEAN NOT NULL DEFAULT false,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_matches (\n  id TEXT PRIMARY KEY,\n  actor_id TEXT NOT NULL DEFAULT 'me',\n  profile_id TEXT NOT NULL REFERENCES romchat_profiles(id) ON DELETE CASCADE,\n  status TEXT NOT NULL DEFAULT 'active',\n  expires_at TIMESTAMPTZ,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  UNIQUE(actor_id, profile_id)\n);\n\nCREATE TABLE IF NOT EXISTS romchat_messages (\n  id TEXT PRIMARY KEY,\n  match_id TEXT NOT NULL,\n  sender_id TEXT NOT NULL,\n  text TEXT NOT NULL DEFAULT '',\n  media_url TEXT,\n  media_type TEXT,\n  gift_id TEXT,\n  priority BOOLEAN NOT NULL DEFAULT false,\n  view_once BOOLEAN NOT NULL DEFAULT false,\n  expires_at TIMESTAMPTZ,\n  read_at TIMESTAMPTZ,\n  risk TEXT NOT NULL DEFAULT 'clear',\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_privacy_settings (\n  member_id TEXT PRIMARY KEY DEFAULT 'me',\n  incognito BOOLEAN NOT NULL DEFAULT true,\n  screenshots_blocked BOOLEAN NOT NULL DEFAULT true,\n  visible_to_liked_only BOOLEAN NOT NULL DEFAULT true,\n  disappearing_default_seconds INTEGER NOT NULL DEFAULT 86400,\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_wallet_ledger (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  title TEXT NOT NULL,\n  amount NUMERIC(12,2) NOT NULL,\n  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_subscriptions (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  plan_id TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'active',\n  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  renews_at TIMESTAMPTZ\n);\n\nCREATE TABLE IF NOT EXISTS romchat_boosts (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  boost_id TEXT NOT NULL,\n  profile_id TEXT NOT NULL DEFAULT 'me',\n  starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  ends_at TIMESTAMPTZ NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS romchat_gifts (\n  id TEXT PRIMARY KEY,\n  gift_id TEXT NOT NULL,\n  match_id TEXT NOT NULL,\n  sender_id TEXT NOT NULL DEFAULT 'me',\n  note TEXT NOT NULL DEFAULT '',\n  token_cost INTEGER NOT NULL DEFAULT 0,\n  redeemable_usd NUMERIC(12,2) NOT NULL DEFAULT 0,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_reports (\n  id TEXT PRIMARY KEY,\n  reporter_id TEXT NOT NULL DEFAULT 'me',\n  profile_id TEXT,\n  type TEXT NOT NULL,\n  severity TEXT NOT NULL DEFAULT 'medium',\n  status TEXT NOT NULL DEFAULT 'open',\n  details TEXT,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_verification_requests (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  name TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'manual_review',\n  risk TEXT NOT NULL DEFAULT 'low',\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE INDEX IF NOT EXISTS idx_romchat_messages_match_created ON romchat_messages(match_id, created_at);\nCREATE INDEX IF NOT EXISTS idx_romchat_swipes_actor_created ON romchat_swipes(actor_id, created_at);\nCREATE INDEX IF NOT EXISTS idx_romchat_reports_status ON romchat_reports(status);\n\nALTER TABLE romchat_messages\n  ADD COLUMN IF NOT EXISTS media_type TEXT,\n  ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS unlock_cost_tokens INTEGER NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS unlocked_by_actor BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS message_kind TEXT NOT NULL DEFAULT \'text\';\n\nCREATE TABLE IF NOT EXISTS romchat_video_requests (\n  id TEXT PRIMARY KEY,\n  match_id TEXT NOT NULL,\n  sender_profile_id TEXT NOT NULL,\n  title TEXT NOT NULL,\n  teaser TEXT NOT NULL,\n  unlock_cost_tokens INTEGER NOT NULL DEFAULT 0,\n  status TEXT NOT NULL DEFAULT \'locked\',\n  unlocked_at TIMESTAMPTZ,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_token_unlocks (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT \'me\',\n  target_type TEXT NOT NULL CHECK (target_type IN (\'message\', \'video_request\', \'admirer\', \'read_receipt\', \'undo_swipe\')),\n  target_id TEXT NOT NULL,\n  cost_tokens INTEGER NOT NULL,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  UNIQUE(member_id, target_type, target_id)\n);\n\nCREATE INDEX IF NOT EXISTS idx_romchat_video_requests_match_created ON romchat_video_requests(match_id, created_at DESC);\nCREATE INDEX IF NOT EXISTS idx_romchat_token_unlocks_member_created ON romchat_token_unlocks(member_id, created_at DESC);\n\n";
 let schemaReady = false;
 
 async function ensureSchema() {
@@ -154,6 +154,7 @@ function fromMessageRow(row) {
     from: row.sender_id,
     text: row.text,
     mediaUrl: row.media_url,
+    mediaType: row.media_type,
     giftId: row.gift_id,
     priority: Boolean(row.priority),
     viewOnce: Boolean(row.view_once),
@@ -232,14 +233,16 @@ export async function getMessages(matchId = 'match_elena') {
     const seed = fallbackMessages.filter((message) => message.matchId === matchId);
     for (const message of seed) {
       await queryWithRetry(
-        `INSERT INTO romchat_messages (id, match_id, sender_id, text, locked, unlock_cost_tokens, unlocked_by_actor, message_kind, risk)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        `INSERT INTO romchat_messages (id, match_id, sender_id, text, media_url, media_type, locked, unlock_cost_tokens, unlocked_by_actor, message_kind, risk)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (id) DO NOTHING`,
         [
           message.id,
           message.matchId,
           message.senderId || message.from || 'elena',
           message.text,
+          message.mediaUrl || null,
+          message.mediaType || null,
           Boolean(message.locked),
           Number(message.unlockCostTokens || 0),
           Boolean(message.unlockedByActor),
@@ -328,7 +331,7 @@ export async function createSwipe({ profileId, action }) {
   }, () => ({ id: swipeId, matched, matchId, message: matched ? 'It is a match.' : 'Preference saved.' }));
 }
 
-export async function sendMessage({ matchId = 'match_elena', text, expiresInSeconds = null, viewOnce = false, mediaUrl = null, giftId = null, priority = false }) {
+export async function sendMessage({ matchId = 'match_elena', text, expiresInSeconds = null, viewOnce = false, mediaUrl = null, mediaType = null, giftId = null, priority = false, riskOverride = null }) {
   if (!String(text || '').trim() && !mediaUrl) {
     const error = new Error('Message text or mediaUrl is required.');
     error.status = 400;
@@ -341,24 +344,21 @@ export async function sendMessage({ matchId = 'match_elena', text, expiresInSeco
     from: 'me',
     text: String(text || '').trim(),
     mediaUrl,
+    mediaType,
     giftId,
     priority: Boolean(priority),
     viewOnce: Boolean(viewOnce),
     expiresAt: expiresInSeconds ? new Date(Date.now() + Number(expiresInSeconds) * 1000).toISOString() : null,
     readAt: null,
-    risk: /money|wire|crypto|password/i.test(String(text || '')) ? 'review' : 'clear',
+    risk: riskOverride || (/money|wire|crypto|password/i.test(String(text || '')) ? 'review' : 'clear'),
     createdAt: now(),
   };
   return withDb(async () => {
     await queryWithRetry(
-      `INSERT INTO romchat_messages (id, match_id, sender_id, text, media_url, gift_id, priority, view_once, expires_at, risk)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [message.id, message.matchId, message.senderId, message.text, message.mediaUrl, message.giftId, message.priority, message.viewOnce, message.expiresAt, message.risk]
+      `INSERT INTO romchat_messages (id, match_id, sender_id, text, media_url, media_type, gift_id, priority, view_once, expires_at, risk)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [message.id, message.matchId, message.senderId, message.text, message.mediaUrl, message.mediaType, message.giftId, message.priority, message.viewOnce, message.expiresAt, message.risk]
     );
-    if (message.senderId === 'me') {
-      const reply = await createPaidReply({ matchId: message.matchId, senderId: 'elena' });
-      return { ...message, generatedPaidReply: reply };
-    }
     return message;
   }, () => message);
 }
@@ -452,25 +452,27 @@ export async function sendGift(payload = {}) {
   }, () => ({ gift: entry, wallet: { balance: Math.max(0, 146 - gift.tokenCost), currency: 'USD', ledger: [] } }));
 }
 
-export async function createPaidReply({ matchId = 'match_elena', senderId = 'elena', text = 'I sent a private reply. Unlock it to keep the chemistry going.', unlockCostTokens = 18 } = {}) {
+export async function createLockedMediaPreview({ matchId = 'match_elena', senderId = 'elena', text = 'I sent a private voice note preview. Basic text stays free; unlock this optional media when you want the full moment.', mediaUrl = 'romchat://demo/voice/elena-saturday-note', mediaType = 'voice', unlockCostTokens = 18 } = {}) {
   const message = {
     id: id('msg'),
     matchId,
     senderId,
     from: senderId,
     text,
+    mediaUrl,
+    mediaType,
     locked: true,
     unlockCostTokens: Number(unlockCostTokens),
     unlockedByActor: false,
-    messageKind: 'paid_reply',
+    messageKind: 'locked_media',
     risk: 'clear',
     createdAt: now(),
   };
   return withDb(async () => {
     await queryWithRetry(
-      `INSERT INTO romchat_messages (id, match_id, sender_id, text, locked, unlock_cost_tokens, unlocked_by_actor, message_kind, risk)
-       VALUES ($1,$2,$3,$4,true,$5,false,'paid_reply',$6)`,
-      [message.id, message.matchId, message.senderId, message.text, message.unlockCostTokens, message.risk]
+      `INSERT INTO romchat_messages (id, match_id, sender_id, text, media_url, media_type, locked, unlock_cost_tokens, unlocked_by_actor, message_kind, risk)
+       VALUES ($1,$2,$3,$4,$5,$6,true,$7,false,'locked_media',$8)`,
+      [message.id, message.matchId, message.senderId, message.text, message.mediaUrl, message.mediaType, message.unlockCostTokens, message.risk]
     );
     return message;
   }, () => message);
@@ -525,7 +527,7 @@ export async function unlockPaidMessage(messageId) {
       error.status = 404;
       throw error;
     }
-    const spend = await spendTokens({ targetType: 'message', targetId: messageId, costTokens: row.unlock_cost_tokens, title: 'Unlocked private reply' });
+    const spend = await spendTokens({ targetType: 'message', targetId: messageId, costTokens: row.unlock_cost_tokens, title: 'Unlocked private media' });
     await queryWithRetry('UPDATE romchat_messages SET unlocked_by_actor = true WHERE id = $1', [messageId]);
     return { message: { ...fromMessageRow({ ...row, unlocked_by_actor: true }), unlockedByActor: true }, ...spend };
   }, () => {
@@ -571,7 +573,7 @@ export async function unlockVideoRequest(requestId) {
 
 export async function getRevenueCatalog() {
   return {
-    lockedReply: { costTokens: 18, title: 'Unlock private reply', description: 'Female replies arrive blurred until the male unlocks with tokens.' },
+    lockedMedia: { costTokens: 18, title: 'Unlock private media', description: 'Basic text stays free; only optional voice notes, HD photos, and premium media previews use tokens.' },
     videoRequest: { costTokens: 35, title: 'Accept video invite', description: 'Paid pop-up video requests create urgency after a match.' },
     admirerReveal: { costTokens: 22, title: 'Reveal admirer', description: 'Show one blurred person who already liked you.' },
     priorityReply: { costTokens: 15, title: 'Priority message', description: 'Push one message to the top of her inbox.' },
@@ -580,16 +582,29 @@ export async function getRevenueCatalog() {
   };
 }
 
-export async function topUpWallet(amount) {
+export async function topUpWallet({ amount, platform, purchaseToken, transactionId, productId } = {}) {
   const value = Number(amount || 0);
+  const nativePlatform = String(platform || '').toLowerCase();
+  const hasNativeProof = ['google_play', 'app_store'].includes(nativePlatform) && Boolean(purchaseToken || transactionId) && Boolean(productId);
+  const sandboxAllowed = process.env.ROMCHAT_ALLOW_SANDBOX_TOPUPS === 'true' && nativePlatform === 'sandbox';
+
   if (value <= 0) {
-    const error = new Error('A positive amount is required.');
+    const error = new Error('A positive token amount is required.');
     error.status = 400;
     throw error;
   }
+  if (!hasNativeProof && !sandboxAllowed) {
+    const error = new Error('RomChat token top-ups require a verified Google Play Billing or StoreKit purchase.');
+    error.status = 402;
+    throw error;
+  }
+
   return withDb(async () => {
-    const entry = { id: id('wl'), title: 'Wallet top-up', amount: value, createdAt: now() };
-    await queryWithRetry('INSERT INTO romchat_wallet_ledger (id, member_id, title, amount) VALUES ($1,$2,$3,$4)', [entry.id, 'me', entry.title, entry.amount]);
+    const entry = { id: id('wl'), title: 'Native IAP wallet top-up', amount: value, createdAt: now(), platform: nativePlatform, productId };
+    await queryWithRetry(
+      'INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)',
+      [entry.id, 'me', entry.title, entry.amount, { platform: nativePlatform, productId, purchaseToken: purchaseToken || null, transactionId: transactionId || null }]
+    );
     return { wallet: await getWallet(), entry };
-  }, () => ({ wallet: { balance: 146 + value, currency: 'USD', ledger: [] }, entry: { id: id('wl'), title: 'Wallet top-up', amount: value, createdAt: now() } }));
+  }, () => ({ wallet: { balance: 146 + value, currency: 'USD', ledger: [] }, entry: { id: id('wl'), title: 'Native IAP wallet top-up', amount: value, createdAt: now(), platform: nativePlatform, productId } }));
 }

@@ -456,10 +456,10 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
       ))}
       {paidMessages.map((message) => (
         <View key={message.id} style={styles.lockedReply}>
-          <Text style={styles.lockedTitle}>Private reply from Elena</Text>
-          <Text style={styles.lockedText}>{message.locked && !message.unlockedByActor ? 'Message hidden. Unlock to read her full reply.' : message.text}</Text>
+          <Text style={styles.lockedTitle}>Locked voice note from Elena</Text>
+          <Text style={styles.lockedText}>{message.locked && !message.unlockedByActor ? 'Basic text is free. This optional voice note is locked until you spend tokens.' : message.text}</Text>
           <TouchableOpacity onPress={() => { if (message.locked && !message.unlockedByActor) { setTokens((value) => Math.max(0, value - Number(message.unlockCostTokens || 0))); void unlockMessage(message.id); } }} style={[styles.unlockButton, message.unlockedByActor && styles.unlockButtonDone]}>
-            <Text style={styles.unlockButtonText}>{message.unlockedByActor ? 'Reply unlocked' : `Unlock for ${message.unlockCostTokens || 18} tokens`}</Text>
+            <Text style={styles.unlockButtonText}>{message.unlockedByActor ? 'Voice note unlocked' : `Unlock voice note for ${message.unlockCostTokens || 18} tokens`}</Text>
           </TouchableOpacity>
         </View>
       ))}

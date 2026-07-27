@@ -21,6 +21,7 @@ import {
   topUpWallet,
   updatePrivacy,
 } from '../services/romchatRepository.js';
+import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
 
 function sendError(res, error) {
   res.status(error.status || 500).json({ message: error.message || 'RomChat request failed.' });
@@ -49,18 +50,24 @@ export function createRomchatController(io) {
     },
     async sendMessage(req, res) {
       try {
-        const message = await sendMessage(req.body || {});
+        const moderation = moderateTextPayload(req.body?.text || '');
+        const mediaModeration = req.body?.mediaUrl ? moderateMediaAsset(req.body || {}) : null;
+        const riskOverride = moderation.status === 'review' || mediaModeration?.status === 'pending_provider_review' ? 'review' : null;
+        const message = await sendMessage({ ...(req.body || {}), priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
         io?.to(message.matchId).emit('romchat:message', message);
-        res.status(201).json({ message, trustInsight: message.risk === 'review' ? 'Message queued for trust review.' : 'Message delivered.' });
+        res.status(201).json({ message, moderation, mediaModeration, trustInsight: riskOverride || message.risk === 'review' ? 'Message queued for trust review.' : 'Message delivered.' });
       } catch (error) {
         sendError(res, error);
       }
     },
     async disappearingMessage(req, res) {
       try {
-        const message = await sendMessage({ ...(req.body || {}), expiresInSeconds: req.body?.expiresInSeconds || 86400, viewOnce: Boolean(req.body?.viewOnce) });
+        const moderation = moderateTextPayload(req.body?.text || '');
+        const mediaModeration = req.body?.mediaUrl ? moderateMediaAsset(req.body || {}) : null;
+        const riskOverride = moderation.status === 'review' || mediaModeration?.status === 'pending_provider_review' ? 'review' : null;
+        const message = await sendMessage({ ...(req.body || {}), expiresInSeconds: req.body?.expiresInSeconds || 86400, viewOnce: Boolean(req.body?.viewOnce), priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
         io?.to(message.matchId).emit('romchat:message', message);
-        res.status(201).json({ message });
+        res.status(201).json({ message, moderation, mediaModeration });
       } catch (error) {
         sendError(res, error);
       }
@@ -93,10 +100,16 @@ export function createRomchatController(io) {
       res.status(201).json({ request, message: 'Verification submitted for review.' });
     },
     async features(_req, res) {
-      res.json({ premiumPlans, gifts, boosts, addOns, revenue: await getRevenueCatalog(), privacy: await getPrivacy(), conversation: { readReceipts: true, typingIndicators: true, disappearingMessages: true, paidReplies: true, paidVideoRequests: true } });
+      res.json({ premiumPlans, gifts, boosts, addOns, revenue: await getRevenueCatalog(), privacy: await getPrivacy(), conversation: { readReceipts: true, typingIndicators: true, disappearingMessages: true, lockedMedia: true, paidVideoRequests: true } });
     },
     async revenue(_req, res) {
       res.json({ revenue: await getRevenueCatalog() });
+    },
+    async moderateText(req, res) {
+      res.json({ moderation: moderateTextPayload(req.body?.text || '') });
+    },
+    async moderateMedia(req, res) {
+      res.json({ moderation: moderateMediaAsset(req.body || {}) });
     },
     async videoRequests(req, res) {
       res.json({ videoRequests: await getVideoRequests(req.query.matchId || 'match_elena') });
@@ -146,7 +159,7 @@ export function createRomchatController(io) {
     },
     async topUp(req, res) {
       try {
-        res.status(201).json(await topUpWallet(req.body?.amount));
+        res.status(201).json(await topUpWallet(req.body || {}));
       } catch (error) {
         sendError(res, error);
       }

@@ -6,22 +6,23 @@ Core product flow:
 - Male users swipe/like female profiles.
 - A match only happens when the female likes the male back.
 - After a match, the male can send a message.
-- The female reply appears as a blurred/locked message preview.
-- The male must spend tokens to unlock and read the female reply.
+- Matched users can exchange basic text freely.
+- Optional female media such as voice notes, HD photos, and private video previews can appear as blurred/locked media cards.
+- The male may voluntarily spend tokens to unlock premium media, not basic text chat.
 - A female video request can pop up after a match with a romantic teaser.
 - The male must spend tokens to accept/open the video request.
 
 Create these screens as polished mobile layouts:
 1. Discovery screen: single full-bleed photo card, profile name/age/city/intent, match score pill, verified badge, photo progress bars, Pass/Like/Super Like actions.
 2. Match screen: romantic gradient celebration with two profile photos, short text, and primary CTA to message.
-3. Inbox screen: pinned matches row, chat thread, hidden female reply card, token unlock CTA, paid video request pop-up card, gift buttons, message composer.
+3. Inbox screen: pinned matches row, chat thread, locked optional media card, token unlock CTA, paid video request pop-up card, gift buttons, message composer.
 4. Token wallet screen: balance, top-up packages, spend history, locked feature catalog.
 5. Plus/Premium screen: Gold and Platinum subscriptions, boosts, admirer reveal, priority likes, undo swipe, read receipts.
 6. Safety screen: verified-only discovery, selfie verification, incognito mode, anti-screenshot, report/block.
 7. Profile screen: profile strength, photo slots, voice intro, video prompt, vibe polls, AI bio helper.
 
 Monetization UX patterns to include:
-- Pay tokens to unlock female replies.
+- Pay tokens to unlock optional female media replies such as voice notes, HD photos, or private video previews.
 - Pay tokens to accept video requests.
 - Pay tokens to reveal blurred admirers.
 - Pay tokens for priority message placement.

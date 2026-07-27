@@ -34,6 +34,8 @@ export type RomChatMessage = {
   unlockCostTokens?: number;
   unlockedByActor?: boolean;
   messageKind?: string;
+  mediaUrl?: string | null;
+  mediaType?: 'voice' | 'photo' | 'video' | string | null;
 };
 
 export type RomChatVideoRequest = {
