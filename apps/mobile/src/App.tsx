@@ -159,7 +159,8 @@ export default function App() {
   const [boosted, setBoosted] = useState(false);
   const [showMatch, setShowMatch] = useState(false);
   const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, 16);
+  const bottomInset = Math.max(insets.bottom, 32);
+  const bottomContentPadding = bottomInset + 72;
   const profiles = romchat.profiles.length ? (romchat.profiles as ProfileSeed[]) : localProfiles;
   const profile = profiles[index % profiles.length]!;
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
@@ -244,11 +245,11 @@ export default function App() {
 
   if (activeSection) {
     return (
-      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
+      <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.safe}>
         <StatusBar barStyle="light-content" backgroundColor="#120914" />
         <ScreenHeader title={screenTitles[activeSection]} onBack={() => setActiveSection(null)} apiOnline={romchat.apiOnline} />
         <ScrollView
-          contentContainerStyle={[styles.screenContent, { paddingBottom: 30 + bottomInset }]}
+          contentContainerStyle={[styles.screenContent, { paddingBottom: bottomContentPadding }]}
           contentInsetAdjustmentBehavior="automatic"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -260,10 +261,10 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
+    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#120914" />
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: 30 + bottomInset }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomContentPadding }]}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -375,10 +376,22 @@ function Discover({
       </View>
 
       <View style={styles.actionDock}>
-        <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><Icon name="close" size={25} color="#8A7B89" /></TouchableOpacity>
-        <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Super like"><Icon name="star" size={28} color="#FFD700" /></TouchableOpacity>
-        <TouchableOpacity onPress={likeProfile} style={styles.likeAction} accessibilityLabel="Like profile"><LinearGradient colors={['#FF1493', '#FF6F61']} style={styles.likeGradient}><Icon name="heart" size={36} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
-        <TouchableOpacity onPress={previous} style={styles.rewindAction} accessibilityLabel="Undo swipe"><Icon name="return-up-back" size={22} color="#FFD700" /></TouchableOpacity>
+        <View style={styles.actionItem}>
+          <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><Icon name="close" size={25} color="#8A7B89" /></TouchableOpacity>
+          <Text style={styles.actionLabel}>Pass</Text>
+        </View>
+        <View style={styles.actionItem}>
+          <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Super like"><Icon name="star" size={28} color="#FFD700" /></TouchableOpacity>
+          <Text style={styles.actionLabel}>Super</Text>
+        </View>
+        <View style={styles.actionItem}>
+          <TouchableOpacity onPress={likeProfile} style={styles.likeAction} accessibilityLabel="Like profile"><LinearGradient colors={['#FF1493', '#FF6F61']} style={styles.likeGradient}><Icon name="heart" size={36} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
+          <Text style={styles.actionLabel}>Like</Text>
+        </View>
+        <View style={styles.actionItem}>
+          <TouchableOpacity onPress={previous} style={styles.rewindAction} accessibilityLabel="Undo swipe"><Icon name="return-up-back" size={22} color="#FFD700" /></TouchableOpacity>
+          <Text style={styles.actionLabel}>Undo</Text>
+        </View>
       </View>
 
       {showMatch && (
@@ -698,7 +711,9 @@ const styles = StyleSheet.create({
   cardPrompt: { color: '#FFFFFF', fontSize: 16, lineHeight: 23, marginTop: 10, fontWeight: '800' },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   photoTag: { color: '#FFFFFF', backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden', paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, fontWeight: '900', fontSize: 12 },
-  actionDock: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: -2 },
+  actionDock: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 14, marginTop: -2, marginBottom: 18, paddingBottom: 12 },
+  actionItem: { alignItems: 'center', justifyContent: 'flex-start', minWidth: 58 },
+  actionLabel: { color: 'rgba(255,255,255,0.72)', fontWeight: '900', fontSize: 11, marginTop: 7 },
   passAction: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#1E1222', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   topAction: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#1E1222', borderWidth: 1.5, borderColor: '#FFD700', justifyContent: 'center', alignItems: 'center' },
   likeAction: { width: 68, height: 68, borderRadius: 34, overflow: 'hidden' },
@@ -726,11 +741,11 @@ const styles = StyleSheet.create({
   shortcut: { flex: 1, backgroundColor: '#1E1222', borderRadius: 18, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,20,147,0.2)' },
   shortcutLabel: { color: '#FF1493', fontWeight: '900', fontSize: 12 },
   shortcutTitle: { color: '#FFFFFF', fontWeight: '900', marginTop: 4, fontSize: 12 },
-  homeNudge: { backgroundColor: '#1E1222', borderRadius: 22, padding: 16, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
+  homeNudge: { backgroundColor: '#1E1222', borderRadius: 22, padding: 16, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 18 },
   nudgeTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginTop: 3 },
   nudgeAction: { color: '#FFD700', fontWeight: '900' },
   panel: { backgroundColor: '#1E1222', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', padding: 18, marginBottom: 14 },
-  chatScreen: { backgroundColor: '#120914', paddingBottom: 8 },
+  chatScreen: { backgroundColor: '#120914', paddingBottom: 28 },
   chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14, marginBottom: 14, borderBottomWidth: 1, borderBottomColor: '#1E1222' },
   chatIdentity: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   chatHeaderAvatar: { width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: '#FF1493' },
