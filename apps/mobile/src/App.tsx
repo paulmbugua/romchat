@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { GestureResponderHandlers, ImageSourcePropType } from 'react-native';
 import {
   Image,
   ImageBackground,
+  Animated,
   PanResponder,
   ScrollView,
   StatusBar,
@@ -124,13 +125,17 @@ const tokenPackages = [
   { id: 'tokens_1000', amount: 1000, price: '$29.99', unit: '$0.02/ea', badge: 'BEST VALUE' },
 ];
 
+const SUPER_LIKE_COST = 15;
+const UNDO_SWIPE_COST = 9;
+const MATCH_POP_DURATION_MS = 1100;
+
 const tokenCatalog = [
   ['Unlock voice/photo media', '10'],
   ['Accept video request', '25'],
   ['Send rose', '5'],
-  ['Priority message', '15'],
+  ['Priority message', String(SUPER_LIKE_COST)],
   ['Reveal admirer', '22'],
-  ['Extend match', '9'],
+  ['Undo previous swipe', String(UNDO_SWIPE_COST)],
 ];
 
 const starterMessages = [
@@ -158,6 +163,7 @@ export default function App() {
   const [tokens, setTokens] = useState(146);
   const [boosted, setBoosted] = useState(false);
   const [showMatch, setShowMatch] = useState(false);
+  const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 32);
   const bottomContentPadding = bottomInset + 72;
@@ -166,20 +172,64 @@ export default function App() {
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
   const activePlan = boosted ? 'Platinum' : 'Gold';
 
+  useEffect(() => {
+    return () => {
+      if (matchTimerRef.current) clearTimeout(matchTimerRef.current);
+    };
+  }, []);
+
+  function clearMatchTimer() {
+    if (matchTimerRef.current) {
+      clearTimeout(matchTimerRef.current);
+      matchTimerRef.current = null;
+    }
+  }
+
+  function openTokenStore() {
+    clearMatchTimer();
+    setShowMatch(false);
+    setActiveSection('premium');
+  }
+
+  function openMatchedChatSoon() {
+    clearMatchTimer();
+    setShowMatch(true);
+    matchTimerRef.current = setTimeout(() => {
+      setShowMatch(false);
+      setActiveSection('chat');
+    }, MATCH_POP_DURATION_MS);
+  }
+
   function passProfile() {
+    clearMatchTimer();
     void romchat.swipe(profile.id, 'pass');
     setIndex((value) => (value + 1) % profiles.length);
     setShowMatch(false);
   }
 
   function previous() {
+    if (tokens < UNDO_SWIPE_COST) {
+      openTokenStore();
+      return;
+    }
+    clearMatchTimer();
+    setTokens((value) => Math.max(0, value - UNDO_SWIPE_COST));
     setIndex((value) => (value - 1 + profiles.length) % profiles.length);
     setShowMatch(false);
   }
 
   function likeProfile(action: 'like' | 'super_like' = 'like') {
     void romchat.swipe(profile.id, action);
-    setShowMatch(true);
+    openMatchedChatSoon();
+  }
+
+  function superLikeProfile() {
+    if (tokens < SUPER_LIKE_COST) {
+      openTokenStore();
+      return;
+    }
+    setTokens((value) => Math.max(0, value - SUPER_LIKE_COST));
+    likeProfile('super_like');
   }
 
   const swipeHandlers = useMemo(
@@ -188,17 +238,14 @@ export default function App() {
         onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 18 && Math.abs(gesture.dy) < 24,
         onPanResponderRelease: (_event, gesture) => {
           if (gesture.dx > 48) {
-            void romchat.swipe(profile.id, 'like');
-            setShowMatch(true);
+            likeProfile('like');
           }
           if (gesture.dx < -48) {
-            void romchat.swipe(profile.id, 'pass');
-            setIndex((value) => (value + 1) % profiles.length);
-            setShowMatch(false);
+            passProfile();
           }
         },
       }).panHandlers,
-    [profile.id, profiles.length, romchat]
+    [profile.id, profiles.length, romchat, likeProfile, passProfile]
   );
 
   function renderSection(section: Section) {
@@ -292,12 +339,13 @@ export default function App() {
           profile={profile}
           passProfile={passProfile}
           likeProfile={() => likeProfile('like')}
-          topProfile={() => likeProfile('super_like')}
+          topProfile={superLikeProfile}
           previous={previous}
           swipeHandlers={swipeHandlers}
           showMatch={showMatch}
           dismissMatch={passProfile}
           openChat={() => {
+            clearMatchTimer();
             setShowMatch(false);
             setActiveSection('chat');
           }}
@@ -344,6 +392,17 @@ function Discover({
   profiles: ProfileSeed[];
 }) {
   const [photoIndex, setPhotoIndex] = useState(0);
+  const popScale = useRef(new Animated.Value(0.82)).current;
+  const popOpacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!showMatch) return;
+    popScale.setValue(0.82);
+    popOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(popScale, { toValue: 1, friction: 5, tension: 160, useNativeDriver: true }),
+      Animated.timing(popOpacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+    ]).start();
+  }, [popOpacity, popScale, showMatch]);
   const openers = [`Ask ${profile.name} about ${profile.tags[0]?.toLowerCase()}.`, `Start with: "${profile.poll.question}"`];
   const photoSlots = [profile.photo, profile.photo, profile.photo];
   const changePhoto = (direction: -1 | 1) => setPhotoIndex((value) => (value + direction + photoSlots.length) % photoSlots.length);
@@ -377,12 +436,12 @@ function Discover({
 
       <View style={styles.actionDock}>
         <View style={styles.actionItem}>
-          <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><Icon name="close" size={25} color="#8A7B89" /></TouchableOpacity>
+          <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><LinearGradient colors={['#FF355E', '#FF1493']} style={styles.passGradient}><Icon name="close" size={34} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
           <Text style={styles.actionLabel}>Pass</Text>
         </View>
         <View style={styles.actionItem}>
           <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Super like"><Icon name="star" size={28} color="#FFD700" /></TouchableOpacity>
-          <Text style={styles.actionLabel}>Super</Text>
+          <Text style={styles.actionLabel}>Super {SUPER_LIKE_COST}</Text>
         </View>
         <View style={styles.actionItem}>
           <TouchableOpacity onPress={likeProfile} style={styles.likeAction} accessibilityLabel="Like profile"><LinearGradient colors={['#FF1493', '#FF6F61']} style={styles.likeGradient}><Icon name="heart" size={36} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
@@ -390,11 +449,12 @@ function Discover({
         </View>
         <View style={styles.actionItem}>
           <TouchableOpacity onPress={previous} style={styles.rewindAction} accessibilityLabel="Undo swipe"><Icon name="return-up-back" size={22} color="#FFD700" /></TouchableOpacity>
-          <Text style={styles.actionLabel}>Undo</Text>
+          <Text style={styles.actionLabel}>Undo {UNDO_SWIPE_COST}</Text>
         </View>
       </View>
 
       {showMatch && (
+        <Animated.View pointerEvents="box-none" style={[styles.matchPopOverlay, { opacity: popOpacity, transform: [{ scale: popScale }] }]}>
         <LinearGradient colors={['#120914', '#FF1493']} style={styles.matchSheet}>
           <View style={styles.matchAvatarPair}>
             <Image source={require('../assets/icon.png')} style={styles.matchAvatarLarge} />
@@ -409,6 +469,7 @@ function Discover({
             <TouchableOpacity onPress={openChat} style={styles.matchPrimary}><Text style={styles.matchPrimaryText}>Send a romantic intro - 5 tokens</Text></TouchableOpacity>
           </View>
         </LinearGradient>
+        </Animated.View>
       )}
     </View>
   );
@@ -711,20 +772,22 @@ const styles = StyleSheet.create({
   cardPrompt: { color: '#FFFFFF', fontSize: 16, lineHeight: 23, marginTop: 10, fontWeight: '800' },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   photoTag: { color: '#FFFFFF', backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden', paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, fontWeight: '900', fontSize: 12 },
-  actionDock: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 14, marginTop: -2, marginBottom: 18, paddingBottom: 12 },
+  actionDock: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 14, marginTop: -2, marginBottom: 18, paddingBottom: 12, zIndex: 2 },
   actionItem: { alignItems: 'center', justifyContent: 'flex-start', minWidth: 58 },
   actionLabel: { color: 'rgba(255,255,255,0.72)', fontWeight: '900', fontSize: 11, marginTop: 7 },
-  passAction: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#1E1222', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  passAction: { width: 64, height: 64, borderRadius: 32, overflow: 'hidden', shadowColor: '#FF1493', shadowOpacity: 0.28, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 7 },
+  passGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
   topAction: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#1E1222', borderWidth: 1.5, borderColor: '#FFD700', justifyContent: 'center', alignItems: 'center' },
   likeAction: { width: 68, height: 68, borderRadius: 34, overflow: 'hidden' },
   likeGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
-  rewindAction: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1E1222', borderWidth: 1, borderColor: 'rgba(255,215,0,0.24)', justifyContent: 'center', alignItems: 'center' },
+  rewindAction: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#1E1222', borderWidth: 1.5, borderColor: 'rgba(255,215,0,0.55)', justifyContent: 'center', alignItems: 'center' },
   smallAction: { backgroundColor: '#1E1222', paddingHorizontal: 14, paddingVertical: 14, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   smallActionText: { color: '#FFFFFF', fontWeight: '900' },
   passActionText: { color: '#8A7B89', fontWeight: '900' },
   likeActionText: { color: '#FFFFFF', fontWeight: '900' },
   topActionText: { color: '#FFD700', fontWeight: '900' },
-  matchSheet: { borderRadius: 28, padding: 20, marginTop: 16, borderWidth: 1, borderColor: 'rgba(255,215,0,0.35)' },
+  matchPopOverlay: { position: 'absolute', left: 14, right: 14, top: 96, zIndex: 4 },
+  matchSheet: { borderRadius: 28, padding: 20, marginTop: 16, borderWidth: 1, borderColor: 'rgba(255,215,0,0.35)', shadowColor: '#FF1493', shadowOpacity: 0.4, shadowRadius: 24, shadowOffset: { width: 0, height: 14 }, elevation: 12 },
   matchAvatarPair: { height: 116, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', marginBottom: 10 },
   matchAvatarLarge: { width: 92, height: 92, borderRadius: 46, borderWidth: 4, borderColor: '#FFD700', backgroundColor: '#1E1222' },
   matchAvatarOverlap: { marginLeft: -22 },
