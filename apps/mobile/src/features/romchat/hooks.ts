@@ -51,10 +51,10 @@ export function useRomChatData(localProfiles: LocalProfile[]) {
   const [apiOnline, setApiOnline] = useState(false);
   const [lastAction, setLastAction] = useState('Ready');
   const [paidMessages, setPaidMessages] = useState<RomChatMessage[]>([
-    { id: 'media_locked_1', matchId: 'match_elena', from: 'elena', senderId: 'elena', text: 'I sent a private voice note preview. Basic text stays free; unlock this optional media when you want the full moment.', locked: true, unlockCostTokens: 18, unlockedByActor: false, mediaUrl: 'romchat://demo/voice/elena-saturday-note', mediaType: 'voice', messageKind: 'locked_media' },
+    { id: 'media_locked_1', matchId: 'match_elena', from: 'elena', senderId: 'elena', text: 'I sent a private voice note preview. Basic text stays free; unlock this optional media when you want the full moment.', locked: true, unlockCostTokens: 10, unlockedByActor: false, mediaUrl: 'romchat://demo/voice/elena-saturday-note', mediaType: 'voice', messageKind: 'locked_media' },
   ]);
   const [videoRequests, setVideoRequests] = useState<RomChatVideoRequest[]>([
-    { id: 'vr_elena_1', matchId: 'match_elena', senderProfileId: 'elena', title: 'Elena invited you to a 2-minute video vibe check', teaser: 'She is online now. Unlock to accept the request before it expires.', unlockCostTokens: 35, status: 'locked' },
+    { id: 'vr_elena_1', matchId: 'match_elena', senderProfileId: 'elena', title: 'Elena invited you to a 2-minute video vibe check', teaser: 'She is online now. Unlock to accept the request before it expires.', unlockCostTokens: 25, status: 'locked' },
   ]);
 
   useEffect(() => {

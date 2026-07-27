@@ -14,6 +14,7 @@ import {
   getWallet,
   gifts,
   premiumPlans,
+  tokenPackages,
   sendGift,
   sendMessage,
   unlockPaidMessage,
@@ -100,7 +101,7 @@ export function createRomchatController(io) {
       res.status(201).json({ request, message: 'Verification submitted for review.' });
     },
     async features(_req, res) {
-      res.json({ premiumPlans, gifts, boosts, addOns, revenue: await getRevenueCatalog(), privacy: await getPrivacy(), conversation: { readReceipts: true, typingIndicators: true, disappearingMessages: true, lockedMedia: true, paidVideoRequests: true } });
+      res.json({ premiumPlans, tokenPackages, gifts, boosts, addOns, revenue: await getRevenueCatalog(), privacy: await getPrivacy(), conversation: { readReceipts: true, typingIndicators: true, disappearingMessages: true, lockedMedia: true, paidVideoRequests: true } });
     },
     async revenue(_req, res) {
       res.json({ revenue: await getRevenueCatalog() });
