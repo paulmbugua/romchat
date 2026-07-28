@@ -242,7 +242,11 @@ export async function loginWithGoogleToken({ idToken }) {
     error.status = 400;
     throw error;
   }
-  const allowedAudiences = [process.env.GOOGLE_CLIENT_ID_WEB, process.env.GOOGLE_CLIENT_ID_ANDROID, process.env.GOOGLE_CLIENT_ID_IOS].filter(Boolean);
+  const allowedAudiences = [
+    process.env.GOOGLE_CLIENT_ID_WEB || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_ID_ANDROID || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_ID_IOS || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  ].filter(Boolean);
   const firebaseProjectId = process.env.FIREBASE_PROJECT_ID;
   let email;
   let name;

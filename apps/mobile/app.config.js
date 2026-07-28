@@ -1,7 +1,26 @@
+const fs = require('fs');
+const path = require('path');
+
+function loadEnvironmentFile(appEnv) {
+  const envPath = path.join(__dirname, 'environments', `${appEnv}.env`);
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const separator = trimmed.indexOf('=');
+    if (separator === -1) continue;
+    const key = trimmed.slice(0, separator).trim();
+    const value = trimmed.slice(separator + 1).trim();
+    if (key && process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
 module.exports = function expoConfig({ config }) {
   const appEnv =
     process.env.EXPO_PUBLIC_APP_ENV ||
     (process.env.NODE_ENV === 'production' ? 'production' : 'development');
+  loadEnvironmentFile(appEnv);
   const isProduction = appEnv === 'production';
   const EAS_PROJECT_ID =
     process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
