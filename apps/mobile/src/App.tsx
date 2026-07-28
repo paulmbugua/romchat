@@ -15,8 +15,8 @@ import {
   View,
 } from 'react-native';
 import Constants from 'expo-constants';
-import * as Google from 'expo-auth-session/providers/google';
 import * as ImagePicker from 'expo-image-picker';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LinearGradient } from 'expo-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -352,6 +352,25 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
 
+  async function loginWithNativeGoogle() {
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      try { await GoogleSignin.signOut(); } catch {}
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      await GoogleSignin.signIn();
+      const { idToken } = await GoogleSignin.getTokens();
+      if (!idToken) throw new Error('Google did not return an ID token.');
+      await applyAuth(await romchatAccountApi.google(idToken));
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: string }).code || '') : '';
+      if (code === statusCodes.SIGN_IN_CANCELLED) setAuthError('Google sign-in cancelled.');
+      else if (code === statusCodes.IN_PROGRESS) setAuthError('Google sign-in is already in progress.');
+      else if (code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) setAuthError('Google Play Services is unavailable or needs an update.');
+      else setAuthError(error instanceof Error ? error.message : 'Google login failed.');
+    } finally { setAuthBusy(false); }
+  }
+
   async function saveOnboardingProfile(payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[] }) {
     if (!session?.token) return;
     setAuthBusy(true);
@@ -430,7 +449,7 @@ export default function App() {
   }
 
   if (!session?.token) {
-    return <AuthScreen busy={authBusy} error={authError} onLogin={loginWithEmail} onRequestOtp={requestOtp} onVerifyOtp={verifyOtp} onGoogle={loginWithGoogle} />;
+    return <AuthScreen busy={authBusy} error={authError} onLogin={loginWithEmail} onRequestOtp={requestOtp} onVerifyOtp={verifyOtp} onNativeGoogle={loginWithNativeGoogle} />;
   }
 
   if (!session.profile || session.onboarding.needsFirstImage) {
@@ -514,13 +533,13 @@ function LoadingScreen({ label }: { label: string }) {
   );
 }
 
-function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onGoogle }: {
+function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onNativeGoogle }: {
   busy: boolean;
   error: string;
   onLogin: (email: string, password: string) => Promise<void>;
   onRequestOtp: (name: string, email: string, password: string) => Promise<void>;
   onVerifyOtp: (email: string, otp: string) => Promise<void>;
-  onGoogle: (idToken: string) => Promise<void>;
+  onNativeGoogle: () => Promise<void>;
 }) {
   const [mode, setMode] = useState<AuthMode>('login');
   const [name, setName] = useState('');
@@ -529,22 +548,7 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onGoogle 
   const [otp, setOtp] = useState('');
   const manifestExtra = (Constants.manifest as { extra?: unknown } | null | undefined)?.extra;
   const extra = (Constants.expoConfig?.extra || manifestExtra || {}) as { EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?: string; EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?: string; EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?: string };
-  const googleWebClientId = extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || 'romchat-web-client-id-missing.apps.googleusercontent.com';
-  const googleAndroidClientId = extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || 'romchat-android-client-id-missing.apps.googleusercontent.com';
-  const googleIosClientId = extra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || googleWebClientId;
-  const googleConfigured = Boolean(extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID);
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    webClientId: googleWebClientId,
-    iosClientId: googleIosClientId,
-    androidClientId: googleAndroidClientId,
-    selectAccount: true,
-  });
-
-  useEffect(() => {
-    const idToken = response?.type === 'success' ? response.params.id_token : null;
-    if (idToken) void onGoogle(idToken);
-  }, [onGoogle, response]);
-
+  const googleConfigured = Boolean(extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID && extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID);
   async function submit() {
     if (mode === 'login') return onLogin(email, password);
     if (mode === 'signup') {
@@ -561,7 +565,7 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onGoogle 
         <Text style={styles.authLogo}>RomChat</Text>
         <Text style={styles.authTitle}>Meet beautifully. Chat safely.</Text>
         <Text style={styles.authCopy}>Login to unlock real matches, verified profiles, token wallet, and R2-backed photo galleries.</Text>
-        <TouchableOpacity disabled={!googleConfigured || !request || busy} onPress={() => void promptAsync()} style={[styles.googleButton, !googleConfigured && styles.googleButtonDisabled]}>
+        <TouchableOpacity disabled={!googleConfigured || busy} onPress={() => void onNativeGoogle()} style={[styles.googleButton, !googleConfigured && styles.googleButtonDisabled]}>
           <Icon name="logo-google" size={18} color="#120914" />
           <Text style={styles.googleButtonText}>{!googleConfigured ? 'Google setup pending' : busy ? 'Connecting...' : 'Continue with Google'}</Text>
         </TouchableOpacity>

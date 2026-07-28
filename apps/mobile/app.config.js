@@ -42,6 +42,7 @@ module.exports = function expoConfig({ config }) {
   const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_WEB || '';
   const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_ANDROID || '';
   const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_IOS || '';
+  const GOOGLE_REVERSED_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID || process.env.GOOGLE_REVERSED_CLIENT_ID || '';
 
   return {
     ...config,
@@ -114,6 +115,17 @@ module.exports = function expoConfig({ config }) {
       'expo-notifications',
       'expo-web-browser',
       'expo-asset',
+      GOOGLE_WEB_CLIENT_ID && [
+        '@react-native-google-signin/google-signin',
+        {
+          scopes: ['email', 'profile'],
+          webClientId: GOOGLE_WEB_CLIENT_ID,
+          offlineAccess: true,
+          forceCodeForRefreshToken: true,
+          iosClientId: GOOGLE_IOS_CLIENT_ID,
+          iosUrlScheme: GOOGLE_REVERSED_CLIENT_ID,
+        },
+      ],
       [
         'expo-build-properties',
         {
@@ -137,6 +149,7 @@ module.exports = function expoConfig({ config }) {
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: GOOGLE_WEB_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: GOOGLE_ANDROID_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: GOOGLE_IOS_CLIENT_ID,
+      EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID: GOOGLE_REVERSED_CLIENT_ID,
       ...(EAS_PROJECT_ID ? { EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID, eas: { projectId: EAS_PROJECT_ID } } : {}),
       BACKENDS,
       DEFAULT_BACKEND,

@@ -7413,6 +7413,20 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@react-native-google-signin/google-signin@npm:^16.0.0":
+  version: 16.1.4
+  resolution: "@react-native-google-signin/google-signin@npm:16.1.4"
+  peerDependencies:
+    expo: ">=52.0.40"
+    react: "*"
+    react-native: "*"
+  peerDependenciesMeta:
+    expo:
+      optional: true
+  checksum: 10c0/fc3f446a8ed2f19621768286a48ec1b06f375ac492e05602903df192abe36e5cd00b756fb6b564904bde658351c58889a1f5060b649d17b2502708659d5362d9
+  languageName: node
+  linkType: hard
+
 "@react-native-picker/picker@npm:2.11.1":
   version: 2.11.1
   resolution: "@react-native-picker/picker@npm:2.11.1"
@@ -8050,6 +8064,7 @@ __metadata:
     "@react-native-async-storage/async-storage": "npm:2.2.0"
     "@react-native-community/datetimepicker": "npm:8.4.4"
     "@react-native-community/slider": "npm:5.0.1"
+    "@react-native-google-signin/google-signin": "npm:^16.0.0"
     "@react-native-picker/picker": "npm:2.11.1"
     "@react-native/babel-preset": "npm:^0.79.2"
     "@react-navigation/native": "npm:^7.1.8"
