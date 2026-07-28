@@ -529,10 +529,14 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onGoogle 
   const [otp, setOtp] = useState('');
   const manifestExtra = (Constants.manifest as { extra?: unknown } | null | undefined)?.extra;
   const extra = (Constants.expoConfig?.extra || manifestExtra || {}) as { EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?: string; EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?: string; EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?: string };
+  const googleWebClientId = extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || 'romchat-web-client-id-missing.apps.googleusercontent.com';
+  const googleAndroidClientId = extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || 'romchat-android-client-id-missing.apps.googleusercontent.com';
+  const googleIosClientId = extra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || googleWebClientId;
+  const googleConfigured = Boolean(extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID);
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    webClientId: extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    iosClientId: extra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    webClientId: googleWebClientId,
+    iosClientId: googleIosClientId,
+    androidClientId: googleAndroidClientId,
     selectAccount: true,
   });
 
@@ -557,9 +561,9 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onGoogle 
         <Text style={styles.authLogo}>RomChat</Text>
         <Text style={styles.authTitle}>Meet beautifully. Chat safely.</Text>
         <Text style={styles.authCopy}>Login to unlock real matches, verified profiles, token wallet, and R2-backed photo galleries.</Text>
-        <TouchableOpacity disabled={!request || busy} onPress={() => void promptAsync()} style={styles.googleButton}>
+        <TouchableOpacity disabled={!googleConfigured || !request || busy} onPress={() => void promptAsync()} style={[styles.googleButton, !googleConfigured && styles.googleButtonDisabled]}>
           <Icon name="logo-google" size={18} color="#120914" />
-          <Text style={styles.googleButtonText}>{busy ? 'Connecting...' : 'Continue with Google'}</Text>
+          <Text style={styles.googleButtonText}>{!googleConfigured ? 'Google setup pending' : busy ? 'Connecting...' : 'Continue with Google'}</Text>
         </TouchableOpacity>
         <View style={styles.authTabs}>
           {(['login', 'signup'] as AuthMode[]).map((item) => (
@@ -1027,6 +1031,7 @@ const styles = StyleSheet.create({
   authCopy: { color: 'rgba(255,255,255,0.7)', fontWeight: '800', lineHeight: 22, marginBottom: 18 },
   googleButton: { minHeight: 52, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginBottom: 14 },
   googleButtonText: { color: '#120914', fontWeight: '900', fontSize: 16 },
+  googleButtonDisabled: { opacity: 0.58 },
   authTabs: { flexDirection: 'row', backgroundColor: '#1E1222', borderRadius: 18, padding: 4, marginBottom: 12 },
   authTab: { flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 15 },
   authTabActive: { backgroundColor: '#FF1493' },
