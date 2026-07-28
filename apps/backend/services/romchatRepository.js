@@ -129,7 +129,9 @@ async function withDb(work, fallback) {
   }
 }
 
-function fromProfileRow(row) {
+function fromProfileRow(row, catalogueAccess = 1) {
+  const fullGallery = Number(row.gallery_count);
+  const visibleGallery = Math.min(fullGallery, Math.max(1, Number(catalogueAccess || 1)));
   return {
     id: row.id,
     name: row.name,
@@ -142,13 +144,29 @@ function fromProfileRow(row) {
     videoPrompt: row.video_prompt,
     quote: row.quote,
     song: row.song,
-    gallery: Number(row.gallery_count),
+    gallery: visibleGallery,
+    fullGallery,
+    lockedGallery: Math.max(0, fullGallery - visibleGallery),
+    catalogueAccess: Math.max(1, Number(catalogueAccess || 1)),
     tags: row.tags || [],
     answers: row.answers || [],
     poll: row.poll || {},
     color: row.color,
     verified: Boolean(row.verified),
     online: Boolean(row.online),
+  };
+}
+
+function limitProfileCatalogue(profile, catalogueAccess = 1) {
+  const access = Math.max(1, Number(catalogueAccess || 1));
+  const fullGallery = Number(profile.fullGallery || profile.gallery || 0);
+  const visibleGallery = Math.min(fullGallery, access);
+  return {
+    ...profile,
+    gallery: visibleGallery,
+    fullGallery,
+    lockedGallery: Math.max(0, fullGallery - visibleGallery),
+    catalogueAccess: access,
   };
 }
 
@@ -216,7 +234,8 @@ async function seedProfiles() {
   );
 }
 
-export async function getProfiles({ verifiedOnly = true } = {}) {
+export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1 } = {}) {
+  const access = Math.max(1, Number(catalogueAccess || 1));
   return withDb(async () => {
     const result = await queryWithRetry(
       `SELECT * FROM romchat_profiles
@@ -224,8 +243,8 @@ export async function getProfiles({ verifiedOnly = true } = {}) {
        ORDER BY match_score DESC, created_at ASC`,
       [Boolean(verifiedOnly)]
     );
-    return result.rows.map(fromProfileRow);
-  }, () => fallbackProfiles.filter((profile) => !verifiedOnly || profile.verified));
+    return result.rows.map((row) => fromProfileRow(row, access));
+  }, () => fallbackProfiles.filter((profile) => !verifiedOnly || profile.verified).map((profile) => limitProfileCatalogue(profile, access)));
 }
 
 export async function getMessages(matchId = 'match_elena') {
@@ -286,9 +305,9 @@ export async function getWallet() {
   }, () => ({ balance: 146, currency: 'USD', ledger: [] }));
 }
 
-export async function getBootstrap() {
+export async function getBootstrap({ catalogueAccess = 1 } = {}) {
   const [profiles, messages, privacy, wallet] = await Promise.all([
-    getProfiles({ verifiedOnly: true }),
+    getProfiles({ verifiedOnly: true, catalogueAccess }),
     getMessages('match_elena'),
     getPrivacy(),
     getWallet(),

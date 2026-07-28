@@ -65,8 +65,8 @@ export type RomChatBootstrap = {
 };
 
 export const romchatApi = {
-  bootstrap: () => apiFetch<RomChatBootstrap>('/api/romchat/bootstrap'),
-  discovery: (verifiedOnly = true) => apiFetch<{ profiles: RomChatProfile[] }>(`/api/romchat/discovery?verifiedOnly=${verifiedOnly ? 'true' : 'false'}`),
+  bootstrap: (token?: string | null) => apiFetch<RomChatBootstrap>('/api/romchat/bootstrap', { token }),
+  discovery: (verifiedOnly = true, token?: string | null) => apiFetch<{ profiles: RomChatProfile[] }>(`/api/romchat/discovery?verifiedOnly=${verifiedOnly ? 'true' : 'false'}`, { token }),
   swipe: (profileId: string, action: 'pass' | 'like' | 'super_like') =>
     apiFetch<{ id: string; matched: boolean; matchId: string | null; message: string }>('/api/romchat/swipes', {
       method: 'POST',

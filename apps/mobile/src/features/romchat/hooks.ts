@@ -45,7 +45,7 @@ function mergeProfiles(remoteProfiles: RomChatProfile[], localProfiles: LocalPro
     .filter(Boolean) as LocalProfile[];
 }
 
-export function useRomChatData(localProfiles: LocalProfile[]) {
+export function useRomChatData(localProfiles: LocalProfile[], options: { enabled?: boolean; token?: string | null } = {}) {
   const [profiles, setProfiles] = useState(localProfiles);
   const [bootstrap, setBootstrap] = useState<RomChatBootstrap | null>(null);
   const [apiOnline, setApiOnline] = useState(false);
@@ -59,8 +59,16 @@ export function useRomChatData(localProfiles: LocalProfile[]) {
 
   useEffect(() => {
     let mounted = true;
+    if (!options.enabled) {
+      setApiOnline(false);
+      setProfiles(localProfiles);
+      setLastAction('Login required');
+      return () => {
+        mounted = false;
+      };
+    }
     romchatApi
-      .bootstrap()
+      .bootstrap(options.token)
       .then((payload) => {
         if (!mounted) return;
         setBootstrap(payload);
@@ -79,7 +87,7 @@ export function useRomChatData(localProfiles: LocalProfile[]) {
     return () => {
       mounted = false;
     };
-  }, [localProfiles]);
+  }, [localProfiles, options.enabled, options.token]);
 
   const swipe = useCallback(async (profileId: string, action: 'pass' | 'like' | 'super_like') => {
     setLastAction(action === 'pass' ? 'Passed' : action === 'super_like' ? 'Priority like sent' : 'Like sent');

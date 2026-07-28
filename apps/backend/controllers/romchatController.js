@@ -23,19 +23,81 @@ import {
   updatePrivacy,
 } from '../services/romchatRepository.js';
 import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
+import { getAuthState, loginWithGoogleToken, loginWithPassword, requestSignupOtp, requireRomchatAccount, uploadMemberMedia, upsertMemberProfile, verifySignupOtp } from '../services/romchatAccountService.js';
 
 function sendError(res, error) {
   res.status(error.status || 500).json({ message: error.message || 'RomChat request failed.' });
 }
 
 export function createRomchatController(io) {
+  async function catalogueAccessFor(req) {
+    try {
+      const state = await getAuthState(req);
+      return state.onboarding.catalogueAccess || 1;
+    } catch {
+      return 1;
+    }
+  }
+
   return {
-    async bootstrap(_req, res) {
-      res.json(await getBootstrap());
+    async authRequestOtp(req, res) {
+      try {
+        res.status(202).json(await requestSignupOtp(req.body || {}));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async authVerifyOtp(req, res) {
+      try {
+        res.status(201).json(await verifySignupOtp(req.body || {}));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async authLogin(req, res) {
+      try {
+        res.json(await loginWithPassword(req.body || {}));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async authGoogle(req, res) {
+      try {
+        res.json(await loginWithGoogleToken(req.body || {}));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async authMe(req, res) {
+      try {
+        res.json(await getAuthState(req));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async saveProfile(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        res.json({ profile: await upsertMemberProfile(user.id, req.body || {}) });
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async uploadProfileMedia(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        res.status(201).json(await uploadMemberMedia(user.id, req.body || {}));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async bootstrap(req, res) {
+      res.json(await getBootstrap({ catalogueAccess: await catalogueAccessFor(req) }));
     },
     async discovery(req, res) {
       const verifiedOnly = String(req.query.verifiedOnly ?? 'true') !== 'false';
-      res.json({ profiles: await getProfiles({ verifiedOnly }), generatedAt: new Date().toISOString() });
+      const catalogueAccess = await catalogueAccessFor(req);
+      res.json({ profiles: await getProfiles({ verifiedOnly, catalogueAccess }), catalogueAccess, generatedAt: new Date().toISOString() });
     },
     async swipe(req, res) {
       try {

@@ -11,15 +11,26 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  ActivityIndicator,
   View,
 } from 'react-native';
+import Constants from 'expo-constants';
+import * as Google from 'expo-auth-session/providers/google';
+import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { storage } from '../utils/storage';
+import { romchatAccountApi, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
 import { useRomChatData } from './features/romchat/hooks';
 
 type Section = 'chat' | 'premium' | 'safety' | 'profile';
 type MessageMode = 'standard' | 'timed' | 'viewOnce';
+type AuthMode = 'login' | 'signup' | 'verify';
+type SessionState = RomChatSessionPayload & { onboarding: RomChatOnboardingState };
+
+const ROMCHAT_TOKEN_KEY = 'romchat:auth:token';
+const ROMCHAT_SESSION_KEY = 'romchat:auth:session';
 
 type ProfileSeed = {
   id: string;
@@ -152,7 +163,10 @@ const screenTitles: Record<Section, string> = {
 };
 
 export default function App() {
-  const romchat = useRomChatData(localProfiles);
+  const [authBooted, setAuthBooted] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [session, setSession] = useState<SessionState | null>(null);
   const [activeSection, setActiveSection] = useState<Section | null>(null);
   const [index, setIndex] = useState(0);
   const [verifiedOnly, setVerifiedOnly] = useState(true);
@@ -163,6 +177,8 @@ export default function App() {
   const [tokens, setTokens] = useState(146);
   const [boosted, setBoosted] = useState(false);
   const [showMatch, setShowMatch] = useState(false);
+  const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
+  const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 32);
@@ -171,6 +187,62 @@ export default function App() {
   const profile = profiles[index % profiles.length]!;
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
   const activePlan = boosted ? 'Platinum' : 'Gold';
+
+  function normalizeSession(payload: RomChatSessionPayload | (Omit<RomChatSessionPayload, 'token'> & { token?: string }), tokenFallback?: string | null): SessionState {
+    const token = payload.token || tokenFallback || '';
+    const profile = payload.profile || null;
+    const onboarding = payload.onboarding || { needsProfile: !profile, needsFirstImage: !profile?.imageCount, imageCount: profile?.imageCount || 0, catalogueAccess: Math.min(6, Math.max(1, profile?.imageCount || 0)) };
+    return { token, user: payload.user, profile, onboarding };
+  }
+
+  async function persistSession(next: SessionState | null) {
+    setSession(next);
+    if (!next) {
+      await storage.removeItem(ROMCHAT_TOKEN_KEY);
+      await storage.removeItem(ROMCHAT_SESSION_KEY);
+      return;
+    }
+    await storage.setItem(ROMCHAT_TOKEN_KEY, next.token);
+    await storage.setItem(ROMCHAT_SESSION_KEY, JSON.stringify(next));
+  }
+
+  async function refreshSession(token = session?.token || '') {
+    const payload = await romchatAccountApi.me(token);
+    const next = normalizeSession(payload, token);
+    await persistSession(next);
+    return next;
+  }
+
+  async function applyAuth(payload: RomChatSessionPayload) {
+    const next = normalizeSession(payload, payload.token);
+    await persistSession(next);
+  }
+
+  async function signOut() {
+    await persistSession(null);
+    setActiveSection(null);
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const savedToken = await storage.getItem(ROMCHAT_TOKEN_KEY);
+      const savedSession = await storage.getItem(ROMCHAT_SESSION_KEY);
+      if (savedSession && mounted) {
+        try { setSession(JSON.parse(savedSession) as SessionState); } catch {}
+      }
+      if (savedToken) {
+        try {
+          const payload = await romchatAccountApi.me(savedToken);
+          if (mounted) await persistSession(normalizeSession(payload, savedToken));
+        } catch {
+          if (mounted) await persistSession(null);
+        }
+      }
+      if (mounted) setAuthBooted(true);
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -248,6 +320,69 @@ export default function App() {
     [profile.id, profiles.length, romchat, likeProfile, passProfile]
   );
 
+  async function loginWithEmail(email: string, password: string) {
+    setAuthBusy(true);
+    setAuthError('');
+    try { await applyAuth(await romchatAccountApi.login({ email, password })); }
+    catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to login.'); }
+    finally { setAuthBusy(false); }
+  }
+
+  async function requestOtp(name: string, email: string, password: string) {
+    setAuthBusy(true);
+    setAuthError('');
+    try { await romchatAccountApi.requestOtp({ name, email, password }); }
+    catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to send verification code.'); throw error; }
+    finally { setAuthBusy(false); }
+  }
+
+  async function verifyOtp(email: string, otp: string) {
+    setAuthBusy(true);
+    setAuthError('');
+    try { await applyAuth(await romchatAccountApi.verifyOtp({ email, otp })); }
+    catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to verify code.'); }
+    finally { setAuthBusy(false); }
+  }
+
+  async function loginWithGoogle(idToken: string) {
+    setAuthBusy(true);
+    setAuthError('');
+    try { await applyAuth(await romchatAccountApi.google(idToken)); }
+    catch (error) { setAuthError(error instanceof Error ? error.message : 'Google login failed.'); }
+    finally { setAuthBusy(false); }
+  }
+
+  async function saveOnboardingProfile(payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[] }) {
+    if (!session?.token) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      await romchatAccountApi.saveProfile(session.token, payload);
+      await refreshSession(session.token);
+    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to save profile.'); }
+    finally { setAuthBusy(false); }
+  }
+
+  async function uploadProfileImage() {
+    if (!session?.token) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) throw new Error('Photo library permission is required.');
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 5], quality: 0.72, base64: true });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset?.base64) throw new Error('Unable to read image data.');
+      const contentType = asset.mimeType || 'image/jpeg';
+      const dataUri = `data:${contentType};base64,${asset.base64}`;
+      const response = await romchatAccountApi.uploadMedia(session.token, { mediaType: 'image', dataUri, contentType, fileName: asset.fileName || 'profile.jpg' });
+      const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
+      await persistSession(next);
+    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to upload image.'); }
+    finally { setAuthBusy(false); }
+  }
+
   function renderSection(section: Section) {
     if (section === 'chat') {
       return (
@@ -287,7 +422,19 @@ export default function App() {
         />
       );
     }
-    return <Profile strength={strength} incognito={incognito} verify={romchat.verify} status={romchat.lastAction} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} verify={romchat.verify} status={romchat.lastAction} onSignOut={signOut} />;
+  }
+
+  if (!authBooted) {
+    return <LoadingScreen label="Preparing RomChat" />;
+  }
+
+  if (!session?.token) {
+    return <AuthScreen busy={authBusy} error={authError} onLogin={loginWithEmail} onRequestOtp={requestOtp} onVerifyOtp={verifyOtp} onGoogle={loginWithGoogle} />;
+  }
+
+  if (!session.profile || session.onboarding.needsFirstImage) {
+    return <ProfileOnboardingScreen busy={authBusy} error={authError} profile={session.profile} onSaveProfile={saveOnboardingProfile} onUploadImage={uploadProfileImage} onSignOut={signOut} />;
   }
 
   if (activeSection) {
@@ -352,7 +499,129 @@ export default function App() {
           profiles={profiles}
         />
 
-        <HomeNudge profile={profile} openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
+        <HomeNudge profile={profile} openProfile={() => setActiveSection('profile')} status={romchat.lastAction + ' - ' + session.profile.imageCount + ' photo access'} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function LoadingScreen({ label }: { label: string }) {
+  return (
+    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.safeCenter}>
+      <ActivityIndicator color="#FF1493" size="large" />
+      <Text style={styles.loadingText}>{label}</Text>
+    </SafeAreaView>
+  );
+}
+
+function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onGoogle }: {
+  busy: boolean;
+  error: string;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onRequestOtp: (name: string, email: string, password: string) => Promise<void>;
+  onVerifyOtp: (email: string, otp: string) => Promise<void>;
+  onGoogle: (idToken: string) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<AuthMode>('login');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const manifestExtra = (Constants.manifest as { extra?: unknown } | null | undefined)?.extra;
+  const extra = (Constants.expoConfig?.extra || manifestExtra || {}) as { EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?: string; EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?: string; EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?: string };
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    webClientId: extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    iosClientId: extra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    androidClientId: extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    selectAccount: true,
+  });
+
+  useEffect(() => {
+    const idToken = response?.type === 'success' ? response.params.id_token : null;
+    if (idToken) void onGoogle(idToken);
+  }, [onGoogle, response]);
+
+  async function submit() {
+    if (mode === 'login') return onLogin(email, password);
+    if (mode === 'signup') {
+      await onRequestOtp(name, email, password);
+      setMode('verify');
+      return;
+    }
+    return onVerifyOtp(email, otp);
+  }
+
+  return (
+    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.authSafe}>
+      <ScrollView contentContainerStyle={styles.authContent} keyboardShouldPersistTaps="handled">
+        <Text style={styles.authLogo}>RomChat</Text>
+        <Text style={styles.authTitle}>Meet beautifully. Chat safely.</Text>
+        <Text style={styles.authCopy}>Login to unlock real matches, verified profiles, token wallet, and R2-backed photo galleries.</Text>
+        <TouchableOpacity disabled={!request || busy} onPress={() => void promptAsync()} style={styles.googleButton}>
+          <Icon name="logo-google" size={18} color="#120914" />
+          <Text style={styles.googleButtonText}>{busy ? 'Connecting...' : 'Continue with Google'}</Text>
+        </TouchableOpacity>
+        <View style={styles.authTabs}>
+          {(['login', 'signup'] as AuthMode[]).map((item) => (
+            <TouchableOpacity key={item} onPress={() => setMode(item)} style={[styles.authTab, mode === item && styles.authTabActive]}>
+              <Text style={[styles.authTabText, mode === item && styles.authTabTextActive]}>{item === 'login' ? 'Login' : 'Create'}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {mode !== 'login' && mode !== 'verify' && <TextInput value={name} onChangeText={setName} placeholder="Display name" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
+        <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Email address" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
+        {mode !== 'verify' && <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Password" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
+        {mode === 'verify' && <TextInput value={otp} onChangeText={setOtp} keyboardType="number-pad" placeholder="6-digit email code" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
+        <TouchableOpacity disabled={busy} onPress={() => void submit()} style={styles.authPrimary}>
+          <Text style={styles.authPrimaryText}>{mode === 'verify' ? 'Verify email' : mode === 'signup' ? 'Send email code' : 'Login'}</Text>
+        </TouchableOpacity>
+        {mode === 'verify' && <TouchableOpacity onPress={() => setMode('signup')}><Text style={styles.authLink}>Edit signup details</Text></TouchableOpacity>}
+        {!!error && <Text style={styles.authError}>{error}</Text>}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUploadImage, onSignOut }: {
+  busy: boolean;
+  error: string;
+  profile: RomChatMemberProfile | null;
+  onSaveProfile: (payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>;
+  onUploadImage: () => Promise<void>;
+  onSignOut: () => Promise<void>;
+}) {
+  const [displayName, setDisplayName] = useState(profile?.displayName || '');
+  const [age, setAge] = useState(profile?.age ? String(profile.age) : '');
+  const [gender, setGender] = useState(profile?.gender || 'female');
+  const [city, setCity] = useState(profile?.city || '');
+  const [intent, setIntent] = useState(profile?.intent || 'Intentional connection');
+  const [bio, setBio] = useState(profile?.bio || '');
+  const [interests, setInterests] = useState((profile?.interests || ['Coffee', 'Travel', 'Music']).join(', '));
+  const hasProfile = Boolean(profile);
+  const imageCount = profile?.imageCount || 0;
+
+  return (
+    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.authSafe}>
+      <ScrollView contentContainerStyle={styles.authContent} keyboardShouldPersistTaps="handled">
+        <Text style={styles.authLogo}>RomChat</Text>
+        <Text style={styles.authTitle}>{hasProfile ? 'Add your first photo' : 'Create your dating profile'}</Text>
+        <Text style={styles.authCopy}>Upload at least 1 image to enter discovery. More uploaded images unlock more of other members' photo catalogues.</Text>
+        <TextInput value={displayName} onChangeText={setDisplayName} placeholder="Display name" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
+        <TextInput value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="Age" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
+        <View style={styles.genderRow}>{['female', 'male', 'nonbinary'].map((item) => <TouchableOpacity key={item} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
+        <TextInput value={city} onChangeText={setCity} placeholder="City" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
+        <TextInput value={intent} onChangeText={setIntent} placeholder="Dating intention" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
+        <TextInput value={bio} onChangeText={setBio} placeholder="Short romantic bio" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, styles.authTextArea]} multiline />
+        <TextInput value={interests} onChangeText={setInterests} placeholder="Interests, comma separated" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
+        <TouchableOpacity disabled={busy} onPress={() => void onSaveProfile({ displayName, age: Number(age), gender, city, intent, bio, interests: interests.split(',').map((item) => item.trim()).filter(Boolean) })} style={styles.authPrimary}>
+          <Text style={styles.authPrimaryText}>Save profile</Text>
+        </TouchableOpacity>
+        <TouchableOpacity disabled={busy || !hasProfile} onPress={() => void onUploadImage()} style={[styles.uploadCard, !hasProfile && styles.uploadCardDisabled]}>
+          <Icon name="image" size={24} color="#FFD700" />
+          <View style={{ flex: 1 }}><Text style={styles.uploadTitle}>{imageCount ? String(imageCount) + ' image uploaded' : 'Upload first profile image'}</Text><Text style={styles.uploadMeta}>R2 bucket: images-romchat</Text></View>
+        </TouchableOpacity>
+        {!!error && <Text style={styles.authError}>{error}</Text>}
+        <TouchableOpacity onPress={() => void onSignOut()}><Text style={styles.authLink}>Use another account</Text></TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -695,27 +964,42 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
   );
 }
 
-function Profile({ strength, incognito, verify, status }: { strength: number; incognito: boolean; verify: () => Promise<void>; status: string }) {
+function Profile({ account, profile, strength, incognito, verify, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; verify: () => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
+  const imageCount = profile?.imageCount || 0;
+  const computedStrength = profile?.profileStrength || strength;
+  const catalogueAccess = Math.min(6, Math.max(1, imageCount));
+  const profileTasks = [
+    [`Images uploaded: ${imageCount}`, imageCount >= 3 ? 'Fuller catalogues unlocked' : 'Add photos to unlock more galleries'],
+    [`Catalogue access: ${catalogueAccess} photos`, incognito ? 'Visible after like' : 'Discovery ready'],
+    ['15-second voice intro', profile?.media?.some((item) => item.mediaType === 'video') ? 'Video present' : 'Ready'],
+    ['Answer 7 prompts', profile?.interests?.length ? `${profile.interests.length} interests live` : 'Add interests'],
+  ];
+
   return (
     <View>
       <View style={styles.panel}>
-        <Text style={styles.kicker}>{status}</Text>
-        <Text style={styles.title}>Profile & vibe</Text>
-        <Text style={styles.profileStrength}>{strength}% complete</Text>
-        <View style={styles.progress}><View style={[styles.progressFill, { width: `${strength}%` }]} /></View>
-        <View style={styles.photoSlotGrid}>{Array.from({ length: 6 }).map((_, index) => <View key={index} style={styles.photoSlot}><Icon name={index < 3 ? 'image' : 'add'} size={22} color={index < 3 ? '#FFD700' : '#FF1493'} /><Text style={styles.photoSlotText}>{index < 3 ? `Photo ${index + 1}` : 'Add'}</Text></View>)}</View>
-        {['15-second voice intro', 'Video prompt recorder', 'Pick a song', 'Answer 7 prompts'].map((item) => (
+        <Text style={styles.kicker}>{account?.email || status}</Text>
+        <Text style={styles.title}>{profile?.displayName || account?.name || 'Profile & vibe'}</Text>
+        <Text style={styles.caption}>{profile?.city ? `${profile.city} - ${profile.intent || 'Intentional connection'}` : status}</Text>
+        <Text style={styles.profileStrength}>{computedStrength}% complete</Text>
+        <View style={styles.progress}><View style={[styles.progressFill, { width: `${computedStrength}%` }]} /></View>
+        <View style={styles.photoSlotGrid}>{Array.from({ length: 6 }).map((_, index) => {
+          const media = profile?.media?.[index];
+          return <View key={index} style={styles.photoSlot}>{media?.url ? <Image source={{ uri: media.url }} style={styles.photoThumb} /> : <Icon name={index < imageCount ? 'image' : 'add'} size={22} color={index < imageCount ? '#FFD700' : '#FF1493'} />}<Text style={styles.photoSlotText}>{media?.url ? `Photo ${index + 1}` : index < imageCount ? `Photo ${index + 1}` : 'Add'}</Text></View>;
+        })}</View>
+        {profileTasks.map(([item, detail]) => (
           <View key={item} style={styles.listItem}>
             <Text style={styles.listTitle}>{item}</Text>
-            <Text style={styles.caption}>{item === 'Answer 7 prompts' && incognito ? 'Visible after like' : 'Ready'}</Text>
+            <Text style={styles.caption}>{detail}</Text>
           </View>
         ))}
         <TouchableOpacity onPress={() => void verify()} style={styles.boostButton}><Text style={styles.boostText}>Submit selfie verification</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => void onSignOut()} style={styles.textButton}><Text style={styles.textButtonLabel}>Sign out</Text></TouchableOpacity>
       </View>
       <View style={styles.panel}>
         <Text style={styles.kicker}>Bio assistant</Text>
-        <Text style={styles.insight}>One-tap romantic bio: I am looking for something warm, direct, and built around small rituals.</Text>
-        <Text style={styles.insight}>Best dates: a walk with room for honest conversation, then food worth remembering.</Text>
+        <Text style={styles.insight}>{profile?.bio || 'One-tap romantic bio: I am looking for something warm, direct, and built around small rituals.'}</Text>
+        <Text style={styles.insight}>{profile?.interests?.length ? `Vibe signals: ${profile.interests.join(', ')}` : 'Best dates: a walk with room for honest conversation, then food worth remembering.'}</Text>
       </View>
     </View>
   );
@@ -734,6 +1018,35 @@ function ToggleRow({ title, value, onPress }: { title: string; value: boolean; o
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#120914' },
+  safeCenter: { flex: 1, backgroundColor: '#120914', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  loadingText: { color: '#FFFFFF', fontWeight: '900', marginTop: 14 },
+  authSafe: { flex: 1, backgroundColor: '#120914' },
+  authContent: { padding: 20, paddingBottom: 80, flexGrow: 1, justifyContent: 'center' },
+  authLogo: { color: '#FF1493', fontSize: 30, fontWeight: '900', marginBottom: 10 },
+  authTitle: { color: '#FFFFFF', fontSize: 34, fontWeight: '900', lineHeight: 39, marginBottom: 10 },
+  authCopy: { color: 'rgba(255,255,255,0.7)', fontWeight: '800', lineHeight: 22, marginBottom: 18 },
+  googleButton: { minHeight: 52, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, marginBottom: 14 },
+  googleButtonText: { color: '#120914', fontWeight: '900', fontSize: 16 },
+  authTabs: { flexDirection: 'row', backgroundColor: '#1E1222', borderRadius: 18, padding: 4, marginBottom: 12 },
+  authTab: { flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 15 },
+  authTabActive: { backgroundColor: '#FF1493' },
+  authTabText: { color: 'rgba(255,255,255,0.7)', fontWeight: '900' },
+  authTabTextActive: { color: '#FFFFFF' },
+  authInput: { minHeight: 52, borderRadius: 18, backgroundColor: '#1E1222', borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', paddingHorizontal: 14, color: '#FFFFFF', fontWeight: '800', marginBottom: 10 },
+  authTextArea: { minHeight: 92, paddingTop: 14, textAlignVertical: 'top' },
+  authPrimary: { minHeight: 54, borderRadius: 18, backgroundColor: '#FF1493', alignItems: 'center', justifyContent: 'center', marginTop: 4, marginBottom: 12 },
+  authPrimaryText: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
+  authLink: { color: '#FFD700', fontWeight: '900', textAlign: 'center', marginTop: 8 },
+  authError: { color: '#FF6F61', fontWeight: '900', lineHeight: 20, marginTop: 4, marginBottom: 8 },
+  genderRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  genderChip: { flex: 1, backgroundColor: '#1E1222', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', paddingVertical: 11, alignItems: 'center' },
+  genderChipActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
+  genderText: { color: '#FFFFFF', fontWeight: '900', textTransform: 'capitalize' },
+  genderTextActive: { color: '#120914' },
+  uploadCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#1E1222', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,215,0,0.35)', padding: 16, marginBottom: 8 },
+  uploadCardDisabled: { opacity: 0.45 },
+  uploadTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
+  uploadMeta: { color: 'rgba(255,255,255,0.6)', fontWeight: '800', marginTop: 3 },
   content: { paddingHorizontal: 16, paddingTop: 8, backgroundColor: '#120914' },
   screenContent: { paddingHorizontal: 16, paddingTop: 10, backgroundColor: '#120914' },
   screenHeader: { paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#120914', borderBottomWidth: 1, borderBottomColor: 'rgba(255,20,147,0.2)' },
@@ -883,6 +1196,8 @@ const styles = StyleSheet.create({
   boostButton: { backgroundColor: '#FFD700', padding: 18, borderRadius: 22, alignItems: 'center', marginTop: 12, marginBottom: 14 },
   boostButtonActive: { backgroundColor: '#FF6F61' },
   boostText: { color: '#120914', fontWeight: '900' },
+  textButton: { alignItems: 'center', paddingVertical: 12 },
+  textButtonLabel: { color: '#FFD700', fontWeight: '900' },
   complianceText: { color: 'rgba(255,255,255,0.62)', fontSize: 12, lineHeight: 18, fontWeight: '700', marginBottom: 18 },
   listItem: { backgroundColor: '#2A1A30', borderRadius: 18, padding: 15, marginTop: 10, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
   listTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
@@ -901,4 +1216,5 @@ const styles = StyleSheet.create({
   photoSlotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 12 },
   photoSlot: { width: '30.5%', aspectRatio: 0.82, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,20,147,0.25)', backgroundColor: '#2A1A30', alignItems: 'center', justifyContent: 'center', gap: 6 },
   photoSlotText: { color: 'rgba(255,255,255,0.72)', fontWeight: '900', fontSize: 12 },
+  photoThumb: { width: 48, height: 58, borderRadius: 12 },
 });

@@ -5,6 +5,13 @@ export default function romchatRoutes(io) {
   const router = express.Router();
   const controller = createRomchatController(io);
 
+  router.post('/auth/request-otp', controller.authRequestOtp);
+  router.post('/auth/verify-otp', controller.authVerifyOtp);
+  router.post('/auth/login', controller.authLogin);
+  router.post('/auth/google', controller.authGoogle);
+  router.get('/auth/me', controller.authMe);
+  router.patch('/profile', controller.saveProfile);
+  router.post('/profile/media', controller.uploadProfileMedia);
   router.get('/bootstrap', controller.bootstrap);
   router.get('/discovery', controller.discovery);
   router.post('/swipes', controller.swipe);
