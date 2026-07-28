@@ -122,8 +122,7 @@ module.exports = function expoConfig({ config }) {
           webClientId: GOOGLE_WEB_CLIENT_ID,
           offlineAccess: true,
           forceCodeForRefreshToken: true,
-          iosClientId: GOOGLE_IOS_CLIENT_ID,
-          iosUrlScheme: GOOGLE_REVERSED_CLIENT_ID,
+          iosUrlScheme: GOOGLE_REVERSED_CLIENT_ID || 'com.googleusercontent.apps.164509786898-7ca20l8gli2hia1d8p06r55v81p9f2nh',
         },
       ],
       [
