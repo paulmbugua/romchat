@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 export type SaccoSummary = {
   totals: { members: number; savings: number; loans: number; dividends: number };
@@ -70,8 +71,10 @@ export type SellerDashboard = {
 
 type ApiOptions = RequestInit & { token?: string | null };
 type ExpoExtra = {
+  EXPO_PUBLIC_ALLOW_ANDROID_EMULATOR_BACKEND?: string;
   EXPO_PUBLIC_APP_ENV?: string;
   EXPO_PUBLIC_BACKEND_URL?: string;
+  EXPO_PUBLIC_PROD_BACKEND_URL?: string;
   BACKENDS?: Record<string, string>;
   DEFAULT_BACKEND?: string;
 };
@@ -82,12 +85,26 @@ const selectedBackendKey = extra.DEFAULT_BACKEND || 'direct';
 const selectedBackend =
   extra.BACKENDS && extra.DEFAULT_BACKEND ? extra.BACKENDS[extra.DEFAULT_BACKEND] : undefined;
 
-export const apiBaseUrl = (
+const configuredApiBaseUrl = (
   selectedBackend ||
   extra.EXPO_PUBLIC_BACKEND_URL ||
   process.env.EXPO_PUBLIC_BACKEND_URL ||
+  extra.EXPO_PUBLIC_PROD_BACKEND_URL ||
+  process.env.EXPO_PUBLIC_PROD_BACKEND_URL ||
   'https://server.desiredoha.com'
 ).replace(/\/$/, '');
+
+const allowAndroidEmulatorBackend =
+  String(extra.EXPO_PUBLIC_ALLOW_ANDROID_EMULATOR_BACKEND || process.env.EXPO_PUBLIC_ALLOW_ANDROID_EMULATOR_BACKEND || '').toLowerCase() === 'true';
+
+const androidEmulatorBackendSelected =
+  Platform.OS === 'android' &&
+  /^(https?:\/\/)?10\.0\.2\.2(?::\d+)?(?:\/)?$/i.test(configuredApiBaseUrl) &&
+  !allowAndroidEmulatorBackend;
+
+export const apiBaseUrl = androidEmulatorBackendSelected
+  ? (extra.EXPO_PUBLIC_PROD_BACKEND_URL || process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'http://server.desiredoha.com').replace(/\/$/, '')
+  : configuredApiBaseUrl;
 
 const apiDebugEnabled = typeof __DEV__ === 'undefined' ? true : __DEV__;
 
@@ -99,7 +116,9 @@ function describeApiError(error: unknown) {
 if (apiDebugEnabled) {
   console.info('[romchat-api] configured', {
     baseUrl: apiBaseUrl,
+    configuredBaseUrl: configuredApiBaseUrl,
     backendKey: selectedBackendKey,
+    androidEmulatorBackendSelected,
     appEnv: extra.EXPO_PUBLIC_APP_ENV || process.env.EXPO_PUBLIC_APP_ENV || 'unknown',
     hasManifestBackend: Boolean(extra.EXPO_PUBLIC_BACKEND_URL || selectedBackend),
   });
@@ -135,7 +154,7 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
     return payload as T;
   } catch (error) {
     const details = describeApiError(error);
-    console.error('[romchat-api] request:failed', { requestId, method, url, ...details });
+    console.warn('[romchat-api] request:failed', { requestId, method, url, ...details });
     if (details.message.includes('Network request failed')) {
       throw new Error(`Network request failed while contacting RomChat backend at ${apiBaseUrl}. Check that this URL is reachable from the phone and that HTTPS certificates are trusted.`);
     }

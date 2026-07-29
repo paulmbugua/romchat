@@ -354,7 +354,7 @@ export default function App() {
       console.info('[romchat-google] token-login:success');
     }
     catch (error) {
-      console.error('[romchat-google] token-login:failed', error);
+      console.warn('[romchat-google] token-login:failed', error);
       setAuthError(error instanceof Error ? error.message : 'Google login failed.');
     }
     finally { setAuthBusy(false); }
@@ -376,7 +376,7 @@ export default function App() {
       await applyAuth(await romchatAccountApi.google(idToken));
       console.info('[romchat-google] native:backend-auth-success');
     } catch (error) {
-      console.error('[romchat-google] native:failed', error);
+      console.warn('[romchat-google] native:failed', error);
       const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: string }).code || '') : '';
       if (code === statusCodes.SIGN_IN_CANCELLED) setAuthError('Google sign-in cancelled.');
       else if (code === statusCodes.IN_PROGRESS) setAuthError('Google sign-in is already in progress.');

@@ -37,9 +37,10 @@ module.exports = function expoConfig({ config }) {
   };
 
   const DEFAULT_BACKEND =
-    process.env.EXPO_PUBLIC_DEFAULT_BACKEND || process.env.BACKEND || (isProduction || process.env.EAS_BUILD ? 'prod' : 'androidEmu');
+    process.env.EXPO_PUBLIC_DEFAULT_BACKEND || process.env.BACKEND || 'prod';
   const RESOLVED_BACKEND_URL = BACKENDS[DEFAULT_BACKEND] || BACKENDS.prod;
   const usesCleartextTraffic = !isProduction && String(RESOLVED_BACKEND_URL).startsWith('http://');
+  const ALLOW_ANDROID_EMULATOR_BACKEND = process.env.EXPO_PUBLIC_ALLOW_ANDROID_EMULATOR_BACKEND || '';
   const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_WEB || '';
   const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_ANDROID || '';
   const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_IOS || '';
@@ -146,6 +147,7 @@ module.exports = function expoConfig({ config }) {
       EXPO_PUBLIC_APP_ENV: appEnv,
       EXPO_PUBLIC_BACKEND_URL: RESOLVED_BACKEND_URL,
       EXPO_PUBLIC_PROD_BACKEND_URL: BACKENDS.prod,
+      EXPO_PUBLIC_ALLOW_ANDROID_EMULATOR_BACKEND: ALLOW_ANDROID_EMULATOR_BACKEND,
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: GOOGLE_WEB_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: GOOGLE_ANDROID_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: GOOGLE_IOS_CLIENT_ID,
