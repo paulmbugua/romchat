@@ -233,10 +233,17 @@ function decodeJwtPayload(token) {
   }
 }
 
-export async function loginWithGoogleToken({ idToken }) {
+export async function loginWithGoogleToken({ idToken }, diagnostics = {}) {
   await ensureAccountSchema();
   const rawToken = String(idToken || '');
   const payload = decodeJwtPayload(rawToken);
+  console.info('[romchat-google] token:decoded', {
+    requestId: diagnostics.requestId || null,
+    issuer: payload?.iss || null,
+    audience: payload?.aud || null,
+    emailVerified: payload?.email_verified ?? null,
+    hasEmail: Boolean(payload?.email),
+  });
   if (!payload) {
     const error = new Error('Malformed Google token.');
     error.status = 400;
@@ -247,6 +254,11 @@ export async function loginWithGoogleToken({ idToken }) {
     process.env.GOOGLE_CLIENT_ID_ANDROID || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
     process.env.GOOGLE_CLIENT_ID_IOS || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
   ].filter(Boolean);
+  console.info('[romchat-google] token:audiences', {
+    requestId: diagnostics.requestId || null,
+    configuredAudienceCount: allowedAudiences.length,
+    hasFirebaseProjectId: Boolean(process.env.FIREBASE_PROJECT_ID),
+  });
   const firebaseProjectId = process.env.FIREBASE_PROJECT_ID;
   let email;
   let name;

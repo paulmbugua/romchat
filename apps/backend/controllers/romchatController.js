@@ -26,6 +26,11 @@ import { moderateMediaAsset, moderateTextPayload } from '../services/romchatMode
 import { getAuthState, loginWithGoogleToken, loginWithPassword, requestSignupOtp, requireRomchatAccount, uploadMemberMedia, upsertMemberProfile, verifySignupOtp } from '../services/romchatAccountService.js';
 
 function sendError(res, error) {
+  console.error('[romchat-api] request:error', {
+    status: error.status || 500,
+    message: error.message || 'RomChat request failed.',
+    code: error.code || null,
+  });
   res.status(error.status || 500).json({ message: error.message || 'RomChat request failed.' });
 }
 
@@ -62,9 +67,15 @@ export function createRomchatController(io) {
       }
     },
     async authGoogle(req, res) {
+      const requestId = `rcg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+      const tokenLength = String(req.body?.idToken || req.body?.token || '').length;
+      console.info('[romchat-google] auth:start', { requestId, tokenLength, userAgent: req.get('user-agent') || null });
       try {
-        res.json(await loginWithGoogleToken(req.body || {}));
+        const session = await loginWithGoogleToken(req.body || {}, { requestId });
+        console.info('[romchat-google] auth:success', { requestId, userId: session.user?.id, email: session.user?.email });
+        res.json(session);
       } catch (error) {
+        console.error('[romchat-google] auth:failed', { requestId, status: error.status || 500, message: error.message, code: error.code || null });
         sendError(res, error);
       }
     },

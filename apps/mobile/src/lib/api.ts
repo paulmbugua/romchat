@@ -70,6 +70,7 @@ export type SellerDashboard = {
 
 type ApiOptions = RequestInit & { token?: string | null };
 type ExpoExtra = {
+  EXPO_PUBLIC_APP_ENV?: string;
   EXPO_PUBLIC_BACKEND_URL?: string;
   BACKENDS?: Record<string, string>;
   DEFAULT_BACKEND?: string;
@@ -77,26 +78,69 @@ type ExpoExtra = {
 
 const manifestExtra = (Constants.manifest as { extra?: unknown } | null | undefined)?.extra;
 const extra = (Constants.expoConfig?.extra || manifestExtra || {}) as ExpoExtra;
+const selectedBackendKey = extra.DEFAULT_BACKEND || 'direct';
 const selectedBackend =
   extra.BACKENDS && extra.DEFAULT_BACKEND ? extra.BACKENDS[extra.DEFAULT_BACKEND] : undefined;
 
-export const apiBaseUrl =
+export const apiBaseUrl = (
   selectedBackend ||
   extra.EXPO_PUBLIC_BACKEND_URL ||
   process.env.EXPO_PUBLIC_BACKEND_URL ||
-  'http://localhost:4000';
+  'https://server.desiredoha.com'
+).replace(/\/$/, '');
+
+const apiDebugEnabled = typeof __DEV__ === 'undefined' ? true : __DEV__;
+
+function describeApiError(error: unknown) {
+  if (error instanceof Error) return { name: error.name, message: error.message, stack: error.stack };
+  return { name: 'UnknownError', message: String(error) };
+}
+
+if (apiDebugEnabled) {
+  console.info('[romchat-api] configured', {
+    baseUrl: apiBaseUrl,
+    backendKey: selectedBackendKey,
+    appEnv: extra.EXPO_PUBLIC_APP_ENV || process.env.EXPO_PUBLIC_APP_ENV || 'unknown',
+    hasManifestBackend: Boolean(extra.EXPO_PUBLIC_BACKEND_URL || selectedBackend),
+  });
+}
 
 export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  const requestId = `rc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  const method = String(options.method || 'GET').toUpperCase();
+  const url = `${apiBaseUrl}${path}`;
   const headers: Record<string, string> = {
     Accept: 'application/json',
     ...(options.body ? { 'Content-Type': 'application/json' } : {}),
     ...((options.headers as Record<string, string>) || {}),
   };
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
-  const response = await fetch(`${apiBaseUrl}${path}`, { ...options, headers });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.message || `Request failed: ${response.status}`);
-  return payload as T;
+  if (apiDebugEnabled) console.info('[romchat-api] request:start', { requestId, method, url, hasAuth: Boolean(options.token) });
+  try {
+    const response = await fetch(url, { ...options, headers });
+    const responseText = await response.text().catch(() => '');
+    let payload: any = {};
+    try { payload = responseText ? JSON.parse(responseText) : {}; } catch { payload = { raw: responseText.slice(0, 240) }; }
+    if (apiDebugEnabled) {
+      console.info('[romchat-api] request:finish', {
+        requestId,
+        method,
+        url,
+        status: response.status,
+        ok: response.ok,
+        payloadKeys: payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 8) : [],
+      });
+    }
+    if (!response.ok) throw new Error(payload.message || `Request failed: ${response.status}`);
+    return payload as T;
+  } catch (error) {
+    const details = describeApiError(error);
+    console.error('[romchat-api] request:failed', { requestId, method, url, ...details });
+    if (details.message.includes('Network request failed')) {
+      throw new Error(`Network request failed while contacting RomChat backend at ${apiBaseUrl}. Check that this URL is reachable from the phone and that HTTPS certificates are trusted.`);
+    }
+    throw error instanceof Error ? error : new Error(String(error));
+  }
 }
 
 export function formatKes(value: number | string | null | undefined) {

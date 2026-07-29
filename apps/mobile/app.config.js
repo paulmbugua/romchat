@@ -32,11 +32,12 @@ module.exports = function expoConfig({ config }) {
     androidEmu: 'http://10.0.2.2:4000',
     iosSim: 'http://localhost:4000',
     lan1: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://192.168.137.1:4000',
-    prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://api.romchat.app',
+    hotspot: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.254.198.47:4001',
+    prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://server.desiredoha.com',
   };
 
   const DEFAULT_BACKEND =
-    process.env.EXPO_PUBLIC_DEFAULT_BACKEND || process.env.BACKEND || (isProduction ? 'prod' : 'androidEmu');
+    process.env.EXPO_PUBLIC_DEFAULT_BACKEND || process.env.BACKEND || (isProduction || process.env.EAS_BUILD ? 'prod' : 'androidEmu');
   const RESOLVED_BACKEND_URL = BACKENDS[DEFAULT_BACKEND] || BACKENDS.prod;
   const usesCleartextTraffic = !isProduction && String(RESOLVED_BACKEND_URL).startsWith('http://');
   const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_WEB || '';

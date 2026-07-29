@@ -22,6 +22,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { storage } from '../utils/storage';
 import { romchatAccountApi, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
+import { apiBaseUrl } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 
 type Section = 'chat' | 'premium' | 'safety' | 'profile';
@@ -347,8 +348,15 @@ export default function App() {
   async function loginWithGoogle(idToken: string) {
     setAuthBusy(true);
     setAuthError('');
-    try { await applyAuth(await romchatAccountApi.google(idToken)); }
-    catch (error) { setAuthError(error instanceof Error ? error.message : 'Google login failed.'); }
+    console.info('[romchat-google] token-login:start', { apiBaseUrl, tokenLength: idToken.length });
+    try {
+      await applyAuth(await romchatAccountApi.google(idToken));
+      console.info('[romchat-google] token-login:success');
+    }
+    catch (error) {
+      console.error('[romchat-google] token-login:failed', error);
+      setAuthError(error instanceof Error ? error.message : 'Google login failed.');
+    }
     finally { setAuthBusy(false); }
   }
 
@@ -356,13 +364,19 @@ export default function App() {
     setAuthBusy(true);
     setAuthError('');
     try {
-      try { await GoogleSignin.signOut(); } catch {}
+      console.info('[romchat-google] native:start', { apiBaseUrl });
+      try { await GoogleSignin.signOut(); } catch (signOutError) { console.info('[romchat-google] native:signout-skip', signOutError); }
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      console.info('[romchat-google] native:play-services-ok');
       await GoogleSignin.signIn();
+      console.info('[romchat-google] native:signin-ok');
       const { idToken } = await GoogleSignin.getTokens();
+      console.info('[romchat-google] native:tokens', { hasIdToken: Boolean(idToken), tokenLength: idToken?.length || 0 });
       if (!idToken) throw new Error('Google did not return an ID token.');
       await applyAuth(await romchatAccountApi.google(idToken));
+      console.info('[romchat-google] native:backend-auth-success');
     } catch (error) {
+      console.error('[romchat-google] native:failed', error);
       const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: string }).code || '') : '';
       if (code === statusCodes.SIGN_IN_CANCELLED) setAuthError('Google sign-in cancelled.');
       else if (code === statusCodes.IN_PROGRESS) setAuthError('Google sign-in is already in progress.');
