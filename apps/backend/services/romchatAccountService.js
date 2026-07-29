@@ -249,14 +249,25 @@ export async function loginWithGoogleToken({ idToken }, diagnostics = {}) {
     error.status = 400;
     throw error;
   }
-  const allowedAudiences = [
-    process.env.GOOGLE_CLIENT_ID_WEB || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_ID_ANDROID || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_ID_IOS || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-  ].filter(Boolean);
+  const allowedAudiences = Array.from(new Set([
+    process.env.ROMCHAT_GOOGLE_CLIENT_ID_WEB,
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_ID_WEB,
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.ROMCHAT_GOOGLE_CLIENT_ID_ANDROID,
+    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_ID_ANDROID,
+    process.env.ROMCHAT_GOOGLE_CLIENT_ID_IOS,
+    process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_ID_IOS,
+    '164509786898-7ca20l8gli2hia1d8p06r55v81p9f2nh.apps.googleusercontent.com',
+    '164509786898-3men3o0mi3tl2p4ktajsmc19qgkkgd88.apps.googleusercontent.com',
+  ].filter(Boolean).flatMap((value) => String(value).split(',').map((item) => item.trim()).filter(Boolean))));
   console.info('[romchat-google] token:audiences', {
     requestId: diagnostics.requestId || null,
+    tokenAudience: payload?.aud || null,
     configuredAudienceCount: allowedAudiences.length,
+    audienceMatchedBeforeVerify: allowedAudiences.includes(String(payload?.aud || '')),
     hasFirebaseProjectId: Boolean(process.env.FIREBASE_PROJECT_ID),
   });
   const firebaseProjectId = process.env.FIREBASE_PROJECT_ID;
@@ -278,7 +289,15 @@ export async function loginWithGoogleToken({ idToken }, diagnostics = {}) {
     name = decoded.name || decoded.email;
     googleId = decoded.uid;
   } else {
-    const ticket = await googleClient.verifyIdToken({ idToken: rawToken, audience: allowedAudiences.length ? allowedAudiences : undefined });
+    let ticket;
+    try {
+      ticket = await googleClient.verifyIdToken({ idToken: rawToken, audience: allowedAudiences.length ? allowedAudiences : undefined });
+    } catch (verifyError) {
+      const error = new Error(`Google token audience mismatch. Token audience: ${payload?.aud || 'unknown'}`);
+      error.status = 401;
+      error.cause = verifyError;
+      throw error;
+    }
     const google = ticket.getPayload();
     if (!google?.email || google.email_verified === false) {
       const error = new Error('Google email is missing or unverified.');
