@@ -55,58 +55,58 @@ type ProfileSeed = {
 const localProfiles: ProfileSeed[] = [
   {
     id: 'elena',
-    name: 'Elena',
+    name: 'Aisha',
     age: 26,
-    city: 'New York',
+    city: 'Nairobi',
     match: 94,
-    intent: 'Long-term, slow burn',
-    prompt: 'Coffee, galleries, and dinner where phones stay away.',
-    voiceNote: '10s voice note: Saturday jazz, morning markets, quiet confidence.',
-    videoPrompt: 'Loop: golden-hour walk through a design district.',
-    quote: 'Green flags are consistency, curiosity, and calm effort.',
-    song: 'Currently replaying: Sweet Disposition',
+    intent: 'Serious Kenyan love, slow burn',
+    prompt: 'Java dates, Karura walks, and dinners where phones stay away.',
+    voiceNote: '10s voice note: Saturday brunch, Nairobi sunsets, quiet confidence.',
+    videoPrompt: 'Loop: golden-hour walk through Westlands.',
+    quote: 'Green flags are consistency, respect, and showing up even when Nairobi traffic wins.',
+    song: 'Currently replaying: Sauti Sol - Suzanna',
     gallery: 9,
-    tags: ['Architecture', 'Jazz', 'Travel'],
-    answers: ['Quiet confidence', 'Dinner first', 'Texts with substance'],
-    poll: { question: 'Pineapple on pizza?', yes: 62, no: 38 },
+    tags: ['Karura', 'Afrobeats', 'Travel'],
+    answers: ['Intentional effort', 'Dinner first', 'Texts with substance'],
+    poll: { question: 'Mutura date after sunset?', yes: 68, no: 32 },
     color: '#ff4f88',
     photo: require('../assets/romchat/profile-elena.png'),
   },
   {
     id: 'amara',
-    name: 'Amara',
+    name: 'Wanjiku',
     age: 29,
-    city: 'Brooklyn',
+    city: 'Mombasa',
     match: 91,
     intent: 'Ready for partnership',
-    prompt: 'Thoughtful dinners, film nights, and tiny rituals.',
-    voiceNote: '10s voice note: I will remember your coffee order.',
-    videoPrompt: 'Loop: candlelit pasta night with a film queue.',
-    quote: 'A good date feels like the conversation had somewhere to go.',
-    song: 'Currently replaying: Golden Hour',
+    prompt: 'Coast weekends, Swahili food, film nights, and tiny rituals.',
+    voiceNote: '10s voice note: I will remember your chai order.',
+    videoPrompt: 'Loop: beach dinner in Nyali with a film queue.',
+    quote: 'A good Kenyan date feels easy, respectful, and worth crossing town for.',
+    song: 'Currently replaying: Bien - Inauma',
     gallery: 10,
-    tags: ['Cooking', 'Design', 'Film'],
+    tags: ['Swahili food', 'Design', 'Film'],
     answers: ['Plan the date', 'Acts of service', 'Sunday market'],
-    poll: { question: 'Plan the date or freestyle?', yes: 74, no: 26 },
+    poll: { question: 'Diani weekend or Nairobi rooftop?', yes: 74, no: 26 },
     color: '#ff6a3d',
     photo: require('../assets/romchat/profile-amara.png'),
   },
   {
     id: 'noah',
-    name: 'Noah',
+    name: 'Brian',
     age: 31,
-    city: 'Jersey City',
+    city: 'Kisumu',
     match: 88,
     intent: 'Intentional connection',
-    prompt: 'Runner, builder, and the friend who books the table.',
-    voiceNote: '10s voice note: Sunday run, bookstore, rooftop sunset.',
-    videoPrompt: 'Loop: city run ending at a skyline cafe.',
-    quote: 'The best relationships are playful and deeply reliable.',
-    song: 'Currently replaying: Lost in Yesterday',
+    prompt: 'Runner, builder, and the guy who books the table before traffic starts.',
+    voiceNote: '10s voice note: Sunday run, Java stop, rooftop sunset.',
+    videoPrompt: 'Loop: city run ending at a Kisumu lakefront cafe.',
+    quote: 'The best relationships are playful, prayerful if that is your lane, and deeply reliable.',
+    song: 'Currently replaying: Bensoul - Favorite Song',
     gallery: 8,
     tags: ['Books', 'Rooftops', 'Running'],
     answers: ['Early flight', 'Rooftop view', 'Calls over voice notes'],
-    poll: { question: 'Early flight or late checkout?', yes: 57, no: 43 },
+    poll: { question: 'Matatu adventure or Bolt comfort?', yes: 57, no: 43 },
     color: '#8a3ffc',
     photo: require('../assets/romchat/profile-noah.png'),
   },
@@ -120,20 +120,20 @@ const shortcuts: Array<{ id: Section; label: string; title: string }> = [
 ];
 
 const plans = [
-  { name: 'Gold', price: '$19', perks: ['Unlimited likes', 'See admirers', 'Undo swipes', 'Read receipts'] },
-  { name: 'Platinum', price: '$39', perks: ['Priority likes', 'Passport mode', 'Weekly boost', 'Incognito included'] },
+  { name: 'Gold', price: 'KES 499', perks: ['Unlimited likes', 'See admirers', 'Undo swipes', 'Read receipts'] },
+  { name: 'Platinum', price: 'KES 999', perks: ['Priority likes', 'Passport mode', 'Weekly boost', 'Incognito included'] },
 ];
 
 const gifts = [
   { id: 'rose', name: 'Rose', tokens: 5 },
-  { id: 'coffee', name: 'Coffee', tokens: 12 },
+  { id: 'chai', name: 'Chai date', tokens: 12 },
   { id: 'spotlight', name: 'Spotlight', tokens: 30 },
 ];
 
 const tokenPackages = [
-  { id: 'tokens_100', amount: 100, price: '$4.99', unit: '$0.05/ea', badge: '' },
-  { id: 'tokens_350', amount: 350, price: '$12.99', unit: '$0.03/ea', badge: 'MOST POPULAR' },
-  { id: 'tokens_1000', amount: 1000, price: '$29.99', unit: '$0.02/ea', badge: 'BEST VALUE' },
+  { id: 'tokens_100', amount: 100, price: 'KES 250', unit: 'KES 2.50/ea', badge: '' },
+  { id: 'tokens_350', amount: 350, price: 'KES 650', unit: 'KES 1.85/ea', badge: 'MOST POPULAR' },
+  { id: 'tokens_1000', amount: 1000, price: 'KES 1,500', unit: 'KES 1.50/ea', badge: 'BEST VALUE' },
 ];
 
 const SUPER_LIKE_COST = 15;
@@ -150,16 +150,16 @@ const tokenCatalog = [
 ];
 
 const starterMessages = [
-  ['Elena', 'Your answer about building a life with room for quiet days was rare.', 'Seen 8:41 PM'],
+  ['Aisha', 'Your answer about building a life with room for quiet days was rare.', 'Seen 8:41 PM'],
   ['You', 'The best connection feels calm before it feels exciting.', 'Read'],
-  ['Elena', 'That deserves a golden-hour walk. Saturday?', 'Typing now'],
+  ['Aisha', 'That deserves a golden-hour walk. Saturday?', 'Typing now'],
 ];
 
 const screenTitles: Record<Section, string> = {
   chat: 'Inbox',
   premium: 'RomChat Plus',
-  safety: 'Safety Center',
-  profile: 'My Profile',
+  safety: 'Kenya Safety',
+  profile: 'My Kenyan Profile',
 };
 
 export default function App() {
@@ -485,7 +485,7 @@ export default function App() {
         <View style={styles.topBar}>
           <TouchableOpacity onPress={() => setActiveSection('profile')} style={styles.brandRow}>
             <Image source={require('../assets/icon.png')} style={styles.logo} />
-            <Text style={styles.brand}>RomChat</Text>
+            <View><Text style={styles.brand}>RomChat</Text><Text style={styles.brandTagline}>Kenya dating</Text></View>
           </TouchableOpacity>
           <View style={styles.topControls}>
             <TouchableOpacity onPress={() => setActiveSection('chat')} style={styles.iconButton} accessibilityLabel="Open inbox">
@@ -563,8 +563,8 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onNativeG
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.authSafe}>
       <ScrollView contentContainerStyle={styles.authContent} keyboardShouldPersistTaps="handled">
         <Text style={styles.authLogo}>RomChat</Text>
-        <Text style={styles.authTitle}>Meet beautifully. Chat safely.</Text>
-        <Text style={styles.authCopy}>Login to unlock real matches, verified profiles, token wallet, and R2-backed photo galleries.</Text>
+        <Text style={styles.authTitle}>Meet Kenyan singles. Chat beautifully.</Text>
+        <Text style={styles.authCopy}>Login to meet verified Kenyan singles in Nairobi, Mombasa, Kisumu, Eldoret, Nakuru, and beyond.</Text>
         <TouchableOpacity disabled={!googleConfigured || busy} onPress={() => void onNativeGoogle()} style={[styles.googleButton, !googleConfigured && styles.googleButtonDisabled]}>
           <Icon name="logo-google" size={18} color="#120914" />
           <Text style={styles.googleButtonText}>{!googleConfigured ? 'Google setup pending' : busy ? 'Connecting...' : 'Continue with Google'}</Text>
@@ -612,14 +612,14 @@ function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUpload
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.authSafe}>
       <ScrollView contentContainerStyle={styles.authContent} keyboardShouldPersistTaps="handled">
         <Text style={styles.authLogo}>RomChat</Text>
-        <Text style={styles.authTitle}>{hasProfile ? 'Add your first photo' : 'Create your dating profile'}</Text>
-        <Text style={styles.authCopy}>Upload at least 1 image to enter discovery. More uploaded images unlock more of other members' photo catalogues.</Text>
+        <Text style={styles.authTitle}>{hasProfile ? 'Add your first photo' : 'Create your Kenyan dating profile'}</Text>
+        <Text style={styles.authCopy}>Upload at least 1 image to enter Kenyan discovery. More uploaded images unlock more of other members' photo catalogues.</Text>
         <TextInput value={displayName} onChangeText={setDisplayName} placeholder="Display name" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
         <TextInput value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="Age" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
         <View style={styles.genderRow}>{['female', 'male', 'nonbinary'].map((item) => <TouchableOpacity key={item} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
         <TextInput value={city} onChangeText={setCity} placeholder="City" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
-        <TextInput value={intent} onChangeText={setIntent} placeholder="Dating intention" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
-        <TextInput value={bio} onChangeText={setBio} placeholder="Short romantic bio" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, styles.authTextArea]} multiline />
+        <TextInput value={intent} onChangeText={setIntent} placeholder="Dating intention in Kenya" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
+        <TextInput value={bio} onChangeText={setBio} placeholder="Short Kenyan romance bio" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, styles.authTextArea]} multiline />
         <TextInput value={interests} onChangeText={setInterests} placeholder="Interests, comma separated" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
         <TouchableOpacity disabled={busy} onPress={() => void onSaveProfile({ displayName, age: Number(age), gender, city, intent, bio, interests: interests.split(',').map((item) => item.trim()).filter(Boolean) })} style={styles.authPrimary}>
           <Text style={styles.authPrimaryText}>Save profile</Text>
@@ -704,7 +704,7 @@ function Discover({
               <Text style={styles.verifiedBadge}>Verified</Text>
             </View>
             <Text style={styles.cardTitle}>{profile.name}, {profile.age}</Text>
-            <Text style={styles.cardSub}>{profile.city} - 2 mi away</Text>
+            <Text style={styles.cardSub}>{profile.city} - nearby in Kenya</Text>
             <Text style={styles.cardPrompt}>{profile.prompt}</Text>
             <View style={styles.tagRow}>{profile.tags.map((tag) => <Text key={tag} style={styles.photoTag}>{tag}</Text>)}</View>
           </View>
@@ -738,12 +738,12 @@ function Discover({
             <Image source={profile.photo} style={[styles.matchAvatarLarge, styles.matchAvatarOverlap]} />
             <View style={styles.floatingHeart}><Icon name="heart" size={18} color="#FFFFFF" /></View>
           </View>
-          <Text style={styles.matchKicker}>It is a match</Text>
-          <Text style={styles.matchTitle}>You and {profile.name} both felt it</Text>
+          <Text style={styles.matchKicker}>Ni match</Text>
+          <Text style={styles.matchTitle}>You and {profile.name} both felt the Kenyan vibe</Text>
           {openers.map((item) => <Text key={item} style={styles.matchPrompt}>{item}</Text>)}
           <View style={styles.matchActions}>
             <TouchableOpacity onPress={dismissMatch} style={styles.matchSecondary}><Text style={styles.matchSecondaryText}>Keep swiping</Text></TouchableOpacity>
-            <TouchableOpacity onPress={openChat} style={styles.matchPrimary}><Text style={styles.matchPrimaryText}>Send a romantic intro - 5 tokens</Text></TouchableOpacity>
+            <TouchableOpacity onPress={openChat} style={styles.matchPrimary}><Text style={styles.matchPrimaryText}>Send a Kenyan romantic intro - 5 tokens</Text></TouchableOpacity>
           </View>
         </LinearGradient>
         </Animated.View>
@@ -809,7 +809,7 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
         <View style={styles.chatIdentity}>
           <Image source={localProfiles[0]!.photo} style={styles.chatHeaderAvatar} />
           <View>
-            <Text style={styles.chatName}>Elena</Text>
+            <Text style={styles.chatName}>Aisha</Text>
             <Text style={styles.chatStatus}>Online now</Text>
           </View>
         </View>
@@ -952,12 +952,12 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
     <View>
       <View style={styles.panel}>
         <Text style={styles.kicker}>{status}</Text>
-        <Text style={styles.title}>Safety & privacy hub</Text>
+        <Text style={styles.title}>Kenyan safety & privacy hub</Text>
         <ToggleRow title="Verified-only discovery" value={verifiedOnly} onPress={() => setPrivacy({ verifiedOnly: !verifiedOnly })} />
         <ToggleRow title="Incognito visibility" value={incognito} onPress={() => setPrivacy({ incognito: !incognito })} />
         <ToggleRow title="Anti-screengrab blocks" value={antiGrab} onPress={() => setPrivacy({ antiGrab: !antiGrab })} />
         <TouchableOpacity onPress={() => void verify()} style={styles.listItem}><Text style={styles.listTitle}>Selfie verification</Text><Text style={styles.caption}>Persona / Smile Identity ready</Text></TouchableOpacity>
-        <TouchableOpacity onPress={report} style={styles.listItem}><Text style={styles.listTitle}>Report profile</Text><Text style={styles.caption}>Safety team</Text></TouchableOpacity>
+        <TouchableOpacity onPress={report} style={styles.listItem}><Text style={styles.listTitle}>Report profile</Text><Text style={styles.caption}>Kenya safety team</Text></TouchableOpacity>
         <TouchableOpacity style={styles.listItem}><Text style={styles.listTitle}>Blocked accounts</Text><Text style={styles.caption}>Manage list</Text></TouchableOpacity>
         <TouchableOpacity style={styles.listItem}><Text style={styles.listTitle}>Community support</Text><Text style={styles.caption}>Get help</Text></TouchableOpacity>
       </View>
@@ -965,7 +965,7 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
         <Text style={styles.score}>97</Text>
         <View style={{ flex: 1 }}>
           <Text style={styles.scoreTitle}>Safety score</Text>
-          <Text style={styles.caption}>Identity and consent signals are healthy.</Text>
+          <Text style={styles.caption}>Identity, consent, and Kenyan community signals are healthy.</Text>
         </View>
       </View>
     </View>
@@ -987,7 +987,7 @@ function Profile({ account, profile, strength, incognito, verify, status, onSign
     <View>
       <View style={styles.panel}>
         <Text style={styles.kicker}>{account?.email || status}</Text>
-        <Text style={styles.title}>{profile?.displayName || account?.name || 'Profile & vibe'}</Text>
+        <Text style={styles.title}>{profile?.displayName || account?.name || 'Kenyan profile & vibe'}</Text>
         <Text style={styles.caption}>{profile?.city ? `${profile.city} - ${profile.intent || 'Intentional connection'}` : status}</Text>
         <Text style={styles.profileStrength}>{computedStrength}% complete</Text>
         <View style={styles.progress}><View style={[styles.progressFill, { width: `${computedStrength}%` }]} /></View>
@@ -1006,8 +1006,8 @@ function Profile({ account, profile, strength, incognito, verify, status, onSign
       </View>
       <View style={styles.panel}>
         <Text style={styles.kicker}>Bio assistant</Text>
-        <Text style={styles.insight}>{profile?.bio || 'One-tap romantic bio: I am looking for something warm, direct, and built around small rituals.'}</Text>
-        <Text style={styles.insight}>{profile?.interests?.length ? `Vibe signals: ${profile.interests.join(', ')}` : 'Best dates: a walk with room for honest conversation, then food worth remembering.'}</Text>
+        <Text style={styles.insight}>{profile?.bio || 'One-tap Kenyan bio: I am looking for something warm, honest, and intentional around real dates.'}</Text>
+        <Text style={styles.insight}>{profile?.interests?.length ? `Vibe signals: ${profile.interests.join(', ')}` : 'Best dates: Karura walks, Java chats, lakefront sunsets, and food worth remembering.'}</Text>
       </View>
     </View>
   );
@@ -1068,6 +1068,7 @@ const styles = StyleSheet.create({
   topControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logo: { width: 38, height: 38, borderRadius: 14 },
   brand: { color: '#FF1493', fontSize: 25, fontWeight: '900' },
+  brandTagline: { color: '#FFD7E6', fontSize: 11, fontWeight: '900', marginTop: 1 },
   caption: { color: 'rgba(255,255,255,0.7)', fontWeight: '800', lineHeight: 18 },
   iconButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#1E1222', borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', alignItems: 'center', justifyContent: 'center' },
   walletPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#1E1222', paddingHorizontal: 12, height: 42, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255, 215, 0, 0.38)' },
