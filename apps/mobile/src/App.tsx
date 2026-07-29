@@ -646,7 +646,7 @@ function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUpload
         </TouchableOpacity>
         <TouchableOpacity disabled={busy || !hasProfile} onPress={() => void onUploadImage()} style={[styles.uploadCard, !hasProfile && styles.uploadCardDisabled]}>
           <Icon name="image" size={24} color="#FFD700" />
-          <View style={{ flex: 1 }}><Text style={styles.uploadTitle}>{imageCount ? String(imageCount) + ' image uploaded' : 'Upload first profile image'}</Text><Text style={styles.uploadMeta}>R2 bucket: images-romchat</Text></View>
+          <View style={{ flex: 1 }}><Text style={styles.uploadTitle}>{imageCount ? String(imageCount) + ' image uploaded' : 'Upload first profile image'}</Text><Text style={styles.uploadMeta}>Private RomChat photo gallery</Text></View>
         </TouchableOpacity>
         {!!error && <Text style={styles.authError}>{error}</Text>}
         <TouchableOpacity onPress={() => void onSignOut()}><Text style={styles.authLink}>Use another account</Text></TouchableOpacity>
