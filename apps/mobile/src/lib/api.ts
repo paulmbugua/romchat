@@ -74,6 +74,8 @@ type ExpoExtra = {
   EXPO_PUBLIC_ALLOW_ANDROID_EMULATOR_BACKEND?: string;
   EXPO_PUBLIC_APP_ENV?: string;
   EXPO_PUBLIC_BACKEND_URL?: string;
+  EXPO_PUBLIC_DEVICE_BACKEND_PORT?: string;
+  EXPO_PUBLIC_DEVICE_BACKEND_URL?: string;
   EXPO_PUBLIC_PROD_BACKEND_URL?: string;
   BACKENDS?: Record<string, string>;
   DEFAULT_BACKEND?: string;
@@ -102,13 +104,43 @@ const androidEmulatorBackendSelected =
   /^(https?:\/\/)?10\.0\.2\.2(?::\d+)?(?:\/)?$/i.test(configuredApiBaseUrl) &&
   !allowAndroidEmulatorBackend;
 
+const constantsRuntime = Constants as typeof Constants & {
+  expoConfig?: { hostUri?: string | null };
+  manifest?: { debuggerHost?: string | null; hostUri?: string | null };
+  manifest2?: { extra?: { expoClient?: { hostUri?: string | null } } };
+};
+
+function hostFromExpoRuntime() {
+  const hostUri =
+    constantsRuntime.expoConfig?.hostUri ||
+    constantsRuntime.manifest?.debuggerHost ||
+    constantsRuntime.manifest?.hostUri ||
+    constantsRuntime.manifest2?.extra?.expoClient?.hostUri ||
+    '';
+  const host = String(hostUri).replace(/^https?:\/\//, '').split('/')[0]?.split(':')[0] || '';
+  if (!host || host === 'localhost' || host === '127.0.0.1' || host === '10.0.2.2') return '';
+  return host;
+}
+
+const metroHost = hostFromExpoRuntime();
+const lanBackendPort = extra.EXPO_PUBLIC_DEVICE_BACKEND_PORT || process.env.EXPO_PUBLIC_DEVICE_BACKEND_PORT || '4009';
+const lanBackendUrl = metroHost ? `http://${metroHost}:${lanBackendPort}` : '';
 const physicalAndroidBackendUrl = (
   process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL ||
-  extra.EXPO_PUBLIC_BACKEND_URL ||
+  extra.EXPO_PUBLIC_DEVICE_BACKEND_URL ||
+  lanBackendUrl ||
   'http://server.desiredoha.com'
 ).replace(/\/$/, '');
 
-export const apiBaseUrl = androidEmulatorBackendSelected ? physicalAndroidBackendUrl : configuredApiBaseUrl;
+const developmentDeviceBackendSelected =
+  Platform.OS === 'android' &&
+  selectedBackendKey === 'prod' &&
+  extra.EXPO_PUBLIC_APP_ENV !== 'production' &&
+  Boolean(lanBackendUrl) &&
+  !process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL &&
+  !extra.EXPO_PUBLIC_DEVICE_BACKEND_URL;
+
+export const apiBaseUrl = androidEmulatorBackendSelected || developmentDeviceBackendSelected ? physicalAndroidBackendUrl : configuredApiBaseUrl;
 
 const apiDebugEnabled = typeof __DEV__ === 'undefined' ? true : __DEV__;
 
@@ -122,8 +154,12 @@ if (apiDebugEnabled) {
     baseUrl: apiBaseUrl,
     configuredBaseUrl: configuredApiBaseUrl,
     physicalAndroidBackendUrl,
+    lanBackendUrl,
+    lanBackendPort,
+    metroHost,
     backendKey: selectedBackendKey,
     androidEmulatorBackendSelected,
+    developmentDeviceBackendSelected,
     appEnv: extra.EXPO_PUBLIC_APP_ENV || process.env.EXPO_PUBLIC_APP_ENV || 'unknown',
     hasManifestBackend: Boolean(extra.EXPO_PUBLIC_BACKEND_URL || selectedBackend),
   });
