@@ -5,6 +5,7 @@ export default function romchatRoutes(io) {
   const router = express.Router();
   const controller = createRomchatController(io);
 
+  router.get('/health', controller.health);
   router.post('/auth/request-otp', controller.authRequestOtp);
   router.post('/auth/verify-otp', controller.authVerifyOtp);
   router.post('/auth/login', controller.authLogin);

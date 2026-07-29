@@ -46,6 +46,9 @@ export type RomChatSessionPayload = {
   onboarding?: RomChatOnboardingState;
 };
 
+export const romchatBackendHealth = () =>
+  apiFetch<{ ok: boolean; service: string; generatedAt: string }>('/api/romchat/health');
+
 export const romchatAccountApi = {
   requestOtp: (payload: { name: string; email: string; password: string }) =>
     apiFetch<{ email: string; expiresInMinutes: number; message: string }>('/api/romchat/auth/request-otp', {

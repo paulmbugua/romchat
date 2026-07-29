@@ -144,7 +144,9 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
     const response = await fetch(url, { ...options, headers });
     const responseText = await response.text().catch(() => '');
     let payload: any = {};
-    try { payload = responseText ? JSON.parse(responseText) : {}; } catch { payload = { raw: responseText.slice(0, 240) }; }
+    try { payload = responseText ? JSON.parse(responseText) : {}; } catch { payload = { raw: responseText.slice(0, 500) }; }
+    const contentType = response.headers?.get?.('content-type') || '';
+    const rawSnippet = typeof payload?.raw === 'string' ? payload.raw.replace(/\s+/g, ' ').trim().slice(0, 240) : undefined;
     if (apiDebugEnabled) {
       console.info('[romchat-api] request:finish', {
         requestId,
@@ -152,10 +154,15 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
         url,
         status: response.status,
         ok: response.ok,
+        contentType,
+        rawSnippet,
         payloadKeys: payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 8) : [],
       });
     }
-    if (!response.ok) throw new Error(payload.message || `Request failed: ${response.status}`);
+    if (!response.ok) {
+      const detail = payload.message || rawSnippet || `Request failed: ${response.status}`;
+      throw new Error(`Request failed: ${response.status}. ${detail}`);
+    }
     return payload as T;
   } catch (error) {
     const details = describeApiError(error);

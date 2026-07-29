@@ -45,6 +45,9 @@ export function createRomchatController(io) {
   }
 
   return {
+    async health(_req, res) {
+      res.json({ ok: true, service: 'romchat', generatedAt: new Date().toISOString() });
+    },
     async authRequestOtp(req, res) {
       try {
         res.status(202).json(await requestSignupOtp(req.body || {}));

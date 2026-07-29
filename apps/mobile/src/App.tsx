@@ -21,7 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { storage } from '../utils/storage';
-import { romchatAccountApi, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
+import { romchatAccountApi, romchatBackendHealth, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
 import { apiBaseUrl } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 
@@ -373,6 +373,12 @@ export default function App() {
       const { idToken } = await GoogleSignin.getTokens();
       console.info('[romchat-google] native:tokens', { hasIdToken: Boolean(idToken), tokenLength: idToken?.length || 0 });
       if (!idToken) throw new Error('Google did not return an ID token.');
+      try {
+        const health = await romchatBackendHealth();
+        console.info('[romchat-google] backend:health-ok', health);
+      } catch (healthError) {
+        console.warn('[romchat-google] backend:health-failed', healthError);
+      }
       await applyAuth(await romchatAccountApi.google(idToken));
       console.info('[romchat-google] native:backend-auth-success');
     } catch (error) {
