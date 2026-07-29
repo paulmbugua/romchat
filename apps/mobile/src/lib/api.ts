@@ -102,9 +102,13 @@ const androidEmulatorBackendSelected =
   /^(https?:\/\/)?10\.0\.2\.2(?::\d+)?(?:\/)?$/i.test(configuredApiBaseUrl) &&
   !allowAndroidEmulatorBackend;
 
-export const apiBaseUrl = androidEmulatorBackendSelected
-  ? (extra.EXPO_PUBLIC_PROD_BACKEND_URL || process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'http://server.desiredoha.com').replace(/\/$/, '')
-  : configuredApiBaseUrl;
+const physicalAndroidBackendUrl = (
+  process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL ||
+  extra.EXPO_PUBLIC_BACKEND_URL ||
+  'http://server.desiredoha.com'
+).replace(/\/$/, '');
+
+export const apiBaseUrl = androidEmulatorBackendSelected ? physicalAndroidBackendUrl : configuredApiBaseUrl;
 
 const apiDebugEnabled = typeof __DEV__ === 'undefined' ? true : __DEV__;
 
@@ -117,6 +121,7 @@ if (apiDebugEnabled) {
   console.info('[romchat-api] configured', {
     baseUrl: apiBaseUrl,
     configuredBaseUrl: configuredApiBaseUrl,
+    physicalAndroidBackendUrl,
     backendKey: selectedBackendKey,
     androidEmulatorBackendSelected,
     appEnv: extra.EXPO_PUBLIC_APP_ENV || process.env.EXPO_PUBLIC_APP_ENV || 'unknown',
