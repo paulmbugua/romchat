@@ -111,7 +111,7 @@ function publicApiUrl() {
  * @param {string} [options.details.ctaText]  – Text for the button
  * @param {string} [options.details.plainText]– Override plain-text body
  */
-export const sendNotification = async ({ to, subject, body, details }) => {
+export const sendNotification = async ({ to, subject, body, details, suppressErrorLog = false }) => {
   try {
     // require to & subject, and either body or a valid details.items
     if (!to || !subject || (!body && !(details && details.items))) {
@@ -232,7 +232,9 @@ Unsubscribe: ${webUnsub}
 
     console.log(`✅ Email sent to ${to}: ${info.messageId}`);
   } catch (err) {
-    console.error(`❌ Error sending email to ${to}:`, err.message);
+    if (!suppressErrorLog) {
+      console.error(`❌ Error sending email to ${to}:`, err.message);
+    }
     throw err;
   }
 };

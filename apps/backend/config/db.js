@@ -74,13 +74,18 @@ pool.on('remove', () => {
 });
 
 pool.on('error', (err) => {
-  // Errors on *idle* clients — pool will discard & replace automatically.
-  const key = `${err.code || err.name}:${(err.message || '').slice(0, 80)}`;
-  if (shouldLogOnce(key)) {
-    console.warn('⚠️ PG idle client error:', err.code || err.name, '-', err.message);
+  // Idle client errors are recoverable: pg discards that client and opens a fresh one on the next query.
+  const message = err?.message || String(err);
+  const key = `${err.code || err.name}:${message.slice(0, 80)}`;
+  const idleDisconnect = /connection terminated unexpectedly/i.test(message);
+  if (shouldLogOnce(key, idleDisconnect ? 60_000 : 5_000)) {
+    const level = idleDisconnect ? 'info' : 'warn';
+    console[level]('[pg:idle]', idleDisconnect ? 'recycled idle client:' : 'idle client error:', err.code || err.name, '-', message);
   }
-  dbStatus.ready = false;
-  dbStatus.lastError = err?.message || String(err);
+  if (!idleDisconnect) {
+    dbStatus.ready = false;
+    dbStatus.lastError = message;
+  }
 });
 
 /* ───────── Robust startup probe (dev/containers) ───────── */

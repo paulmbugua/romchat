@@ -97,6 +97,7 @@ async function sendRomChatEmail(to, subject, details, fallbackCode) {
     await sendNotification({
       to,
       subject,
+      suppressErrorLog: true,
       details: {
         brandName: 'RomChat',
         brandColor: '#FF1493',
