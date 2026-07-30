@@ -23,7 +23,7 @@ import {
   updatePrivacy,
 } from '../services/romchatRepository.js';
 import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
-import { getAuthState, loginWithGoogleToken, loginWithPassword, requestSignupOtp, requireRomchatAccount, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
+import { getAuthState, loginWithGoogleToken, loginWithPassword, requestPasswordReset, requestSignupOtp, requireRomchatAccount, resetPasswordWithCode, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
 
 function sendError(res, error) {
   console.error('[romchat-api] request:error', {
@@ -65,6 +65,20 @@ export function createRomchatController(io) {
     async authLogin(req, res) {
       try {
         res.json(await loginWithPassword(req.body || {}));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async authForgotPassword(req, res) {
+      try {
+        res.status(202).json(await requestPasswordReset(req.body || {}));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async authResetPassword(req, res) {
+      try {
+        res.json(await resetPasswordWithCode(req.body || {}));
       } catch (error) {
         sendError(res, error);
       }

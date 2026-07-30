@@ -9,6 +9,8 @@ export default function romchatRoutes(io) {
   router.post('/auth/request-otp', controller.authRequestOtp);
   router.post('/auth/verify-otp', controller.authVerifyOtp);
   router.post('/auth/login', controller.authLogin);
+  router.post('/auth/forgot-password', controller.authForgotPassword);
+  router.post('/auth/reset-password', controller.authResetPassword);
   router.post('/auth/google', controller.authGoogle);
   router.get('/auth/me', controller.authMe);
   router.patch('/profile', controller.saveProfile);

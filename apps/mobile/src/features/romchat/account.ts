@@ -70,6 +70,16 @@ export const romchatAccountApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  forgotPassword: (payload: { email: string }) =>
+    apiFetch<{ email: string; expiresInMinutes: number; message: string; developmentCode?: string }>('/api/romchat/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  resetPassword: (payload: { email: string; code: string; password: string }) =>
+    apiFetch<RomChatSessionPayload>('/api/romchat/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   google: (idToken: string) =>
     apiFetch<RomChatSessionPayload>('/api/romchat/auth/google', {
       method: 'POST',

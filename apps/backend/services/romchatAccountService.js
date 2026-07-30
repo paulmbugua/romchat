@@ -36,6 +36,14 @@ CREATE TABLE IF NOT EXISTS romchat_email_otps (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS romchat_password_resets (
+  email TEXT PRIMARY KEY,
+  reset_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS romchat_member_profiles (
   member_id TEXT PRIMARY KEY REFERENCES romchat_accounts(id) ON DELETE CASCADE,
   display_name TEXT NOT NULL,
@@ -84,19 +92,50 @@ ALTER TABLE romchat_profile_media ADD CONSTRAINT romchat_profile_media_media_typ
 const id = (prefix) => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 const hashOtp = (email, otp) => crypto.createHash('sha256').update(`${email.toLowerCase()}:${otp}:${jwtSecret}`).digest('hex');
 
-async function sendRomChatOtp(to, otp) {
-  await sendNotification({
-    to,
-    subject: 'Your RomChat verification code',
-    details: {
-      intro: 'Use this one-time RomChat code to verify your email and start building a real dating profile.',
-      items: {
-        'RomChat code': `<div style=\"font-size:28px;font-weight:800;letter-spacing:3px;color:#FF1493\">${otp}</div>`,
-        Expires: `${otpTtlMinutes} minutes`,
+async function sendRomChatEmail(to, subject, details, fallbackCode) {
+  try {
+    await sendNotification({
+      to,
+      subject,
+      details: {
+        brandName: 'RomChat',
+        brandColor: '#FF1493',
+        brandEmoji: 'Love',
+        ...details,
       },
-      plainText: `Your RomChat verification code is: ${otp}\n\nThis code expires in ${otpTtlMinutes} minutes.`,
+    });
+    return { delivered: true };
+  } catch (error) {
+    console.error('[romchat-email] delivery failed', { to, subject, code: error.code || null, message: error.message });
+    if (process.env.NODE_ENV !== 'production' || process.env.ROMCHAT_ALLOW_EMAIL_FALLBACK === 'true') {
+      console.warn('[romchat-email] development fallback code', { to, subject, code: fallbackCode });
+      return { delivered: false, fallbackCode, warning: 'Email delivery is not configured. Use the logged development code.' };
+    }
+    return { delivered: false, warning: 'Email delivery is temporarily unavailable. Please try again shortly.' };
+  }
+}
+
+async function sendRomChatOtp(to, otp) {
+  return sendRomChatEmail(to, 'Your RomChat verification code', {
+    intro: 'Use this one-time RomChat code to verify your email and start building a real dating profile.',
+    items: {
+      'RomChat code': `<div style=\"font-size:28px;font-weight:800;letter-spacing:3px;color:#FF1493\">${otp}</div>`,
+      Expires: `${otpTtlMinutes} minutes`,
     },
-  });
+    plainText: `Your RomChat verification code is: ${otp}\n\nThis code expires in ${otpTtlMinutes} minutes.`,
+  }, otp);
+}
+
+async function sendRomChatPasswordReset(to, resetCode) {
+  return sendRomChatEmail(to, 'Reset your RomChat password', {
+    intro: 'We received a request to reset your RomChat password. Use this private code in the app to choose a new password.',
+    items: {
+      'Reset code': `<div style=\"font-size:32px;font-weight:900;letter-spacing:4px;color:#FF1493\">${resetCode}</div>`,
+      Expires: '15 minutes',
+      Security: 'If you did not request this, ignore this email and your password will stay unchanged.',
+    },
+    plainText: `Your RomChat password reset code is: ${resetCode}\n\nThis code expires in 15 minutes. If you did not request it, ignore this email.`,
+  }, resetCode);
 }
 
 async function ensureAccountSchema() {
@@ -188,8 +227,60 @@ export async function requestSignupOtp({ email, password, name }) {
      ON CONFLICT (email) DO UPDATE SET otp_hash = EXCLUDED.otp_hash, pending_name = EXCLUDED.pending_name, pending_password_hash = EXCLUDED.pending_password_hash, expires_at = EXCLUDED.expires_at, attempts = 0, created_at = now()`,
     [cleanEmail, hashOtp(cleanEmail, otp), cleanName || cleanEmail.split('@')[0], passwordHash, otpTtlMinutes]
   );
-  await sendRomChatOtp(cleanEmail, otp);
-  return { email: cleanEmail, expiresInMinutes: otpTtlMinutes, message: 'Verification code sent.' };
+  const delivery = await sendRomChatOtp(cleanEmail, otp);
+  return { email: cleanEmail, expiresInMinutes: otpTtlMinutes, message: delivery.delivered ? 'Verification code sent.' : delivery.warning, ...(delivery.fallbackCode ? { developmentCode: delivery.fallbackCode } : {}) };
+}
+
+export async function requestPasswordReset({ email }) {
+  await ensureAccountSchema();
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+    const error = new Error('A valid email is required.');
+    error.status = 400;
+    throw error;
+  }
+  const existing = await queryWithRetry('SELECT id FROM romchat_accounts WHERE email = $1', [cleanEmail]);
+  const resetCode = String(crypto.randomInt(100000, 999999));
+  if (existing.rows.length) {
+    await queryWithRetry(
+      `INSERT INTO romchat_password_resets (email, reset_hash, expires_at, attempts)
+       VALUES ($1,$2,now() + interval '15 minutes',0)
+       ON CONFLICT (email) DO UPDATE SET reset_hash = EXCLUDED.reset_hash, expires_at = EXCLUDED.expires_at, attempts = 0, created_at = now()`,
+      [cleanEmail, hashOtp(cleanEmail, resetCode)]
+    );
+    const delivery = await sendRomChatPasswordReset(cleanEmail, resetCode);
+    return { email: cleanEmail, expiresInMinutes: 15, message: delivery.delivered ? 'Password reset code sent.' : delivery.warning, ...(delivery.fallbackCode ? { developmentCode: delivery.fallbackCode } : {}) };
+  }
+  return { email: cleanEmail, expiresInMinutes: 15, message: 'If this email exists, a reset code has been sent.' };
+}
+
+export async function resetPasswordWithCode({ email, code, password }) {
+  await ensureAccountSchema();
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const resetCode = String(code || '').trim();
+  if (String(password || '').length < 6) {
+    const error = new Error('Password must be at least 6 characters.');
+    error.status = 400;
+    throw error;
+  }
+  const result = await queryWithRetry('SELECT * FROM romchat_password_resets WHERE email = $1', [cleanEmail]);
+  const pending = result.rows[0];
+  if (!pending || new Date(pending.expires_at).getTime() < Date.now()) {
+    const error = new Error('Reset code expired. Request a new code.');
+    error.status = 400;
+    throw error;
+  }
+  if (pending.reset_hash !== hashOtp(cleanEmail, resetCode)) {
+    await queryWithRetry('UPDATE romchat_password_resets SET attempts = attempts + 1 WHERE email = $1', [cleanEmail]);
+    const error = new Error('Invalid reset code.');
+    error.status = 400;
+    throw error;
+  }
+  const passwordHash = await bcrypt.hash(String(password), 10);
+  const rows = await queryWithRetry('UPDATE romchat_accounts SET password_hash = $2, auth_provider = COALESCE(NULLIF(auth_provider, \'\'), \'email\'), updated_at = now() WHERE email = $1 RETURNING *', [cleanEmail, passwordHash]);
+  await queryWithRetry('DELETE FROM romchat_password_resets WHERE email = $1', [cleanEmail]);
+  const user = accountFromRow(rows.rows[0]);
+  return { user, token: signSession(user), profile: await getMemberProfile(user.id) };
 }
 
 export async function verifySignupOtp({ email, otp }) {

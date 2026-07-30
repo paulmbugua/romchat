@@ -30,7 +30,7 @@ import { useRomChatData } from './features/romchat/hooks';
 
 type Section = 'chat' | 'premium' | 'safety' | 'profile';
 type MessageMode = 'standard' | 'timed' | 'viewOnce';
-type AuthMode = 'login' | 'signup' | 'verify';
+type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
 type SessionState = RomChatSessionPayload & { onboarding: RomChatOnboardingState };
 type RomChatPromptAnswer = { prompt: string; answer: string };
 
@@ -374,6 +374,29 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
 
+  async function requestPasswordReset(email: string) {
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const response = await romchatAccountApi.forgotPassword({ email });
+      const devCode = response.developmentCode ? ' Dev code: ' + response.developmentCode : '';
+      return (response.message || 'Reset code sent. Check your email.') + devCode;
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Unable to send reset email.');
+      throw error;
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function resetPassword(email: string, code: string, password: string) {
+    setAuthBusy(true);
+    setAuthError('');
+    try { await applyAuth(await romchatAccountApi.resetPassword({ email, code, password })); }
+    catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to reset password.'); throw error; }
+    finally { setAuthBusy(false); }
+  }
+
   async function loginWithGoogle(idToken: string) {
     setAuthBusy(true);
     setAuthError('');
@@ -562,7 +585,7 @@ export default function App() {
   }
 
   if (!session?.token) {
-    return <AuthScreen busy={authBusy} error={authError} onLogin={loginWithEmail} onRequestOtp={requestOtp} onVerifyOtp={verifyOtp} onNativeGoogle={loginWithNativeGoogle} />;
+    return <AuthScreen busy={authBusy} error={authError} onLogin={loginWithEmail} onRequestOtp={requestOtp} onVerifyOtp={verifyOtp} onForgotPassword={requestPasswordReset} onResetPassword={resetPassword} onNativeGoogle={loginWithNativeGoogle} />;
   }
 
   if (!session.profile || session.onboarding.needsFirstImage) {
@@ -648,57 +671,102 @@ function LoadingScreen({ label }: { label: string }) {
   );
 }
 
-function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onNativeGoogle }: {
+function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onForgotPassword, onResetPassword, onNativeGoogle }: {
   busy: boolean;
   error: string;
   onLogin: (email: string, password: string) => Promise<void>;
   onRequestOtp: (name: string, email: string, password: string) => Promise<void>;
   onVerifyOtp: (email: string, otp: string) => Promise<void>;
+  onForgotPassword: (email: string) => Promise<string>;
+  onResetPassword: (email: string, code: string, password: string) => Promise<void>;
   onNativeGoogle: () => Promise<void>;
 }) {
   const [mode, setMode] = useState<AuthMode>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
   const [otp, setOtp] = useState('');
+  const [resetNotice, setResetNotice] = useState('');
   const manifestExtra = (Constants.manifest as { extra?: unknown } | null | undefined)?.extra;
   const extra = (Constants.expoConfig?.extra || manifestExtra || {}) as { EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?: string; EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?: string; EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?: string };
   const googleConfigured = Boolean(extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID && extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID);
+  const titleByMode: Record<AuthMode, string> = {
+    login: 'Meet Kenyan singles. Chat beautifully.',
+    signup: 'Create your RomChat account.',
+    verify: 'Confirm your email.',
+    forgot: 'Reset your RomChat password.',
+    reset: 'Create a new password.',
+  };
+  const copyByMode: Record<AuthMode, string> = {
+    login: 'Login to meet verified Kenyan singles in Nairobi, Mombasa, Kisumu, Eldoret, Nakuru, and beyond.',
+    signup: 'Join Kenya-first romance chats with verified profiles, beautiful prompts, and safer dating tools.',
+    verify: 'Enter the 6-digit code we sent to your email to unlock your RomChat profile.',
+    forgot: 'Enter your email and we will send a private reset code to help you get back in.',
+    reset: 'Use the reset code from your email and choose a stronger password for your account.',
+  };
+
   async function submit() {
+    setResetNotice('');
     if (mode === 'login') return onLogin(email, password);
     if (mode === 'signup') {
       await onRequestOtp(name, email, password);
       setMode('verify');
       return;
     }
+    if (mode === 'forgot') {
+      const message = await onForgotPassword(email);
+      setResetNotice(message || 'Reset code requested. Check your email, then enter the code below.');
+      setMode('reset');
+      return;
+    }
+    if (mode === 'reset') return onResetPassword(email, otp, resetPasswordValue);
     return onVerifyOtp(email, otp);
   }
+
+  const primaryLabel = mode === 'verify'
+    ? 'Verify email'
+    : mode === 'signup'
+      ? 'Send email code'
+      : mode === 'forgot'
+        ? 'Send reset email'
+        : mode === 'reset'
+          ? 'Reset password'
+          : 'Login';
 
   return (
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.authSafe}>
       <ScrollView contentContainerStyle={styles.authContent} keyboardShouldPersistTaps="handled">
         <Text style={styles.authLogo}>RomChat</Text>
-        <Text style={styles.authTitle}>Meet Kenyan singles. Chat beautifully.</Text>
-        <Text style={styles.authCopy}>Login to meet verified Kenyan singles in Nairobi, Mombasa, Kisumu, Eldoret, Nakuru, and beyond.</Text>
-        <TouchableOpacity disabled={!googleConfigured || busy} onPress={() => void onNativeGoogle()} style={[styles.googleButton, !googleConfigured && styles.googleButtonDisabled]}>
-          <Icon name="logo-google" size={18} color="#120914" />
-          <Text style={styles.googleButtonText}>{!googleConfigured ? 'Google setup pending' : busy ? 'Connecting...' : 'Continue with Google'}</Text>
-        </TouchableOpacity>
-        <View style={styles.authTabs}>
-          {(['login', 'signup'] as AuthMode[]).map((item) => (
-            <TouchableOpacity key={item} onPress={() => setMode(item)} style={[styles.authTab, mode === item && styles.authTabActive]}>
-              <Text style={[styles.authTabText, mode === item && styles.authTabTextActive]}>{item === 'login' ? 'Login' : 'Create'}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {mode !== 'login' && mode !== 'verify' && <TextInput value={name} onChangeText={setName} placeholder="Display name" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
+        <Text style={styles.authTitle}>{titleByMode[mode]}</Text>
+        <Text style={styles.authCopy}>{copyByMode[mode]}</Text>
+        {mode !== 'forgot' && mode !== 'reset' && (
+          <TouchableOpacity disabled={!googleConfigured || busy} onPress={() => void onNativeGoogle()} style={[styles.googleButton, !googleConfigured && styles.googleButtonDisabled]}>
+            <Icon name="logo-google" size={18} color="#120914" />
+            <Text style={styles.googleButtonText}>{!googleConfigured ? 'Google setup pending' : busy ? 'Connecting...' : 'Continue with Google'}</Text>
+          </TouchableOpacity>
+        )}
+        {mode !== 'forgot' && mode !== 'reset' && mode !== 'verify' && (
+          <View style={styles.authTabs}>
+            {(['login', 'signup'] as AuthMode[]).map((item) => (
+              <TouchableOpacity key={item} onPress={() => setMode(item)} style={[styles.authTab, mode === item && styles.authTabActive]}>
+                <Text style={[styles.authTabText, mode === item && styles.authTabTextActive]}>{item === 'login' ? 'Login' : 'Create'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {mode === 'signup' && <TextInput value={name} onChangeText={setName} placeholder="Display name" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
         <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Email address" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
-        {mode !== 'verify' && <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Password" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
-        {mode === 'verify' && <TextInput value={otp} onChangeText={setOtp} keyboardType="number-pad" placeholder="6-digit email code" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
+        {(mode === 'login' || mode === 'signup') && <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Password" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
+        {(mode === 'verify' || mode === 'reset') && <TextInput value={otp} onChangeText={setOtp} keyboardType="number-pad" placeholder={mode === 'reset' ? 'Reset code' : '6-digit email code'} placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
+        {mode === 'reset' && <TextInput value={resetPasswordValue} onChangeText={setResetPasswordValue} secureTextEntry placeholder="New password" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
+        {!!resetNotice && <Text style={styles.authSuccess}>{resetNotice}</Text>}
         <TouchableOpacity disabled={busy} onPress={() => void submit()} style={styles.authPrimary}>
-          <Text style={styles.authPrimaryText}>{mode === 'verify' ? 'Verify email' : mode === 'signup' ? 'Send email code' : 'Login'}</Text>
+          <Text style={styles.authPrimaryText}>{busy ? 'Please wait...' : primaryLabel}</Text>
         </TouchableOpacity>
+        {mode === 'login' && <TouchableOpacity onPress={() => { setResetNotice(''); setMode('forgot'); }}><Text style={styles.authLink}>Forgot password?</Text></TouchableOpacity>}
         {mode === 'verify' && <TouchableOpacity onPress={() => setMode('signup')}><Text style={styles.authLink}>Edit signup details</Text></TouchableOpacity>}
+        {(mode === 'forgot' || mode === 'reset') && <TouchableOpacity onPress={() => { setResetNotice(''); setMode('login'); }}><Text style={styles.authLink}>Back to login</Text></TouchableOpacity>}
         {!!error && <Text style={styles.authError}>{error}</Text>}
       </ScrollView>
     </SafeAreaView>
@@ -1179,6 +1247,7 @@ const styles = StyleSheet.create({
   authPrimaryText: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
   authLink: { color: '#FFD700', fontWeight: '900', textAlign: 'center', marginTop: 8 },
   authError: { color: '#FF6F61', fontWeight: '900', lineHeight: 20, marginTop: 4, marginBottom: 8 },
+  authSuccess: { color: '#FFD700', fontWeight: '900', lineHeight: 20, marginTop: 2, marginBottom: 8 },
   genderRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   genderChip: { flex: 1, backgroundColor: '#1E1222', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', paddingVertical: 11, alignItems: 'center' },
   genderChipActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },

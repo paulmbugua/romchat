@@ -144,6 +144,10 @@ export const sendNotification = async ({ to, subject, body, details }) => {
       ? details
       : { intro: '', items: {}, plainText: body };
 
+    const brandName = tpl.brandName || process.env.EMAIL_BRAND_NAME || 'DayBreak';
+    const brandColor = tpl.brandColor || process.env.EMAIL_BRAND_COLOR || '#1d4ed8';
+    const brandEmoji = tpl.brandEmoji || process.env.EMAIL_BRAND_EMOJI || 'Books';
+
     const itemsHtml = Object.keys(tpl.items).length
       ? `<table cellpadding="5" cellspacing="0" style="width:100%;margin:20px 0;border:1px solid #ddd;">
            ${Object.entries(tpl.items).map(([label, value]) => `
@@ -171,8 +175,8 @@ export const sendNotification = async ({ to, subject, body, details }) => {
           <table width="600" cellpadding="0" cellspacing="0" role="presentation"
                  style="background:#fff;margin:20px 0;border-radius:8px;overflow:hidden;">
             <tr>
-              <td style="background:#1d4ed8;padding:20px;text-align:center;">
-                ${logoUrl ? `<img src="${logoUrl}" alt="DayBreak" width="150" style="display:block;margin:0 auto;">` : ''}
+              <td style="background:${brandColor};padding:20px;text-align:center;">
+                ${logoUrl ? `<img src="${logoUrl}" alt="${brandName}" width="150" style="display:block;margin:0 auto;">` : `<div style="font-size:28px;font-weight:800;color:#fff;letter-spacing:.5px;">${brandName}</div>`}
               </td>
             </tr>
             <tr>
@@ -185,7 +189,7 @@ export const sendNotification = async ({ to, subject, body, details }) => {
                 ${tpl.ctaUrl ? `
                 <p style="text-align:center;margin:30px 0;">
                   <a href="${tpl.ctaUrl}"
-                     style="background:#1d4ed8;color:#fff;text-decoration:none;padding:12px 24px;border-radius:4px;display:inline-block;font-weight:bold;">
+                     style="background:${brandColor};color:#fff;text-decoration:none;padding:12px 24px;border-radius:4px;display:inline-block;font-weight:bold;">
                     ${tpl.ctaText || 'Take Action'}
                   </a>
                 </p>` : ''}
@@ -195,8 +199,7 @@ export const sendNotification = async ({ to, subject, body, details }) => {
               </td>
             </tr>
             <tr>
-              <td style="background:#f4f4f4;padding:20px;text-align:center;font-size:12px;color:#999;">
-                © ${new Date().getFullYear()} DayBreak. All rights reserved.<br>
+              <td style="background:#f4f4f4;padding:20px;text-align:center;font-size:12px;color:#999;">                &copy; ${new Date().getFullYear()} ${brandName}. All rights reserved.<br>
                 1830-01000, Thika, Kenya<br>
                 <a href="${webUnsub}" style="color:#999;text-decoration:underline;">Unsubscribe</a>
               </td>
@@ -209,7 +212,7 @@ export const sendNotification = async ({ to, subject, body, details }) => {
     `;
 
     const info = await transporter.sendMail({
-      from: `"DayBreak 📚" <${process.env.EMAIL_USER}>`,
+      from: `"${brandName} ${brandEmoji}" <${process.env.EMAIL_USER}>`,
       to,
       subject,
       html,
