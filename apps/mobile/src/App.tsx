@@ -773,6 +773,35 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onForgotP
   );
 }
 
+
+const datingIntentions = [
+  'Serious relationship',
+  'Life partner',
+  'Marriage minded',
+  'Intentional connection',
+  'Long-term, open to short',
+  'Short-term, open to long',
+  'New friends first',
+  'Slow dating',
+  'Christian dating',
+  'Muslim dating',
+  'Single parent dating',
+  'Travel romance',
+  'Casual dates',
+  'Still figuring it out',
+];
+
+const datingInterests = [
+  'Coffee dates', 'Dinner dates', 'Brunch', 'Road trips', 'Beach weekends', 'Karura walks', 'Nairobi nightlife', 'Mombasa coast',
+  'Live music', 'Afrobeats', 'Bongo', 'Amapiano', 'Sauti Sol', 'Karaoke', 'Dancing', 'Concerts',
+  'Movies', 'Netflix nights', 'K-dramas', 'Comedy shows', 'Theatre', 'Photography', 'Content creation', 'Fashion',
+  'Gym', 'Running', 'Hiking', 'Cycling', 'Yoga', 'Football', 'Rugby', 'Swimming', 'Wellness',
+  'Cooking', 'Baking', 'Foodie', 'Street food', 'Nyama choma', 'Sushi', 'Wine tasting', 'Mocktails',
+  'Travel', 'Staycations', 'Safari', 'Camping', 'Picnics', 'Sunsets', 'Lake views', 'Adventure',
+  'Books', 'Poetry', 'Podcasts', 'Tech', 'Startups', 'Business', 'Investing', 'Volunteering',
+  'Church', 'Mosque', 'Family time', 'Parenting', 'Pets', 'Board games', 'Gaming', 'Art galleries',
+];
+
 function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUploadImage, onSignOut }: {
   busy: boolean;
   error: string;
@@ -785,11 +814,12 @@ function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUpload
   const [age, setAge] = useState(profile?.age ? String(profile.age) : '');
   const [gender, setGender] = useState(profile?.gender || 'female');
   const [city, setCity] = useState(profile?.city || '');
-  const [intent, setIntent] = useState(profile?.intent || 'Intentional connection');
+  const [intent, setIntent] = useState(profile?.intent || 'Serious relationship');
   const [bio, setBio] = useState(profile?.bio || '');
-  const [interests, setInterests] = useState((profile?.interests || ['Coffee', 'Travel', 'Music']).join(', '));
+  const [selectedInterests, setSelectedInterests] = useState<string[]>(profile?.interests?.length ? profile.interests : ['Coffee dates', 'Travel', 'Live music']);
   const hasProfile = Boolean(profile);
   const imageCount = profile?.imageCount || 0;
+  const toggleInterest = (interest: string) => setSelectedInterests((current) => current.includes(interest) ? current.filter((item) => item !== interest) : [...current, interest]);
 
   return (
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.authSafe}>
@@ -801,10 +831,12 @@ function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUpload
         <TextInput value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="Age" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
         <View style={styles.genderRow}>{['female', 'male', 'nonbinary'].map((item) => <TouchableOpacity key={item} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
         <TextInput value={city} onChangeText={setCity} placeholder="City" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
-        <TextInput value={intent} onChangeText={setIntent} placeholder="Dating intention in Kenya" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
+        <Text style={styles.selectorTitle}>Dating intention in Kenya</Text>
+        <View style={styles.choiceWrap}>{datingIntentions.map((item) => <TouchableOpacity key={item} onPress={() => setIntent(item)} style={[styles.choiceChip, intent === item && styles.choiceChipActive]}><Text style={[styles.choiceText, intent === item && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>)}</View>
         <TextInput value={bio} onChangeText={setBio} placeholder="Short Kenyan romance bio" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, styles.authTextArea]} multiline />
-        <TextInput value={interests} onChangeText={setInterests} placeholder="Interests, comma separated" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
-        <TouchableOpacity disabled={busy} onPress={() => void onSaveProfile({ displayName, age: Number(age), gender, city, intent, bio, interests: interests.split(',').map((item) => item.trim()).filter(Boolean) })} style={styles.authPrimary}>
+        <Text style={styles.selectorTitle}>Interests and vibe signals</Text>
+        <View style={styles.choiceWrap}>{datingInterests.map((item) => { const active = selectedInterests.includes(item); return <TouchableOpacity key={item} onPress={() => toggleInterest(item)} style={[styles.choiceChip, active && styles.choiceChipActive]}><Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>; })}</View>
+        <TouchableOpacity disabled={busy} onPress={() => void onSaveProfile({ displayName, age: Number(age), gender, city, intent, bio, interests: selectedInterests })} style={styles.authPrimary}>
           <Text style={styles.authPrimaryText}>Save profile</Text>
         </TouchableOpacity>
         <TouchableOpacity disabled={busy || !hasProfile} onPress={() => void onUploadImage()} style={[styles.uploadCard, !hasProfile && styles.uploadCardDisabled]}>
@@ -1253,6 +1285,12 @@ const styles = StyleSheet.create({
   genderChipActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
   genderText: { color: '#FFFFFF', fontWeight: '900', textTransform: 'capitalize' },
   genderTextActive: { color: '#120914' },
+  selectorTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 15, marginTop: 4, marginBottom: 10 },
+  choiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
+  choiceChip: { borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', backgroundColor: '#1E1222', paddingHorizontal: 13, paddingVertical: 10 },
+  choiceChipActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
+  choiceText: { color: 'rgba(255,255,255,0.78)', fontWeight: '900', fontSize: 13 },
+  choiceTextActive: { color: '#120914' },
   uploadCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#1E1222', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,215,0,0.35)', padding: 16, marginBottom: 8 },
   uploadCardDisabled: { opacity: 0.45 },
   uploadTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
