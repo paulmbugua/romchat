@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS romchat_member_profiles (
   intent TEXT NOT NULL DEFAULT '',
   bio TEXT NOT NULL DEFAULT '',
   interests TEXT[] NOT NULL DEFAULT '{}',
+  prompt_answers JSONB NOT NULL DEFAULT '[]'::jsonb,
+  voice_intro_url TEXT,
+  selfie_media_url TEXT,
+  selfie_verified BOOLEAN NOT NULL DEFAULT false,
+  verification_status TEXT NOT NULL DEFAULT 'not_started',
   profile_strength INTEGER NOT NULL DEFAULT 25,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -53,7 +58,7 @@ CREATE TABLE IF NOT EXISTS romchat_member_profiles (
 CREATE TABLE IF NOT EXISTS romchat_profile_media (
   id TEXT PRIMARY KEY,
   member_id TEXT NOT NULL REFERENCES romchat_accounts(id) ON DELETE CASCADE,
-  media_type TEXT NOT NULL CHECK (media_type IN ('image','video')),
+  media_type TEXT NOT NULL CHECK (media_type IN ('image','video','voice','selfie')),
   url TEXT NOT NULL,
   object_key TEXT NOT NULL,
   bucket TEXT NOT NULL,
@@ -64,6 +69,16 @@ CREATE TABLE IF NOT EXISTS romchat_profile_media (
 );
 
 CREATE INDEX IF NOT EXISTS idx_romchat_profile_media_member_position ON romchat_profile_media(member_id, position, created_at);
+
+ALTER TABLE romchat_member_profiles
+  ADD COLUMN IF NOT EXISTS prompt_answers JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS voice_intro_url TEXT,
+  ADD COLUMN IF NOT EXISTS selfie_media_url TEXT,
+  ADD COLUMN IF NOT EXISTS selfie_verified BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'not_started';
+
+ALTER TABLE romchat_profile_media DROP CONSTRAINT IF EXISTS romchat_profile_media_media_type_check;
+ALTER TABLE romchat_profile_media ADD CONSTRAINT romchat_profile_media_media_type_check CHECK (media_type IN ('image','video','voice','selfie'));
 `;
 
 const id = (prefix) => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
@@ -117,10 +132,16 @@ function profileFromRow(row, media = []) {
     intent: row.intent || '',
     bio: row.bio || '',
     interests: row.interests || [],
+    promptAnswers: Array.isArray(row.prompt_answers) ? row.prompt_answers : [],
+    voiceIntroUrl: row.voice_intro_url || media.find((item) => item.mediaType === 'voice')?.url || '',
+    selfieMediaUrl: row.selfie_media_url || media.find((item) => item.mediaType === 'selfie')?.url || '',
+    selfieVerified: Boolean(row.selfie_verified),
+    verificationStatus: row.verification_status || 'not_started',
     profileStrength: Number(row.profile_strength || 0),
     media,
-    imageCount: media.filter((item) => item.mediaType === 'image').length,
+    imageCount: media.filter((item) => item.mediaType === 'image' || item.mediaType === 'selfie').length,
     videoCount: media.filter((item) => item.mediaType === 'video').length,
+    voiceCount: media.filter((item) => item.mediaType === 'voice').length,
   };
 }
 
@@ -382,14 +403,17 @@ export async function upsertMemberProfile(memberId, payload = {}) {
   const bio = String(payload.bio || '').trim().slice(0, 280);
   const intent = String(payload.intent || '').trim().slice(0, 120);
   const interests = Array.isArray(payload.interests) ? payload.interests.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 8) : [];
-  const mediaRows = await queryWithRetry('SELECT COUNT(*)::int AS count FROM romchat_profile_media WHERE member_id = $1', [memberId]);
-  const imageCount = Number(mediaRows.rows[0]?.count || 0);
-  const strength = Math.min(100, 35 + Math.min(30, imageCount * 10) + (bio ? 15 : 0) + (interests.length ? 20 : 0));
+  const promptAnswers = Array.isArray(payload.promptAnswers) ? payload.promptAnswers.map((item) => ({ prompt: String(item?.prompt || '').trim().slice(0, 120), answer: String(item?.answer || '').trim().slice(0, 240) })).filter((item) => item.prompt && item.answer).slice(0, 7) : null;
+  const mediaRows = await queryWithRetry('SELECT media_type, COUNT(*)::int AS count FROM romchat_profile_media WHERE member_id = $1 GROUP BY media_type', [memberId]);
+  const mediaCounts = Object.fromEntries(mediaRows.rows.map((row) => [row.media_type, Number(row.count || 0)]));
+  const imageCount = Number(mediaCounts.image || 0) + Number(mediaCounts.selfie || 0);
+  const hasVoice = Number(mediaCounts.voice || 0) > 0;
+  const strength = Math.min(100, 30 + Math.min(25, imageCount * 7) + (bio ? 12 : 0) + (interests.length ? 13 : 0) + (hasVoice ? 10 : 0) + (promptAnswers?.length === 7 ? 10 : 0));
   await queryWithRetry(
-    `INSERT INTO romchat_member_profiles (member_id, display_name, age, gender, city, intent, bio, interests, profile_strength)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-     ON CONFLICT (member_id) DO UPDATE SET display_name = EXCLUDED.display_name, age = EXCLUDED.age, gender = EXCLUDED.gender, city = EXCLUDED.city, intent = EXCLUDED.intent, bio = EXCLUDED.bio, interests = EXCLUDED.interests, profile_strength = EXCLUDED.profile_strength, updated_at = now()`,
-    [memberId, displayName, age, gender, city, intent, bio, interests, strength]
+    `INSERT INTO romchat_member_profiles (member_id, display_name, age, gender, city, intent, bio, interests, prompt_answers, profile_strength)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::jsonb, '[]'::jsonb),$10)
+     ON CONFLICT (member_id) DO UPDATE SET display_name = EXCLUDED.display_name, age = EXCLUDED.age, gender = EXCLUDED.gender, city = EXCLUDED.city, intent = EXCLUDED.intent, bio = EXCLUDED.bio, interests = EXCLUDED.interests, prompt_answers = COALESCE($9::jsonb, romchat_member_profiles.prompt_answers), profile_strength = EXCLUDED.profile_strength, updated_at = now()`,
+    [memberId, displayName, age, gender, city, intent, bio, interests, promptAnswers ? JSON.stringify(promptAnswers) : null, strength]
   );
   return getMemberProfile(memberId);
 }
@@ -413,6 +437,18 @@ export async function uploadMemberMedia(memberId, payload = {}) {
      RETURNING *`,
     [mediaId, memberId, uploaded.mediaType, uploaded.url, uploaded.key, uploaded.bucket, uploaded.contentType, position]
   );
+  const insertedMedia = mediaFromRow(rows.rows[0]);
+  if (insertedMedia.mediaType === 'voice') {
+    await queryWithRetry('UPDATE romchat_member_profiles SET voice_intro_url = $2, updated_at = now() WHERE member_id = $1', [memberId, insertedMedia.url]);
+  }
+  if (insertedMedia.mediaType === 'selfie') {
+    await queryWithRetry("UPDATE romchat_member_profiles SET selfie_media_url = $2, selfie_verified = true, verification_status = 'verified', updated_at = now() WHERE member_id = $1", [memberId, insertedMedia.url]);
+  }
   const profile = await getMemberProfile(memberId);
-  return { media: mediaFromRow(rows.rows[0]), profile };
+  return { media: insertedMedia, profile };
+}
+
+export async function verifyMemberSelfie(memberId, payload = {}) {
+  const result = await uploadMemberMedia(memberId, { ...payload, mediaType: 'selfie', fileName: payload.fileName || 'selfie-verification.jpg' });
+  return { ...result, verification: { status: 'verified', selfieVerified: true, verifiedAt: new Date().toISOString() } };
 }

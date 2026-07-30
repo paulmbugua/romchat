@@ -11,7 +11,7 @@ export type RomChatAccount = {
 
 export type RomChatProfileMedia = {
   id: string;
-  mediaType: 'image' | 'video' | string;
+  mediaType: 'image' | 'video' | 'voice' | 'selfie' | string;
   url: string;
   position: number;
   moderationStatus?: string;
@@ -26,6 +26,11 @@ export type RomChatMemberProfile = {
   intent: string;
   bio: string;
   interests: string[];
+  promptAnswers?: Array<{ prompt: string; answer: string }>;
+  voiceIntroUrl?: string;
+  selfieMediaUrl?: string;
+  selfieVerified?: boolean;
+  verificationStatus?: string;
   profileStrength: number;
   media: RomChatProfileMedia[];
   imageCount: number;
@@ -71,14 +76,20 @@ export const romchatAccountApi = {
       body: JSON.stringify({ idToken }),
     }),
   me: (token: string) => apiFetch<Omit<RomChatSessionPayload, 'token'>>('/api/romchat/auth/me', { token }),
-  saveProfile: (token: string, payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[] }) =>
+  saveProfile: (token: string, payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[]; promptAnswers?: Array<{ prompt: string; answer: string }> }) =>
     apiFetch<{ profile: RomChatMemberProfile }>('/api/romchat/profile', {
       method: 'PATCH',
       token,
       body: JSON.stringify(payload),
     }),
-  uploadMedia: (token: string, payload: { mediaType: 'image' | 'video'; dataUri: string; contentType: string; fileName?: string }) =>
+  uploadMedia: (token: string, payload: { mediaType: 'image' | 'video' | 'voice' | 'selfie'; dataUri: string; contentType: string; fileName?: string }) =>
     apiFetch<{ media: RomChatProfileMedia; profile: RomChatMemberProfile }>('/api/romchat/profile/media', {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
+  verifySelfie: (token: string, payload: { dataUri: string; contentType: string; fileName?: string }) =>
+    apiFetch<{ media: RomChatProfileMedia; profile: RomChatMemberProfile; verification: { status: string; selfieVerified: boolean; verifiedAt: string } }>('/api/romchat/profile/selfie-verification', {
       method: 'POST',
       token,
       body: JSON.stringify(payload),

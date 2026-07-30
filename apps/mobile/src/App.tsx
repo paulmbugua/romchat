@@ -15,7 +15,9 @@ import {
   View,
 } from 'react-native';
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
+import { Audio } from 'expo-av';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LinearGradient } from 'expo-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -29,6 +31,7 @@ type Section = 'chat' | 'premium' | 'safety' | 'profile';
 type MessageMode = 'standard' | 'timed' | 'viewOnce';
 type AuthMode = 'login' | 'signup' | 'verify';
 type SessionState = RomChatSessionPayload & { onboarding: RomChatOnboardingState };
+type RomChatPromptAnswer = { prompt: string; answer: string };
 
 const ROMCHAT_TOKEN_KEY = 'romchat:auth:token';
 const ROMCHAT_SESSION_KEY = 'romchat:auth:session';
@@ -140,6 +143,16 @@ const tokenPackages = [
 const SUPER_LIKE_COST = 15;
 const UNDO_SWIPE_COST = 9;
 const MATCH_POP_DURATION_MS = 1100;
+
+const profilePromptTemplates = [
+  'My ideal Kenyan date is',
+  'Green flags I notice fast',
+  'A song that explains my vibe',
+  'Two truths and a soft secret',
+  'The food date I will never reject',
+  'How I show care',
+  'What I am ready to build',
+];
 
 const tokenCatalog = [
   ['Unlock voice/photo media', '10'],
@@ -422,6 +435,69 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
 
+  async function uploadVoiceIntro() {
+    if (!session?.token) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) throw new Error('Microphone permission is required.');
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      if (!uri) throw new Error('Unable to save voice intro.');
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' } as Parameters<typeof FileSystem.readAsStringAsync>[1]);
+      const response = await romchatAccountApi.uploadMedia(session.token, { mediaType: 'voice', dataUri: `data:audio/m4a;base64,${base64}`, contentType: 'audio/m4a', fileName: 'voice-intro.m4a' });
+      const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
+      await persistSession(next);
+    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to record voice intro.'); }
+    finally { setAuthBusy(false); }
+  }
+
+  async function verifySelfieProfile() {
+    if (!session?.token) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) throw new Error('Camera permission is required for selfie verification.');
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.72, base64: true, cameraType: ImagePicker.CameraType.front });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset?.base64) throw new Error('Unable to read selfie data.');
+      const contentType = asset.mimeType || 'image/jpeg';
+      const response = await romchatAccountApi.verifySelfie(session.token, { dataUri: `data:${contentType};base64,${asset.base64}`, contentType, fileName: asset.fileName || 'selfie-verification.jpg' });
+      const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
+      await persistSession(next);
+    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to verify selfie.'); }
+    finally { setAuthBusy(false); }
+  }
+
+  async function saveProfilePrompts(promptAnswers: RomChatPromptAnswer[]) {
+    if (!session?.token || !session.profile) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const response = await romchatAccountApi.saveProfile(session.token, {
+        displayName: session.profile.displayName,
+        age: session.profile.age,
+        gender: session.profile.gender,
+        city: session.profile.city,
+        intent: session.profile.intent,
+        bio: session.profile.bio,
+        interests: session.profile.interests,
+        promptAnswers,
+      });
+      const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
+      await persistSession(next);
+    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to save prompts.'); }
+    finally { setAuthBusy(false); }
+  }
+
   function renderSection(section: Section) {
     if (section === 'chat') {
       return (
@@ -461,7 +537,7 @@ export default function App() {
         />
       );
     }
-    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} verify={romchat.verify} status={romchat.lastAction} onSignOut={signOut} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onRecordVoice={uploadVoiceIntro} onVerifySelfie={verifySelfieProfile} onSavePrompts={saveProfilePrompts} status={romchat.lastAction} onSignOut={signOut} />;
   }
 
   if (!authBooted) {
@@ -992,15 +1068,28 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
   );
 }
 
-function Profile({ account, profile, strength, incognito, verify, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; verify: () => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
+function resolveMediaUrl(url?: string) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
+}
+
+function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onRecordVoice, onVerifySelfie, onSavePrompts, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onRecordVoice: () => Promise<void>; onVerifySelfie: () => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
+  const photoMedia = (profile?.media || []).filter((item) => item.mediaType === 'image' || item.mediaType === 'selfie');
+  const voiceReady = Boolean(profile?.voiceIntroUrl || profile?.media?.some((item) => item.mediaType === 'voice'));
+  const promptSeed = profilePromptTemplates.map((prompt, index) => ({ prompt, answer: profile?.promptAnswers?.[index]?.answer || '' }));
+  const [promptAnswers, setPromptAnswers] = useState<RomChatPromptAnswer[]>(promptSeed);
+  useEffect(() => { setPromptAnswers(promptSeed); }, [profile?.memberId, profile?.promptAnswers?.length]);
+  const completePrompts = promptAnswers.filter((item) => item.prompt && item.answer.trim()).length;
   const profileTasks = [
     [`Images uploaded: ${imageCount}`, imageCount >= 3 ? 'Fuller catalogues unlocked' : 'Add photos to unlock more galleries'],
     [`Catalogue access: ${catalogueAccess} photos`, incognito ? 'Visible after like' : 'Discovery ready'],
-    ['15-second voice intro', profile?.media?.some((item) => item.mediaType === 'video') ? 'Video present' : 'Ready'],
-    ['Answer 7 prompts', profile?.interests?.length ? `${profile.interests.length} interests live` : 'Add interests'],
+    ['15-second voice intro', voiceReady ? 'Voice intro live' : 'Record a warm hello'],
+    ['Answer 7 prompts', completePrompts === 7 ? 'All prompts live' : `${completePrompts}/7 prompts answered`],
+    ['Selfie verification', profile?.selfieVerified ? 'Verified badge active' : 'Verify with a live selfie'],
   ];
 
   return (
@@ -1012,8 +1101,9 @@ function Profile({ account, profile, strength, incognito, verify, status, onSign
         <Text style={styles.profileStrength}>{computedStrength}% complete</Text>
         <View style={styles.progress}><View style={[styles.progressFill, { width: `${computedStrength}%` }]} /></View>
         <View style={styles.photoSlotGrid}>{Array.from({ length: 6 }).map((_, index) => {
-          const media = profile?.media?.[index];
-          return <View key={index} style={styles.photoSlot}>{media?.url ? <Image source={{ uri: media.url }} style={styles.photoThumb} /> : <Icon name={index < imageCount ? 'image' : 'add'} size={22} color={index < imageCount ? '#FFD700' : '#FF1493'} />}<Text style={styles.photoSlotText}>{media?.url ? `Photo ${index + 1}` : index < imageCount ? `Photo ${index + 1}` : 'Add'}</Text></View>;
+          const media = photoMedia[index];
+          const uri = resolveMediaUrl(media?.url);
+          return <TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} key={index} style={styles.photoSlot}>{uri ? <Image source={{ uri }} style={styles.photoThumb} /> : <Icon name={index < imageCount ? 'image' : 'add'} size={22} color={index < imageCount ? '#FFD700' : '#FF1493'} />}<Text style={styles.photoSlotText}>{uri ? `Photo ${index + 1}` : 'Add'}</Text></TouchableOpacity>;
         })}</View>
         {profileTasks.map(([item, detail]) => (
           <View key={item} style={styles.listItem}>
@@ -1021,13 +1111,16 @@ function Profile({ account, profile, strength, incognito, verify, status, onSign
             <Text style={styles.caption}>{detail}</Text>
           </View>
         ))}
-        <TouchableOpacity onPress={() => void verify()} style={styles.boostButton}><Text style={styles.boostText}>Submit selfie verification</Text></TouchableOpacity>
+        <View style={styles.profileActionGrid}><TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} style={styles.profileAction}><Icon name="images" size={18} color="#FFD700" /><Text style={styles.profileActionText}>Add photo</Text></TouchableOpacity><TouchableOpacity disabled={busy} onPress={() => void onRecordVoice()} style={styles.profileAction}><Icon name="mic" size={18} color="#FFD700" /><Text style={styles.profileActionText}>{voiceReady ? 'Redo voice' : '15s voice'}</Text></TouchableOpacity><TouchableOpacity disabled={busy} onPress={() => void onVerifySelfie()} style={styles.profileAction}><Icon name="shield-checkmark" size={18} color="#FFD700" /><Text style={styles.profileActionText}>{profile?.selfieVerified ? 'Verified' : 'Verify selfie'}</Text></TouchableOpacity></View>{!!error && <Text style={styles.authError}>{error}</Text>}
         <TouchableOpacity onPress={() => void onSignOut()} style={styles.textButton}><Text style={styles.textButtonLabel}>Sign out</Text></TouchableOpacity>
       </View>
       <View style={styles.panel}>
         <Text style={styles.kicker}>Bio assistant</Text>
         <Text style={styles.insight}>{profile?.bio || 'One-tap Kenyan bio: I am looking for something warm, honest, and intentional around real dates.'}</Text>
         <Text style={styles.insight}>{profile?.interests?.length ? `Vibe signals: ${profile.interests.join(', ')}` : 'Best dates: Karura walks, Java chats, lakefront sunsets, and food worth remembering.'}</Text>
+        <Text style={styles.kicker}>Dating prompts</Text>
+        {promptAnswers.map((item, index) => <View key={item.prompt} style={styles.promptEditor}><Text style={styles.promptEditorLabel}>{item.prompt}</Text><TextInput value={item.answer} onChangeText={(answer) => setPromptAnswers((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, answer } : row))} placeholder="Write a charming answer" placeholderTextColor="rgba(255,255,255,0.42)" style={styles.promptEditorInput} multiline /></View>)}
+        <TouchableOpacity disabled={busy} onPress={() => void onSavePrompts(promptAnswers)} style={styles.boostButton}><Text style={styles.boostText}>Save 7 profile prompts</Text></TouchableOpacity>
       </View>
     </View>
   );
@@ -1246,5 +1339,11 @@ const styles = StyleSheet.create({
   photoSlotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 12 },
   photoSlot: { width: '30.5%', aspectRatio: 0.82, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,20,147,0.25)', backgroundColor: '#2A1A30', alignItems: 'center', justifyContent: 'center', gap: 6 },
   photoSlotText: { color: 'rgba(255,255,255,0.72)', fontWeight: '900', fontSize: 12 },
-  photoThumb: { width: 48, height: 58, borderRadius: 12 },
+  photoThumb: { width: '100%', height: '100%', borderRadius: 12 },
+  profileActionGrid: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  profileAction: { flex: 1, minHeight: 54, borderRadius: 18, backgroundColor: '#2A1A30', borderWidth: 1, borderColor: 'rgba(255,215,0,0.24)', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  profileActionText: { color: '#FFFFFF', fontWeight: '900', fontSize: 12, textAlign: 'center' },
+  promptEditor: { backgroundColor: '#2A1A30', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)', padding: 12, marginTop: 9 },
+  promptEditorLabel: { color: '#FFD700', fontWeight: '900', marginBottom: 7 },
+  promptEditorInput: { minHeight: 46, color: '#FFFFFF', fontWeight: '800', lineHeight: 20, textAlignVertical: 'top' },
 });

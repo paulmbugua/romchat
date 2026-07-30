@@ -13,6 +13,7 @@ export default function romchatRoutes(io) {
   router.get('/auth/me', controller.authMe);
   router.patch('/profile', controller.saveProfile);
   router.post('/profile/media', controller.uploadProfileMedia);
+  router.post('/profile/selfie-verification', controller.verifySelfie);
   router.get('/bootstrap', controller.bootstrap);
   router.get('/discovery', controller.discovery);
   router.post('/swipes', controller.swipe);
