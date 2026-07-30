@@ -6,6 +6,7 @@ import {
   Animated,
   PanResponder,
   ScrollView,
+  RefreshControl,
   StatusBar,
   StyleSheet,
   Text,
@@ -191,6 +192,7 @@ export default function App() {
   const [tokens, setTokens] = useState(146);
   const [boosted, setBoosted] = useState(false);
   const [showMatch, setShowMatch] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
   const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -199,6 +201,7 @@ export default function App() {
   const bottomContentPadding = bottomInset + 72;
   const profiles = romchat.profiles.length ? (romchat.profiles as ProfileSeed[]) : localProfiles;
   const profile = profiles[index % profiles.length]!;
+  const firstUploadedImageUrl = resolveMediaUrl(session?.profile?.media?.find((item) => item.mediaType === 'image' || item.mediaType === 'selfie')?.url);
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
   const activePlan = boosted ? 'Platinum' : 'Gold';
 
@@ -225,6 +228,19 @@ export default function App() {
     const next = normalizeSession(payload, token);
     await persistSession(next);
     return next;
+  }
+
+  async function pullToRefresh() {
+    if (!session?.token || refreshing) return;
+    setRefreshing(true);
+    setAuthError('');
+    try {
+      await refreshSession(session.token);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Unable to refresh RomChat.');
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function applyAuth(payload: RomChatSessionPayload) {
@@ -422,7 +438,8 @@ export default function App() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) throw new Error('Photo library permission is required.');
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 5], quality: 0.72, base64: true });
+      const shouldCropForAvatar = !session.profile?.imageCount;
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: shouldCropForAvatar, ...(shouldCropForAvatar ? { aspect: [1, 1] as [number, number] } : {}), quality: 0.82, base64: true });
       if (result.canceled) return;
       const asset = result.assets[0];
       if (!asset?.base64) throw new Error('Unable to read image data.');
@@ -562,6 +579,7 @@ export default function App() {
           contentInsetAdjustmentBehavior="automatic"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void pullToRefresh()} tintColor="#FF1493" colors={['#FF1493', '#FFD700']} progressBackgroundColor="#1E1222" />}
         >
           {renderSection(activeSection)}
         </ScrollView>
@@ -577,10 +595,11 @@ export default function App() {
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void pullToRefresh()} tintColor="#FF1493" colors={['#FF1493', '#FFD700']} progressBackgroundColor="#1E1222" />}
       >
         <View style={styles.topBar}>
           <TouchableOpacity onPress={() => setActiveSection('profile')} style={styles.brandRow}>
-            <Image source={require('../assets/icon.png')} style={styles.logo} />
+            <Image source={firstUploadedImageUrl ? { uri: firstUploadedImageUrl } : require('../assets/icon.png')} style={styles.logo} />
             <View><Text style={styles.brand}>RomChat</Text><Text style={styles.brandTagline}>Kenya dating</Text></View>
           </TouchableOpacity>
           <View style={styles.topControls}>
@@ -1179,7 +1198,7 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   topControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logo: { width: 38, height: 38, borderRadius: 14 },
+  logo: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: '#FFD700', backgroundColor: '#2A1A30' },
   brand: { color: '#FF1493', fontSize: 25, fontWeight: '900' },
   brandTagline: { color: '#FFD7E6', fontSize: 11, fontWeight: '900', marginTop: 1 },
   caption: { color: 'rgba(255,255,255,0.7)', fontWeight: '800', lineHeight: 18 },

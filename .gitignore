@@ -83,3 +83,5 @@ apps/web/.open-next/
 # Next cache/logs
 apps/web/.next/cache/
 
+# RomChat local development media
+apps/backend/.romchat-media/
