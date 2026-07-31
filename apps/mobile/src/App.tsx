@@ -4,7 +4,9 @@ import {
   Image,
   ImageBackground,
   Animated,
+  KeyboardAvoidingView,
   PanResponder,
+  Platform,
   ScrollView,
   RefreshControl,
   StatusBar,
@@ -758,7 +760,8 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onForgotP
 
   return (
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.authSafe}>
-      <ScrollView contentContainerStyle={styles.authContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0} style={styles.keyboardAvoider}>
+        <ScrollView contentContainerStyle={styles.authContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
         <Text style={styles.authLogo}>RomChat</Text>
         <Text style={styles.authTitle}>{titleByMode[mode]}</Text>
         <Text style={styles.authCopy}>{copyByMode[mode]}</Text>
@@ -792,7 +795,8 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onForgotP
         {mode === 'verify' && <TouchableOpacity onPress={() => setMode('signup')}><Text style={styles.authLink}>Edit signup details</Text></TouchableOpacity>}
         {(mode === 'forgot' || mode === 'reset') && <TouchableOpacity onPress={() => { setResetNotice(''); setMode('login'); }}><Text style={styles.authLink}>Back to login</Text></TouchableOpacity>}
         {!!error && <Text style={styles.authError}>{error}</Text>}
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -858,7 +862,8 @@ function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUpload
 
   return (
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.authSafe}>
-      <ScrollView contentContainerStyle={styles.authContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0} style={styles.keyboardAvoider}>
+        <ScrollView contentContainerStyle={[styles.authContent, styles.authContentTop]} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
         <Text style={styles.authLogo}>RomChat</Text>
         <Text style={styles.authTitle}>{hasProfile ? 'Add your first photo' : 'Create your Kenyan dating profile'}</Text>
         <Text style={styles.authCopy}>Upload at least 1 image to enter Kenyan discovery. More uploaded images unlock more of other members' photo catalogues.</Text>
@@ -880,7 +885,8 @@ function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUpload
         </TouchableOpacity>
         {!!error && <Text style={styles.authError}>{error}</Text>}
         <TouchableOpacity onPress={() => void onSignOut()}><Text style={styles.authLink}>Use another account</Text></TouchableOpacity>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -1297,7 +1303,9 @@ const styles = StyleSheet.create({
   safeCenter: { flex: 1, backgroundColor: '#120914', alignItems: 'center', justifyContent: 'center', padding: 24 },
   loadingText: { color: '#FFFFFF', fontWeight: '900', marginTop: 14 },
   authSafe: { flex: 1, backgroundColor: '#120914' },
-  authContent: { padding: 20, paddingBottom: 80, flexGrow: 1, justifyContent: 'center' },
+  keyboardAvoider: { flex: 1 },
+  authContent: { padding: 20, paddingBottom: 120, flexGrow: 1, justifyContent: 'center' },
+  authContentTop: { justifyContent: 'flex-start', paddingTop: 24 },
   authLogo: { color: '#FF1493', fontSize: 30, fontWeight: '900', marginBottom: 10 },
   authTitle: { color: '#FFFFFF', fontSize: 34, fontWeight: '900', lineHeight: 39, marginBottom: 10 },
   authCopy: { color: 'rgba(255,255,255,0.7)', fontWeight: '800', lineHeight: 22, marginBottom: 18 },
