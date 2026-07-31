@@ -1018,32 +1018,32 @@ function Discover({
           )}
           <View style={styles.cardCopy}>
             <View style={styles.pillRow}>
-              <Text style={styles.cardBadge}>{profile.match}% Match</Text>
+              <Text style={styles.cardBadge}>{profile.match}%</Text>
               <Text style={styles.verifiedBadge}>Verified</Text>
             </View>
             <Text style={styles.cardTitle}>{profile.name}, {profile.age}</Text>
-            <Text style={styles.cardSub}>{profile.city} - nearby in Kenya</Text>
-            <Text style={styles.cardPrompt}>{profile.prompt}</Text>
-            <View style={styles.tagRow}>{profile.tags.map((tag) => <Text key={tag} style={styles.photoTag}>{tag}</Text>)}</View>
+            <Text style={styles.cardSub}>{profile.city} - Kenya</Text>
+            <Text numberOfLines={2} style={styles.cardPrompt}>{profile.prompt}</Text>
+            <View style={styles.tagRow}>{profile.tags.slice(0, 3).map((tag) => <Text key={tag} style={styles.photoTag}>{tag}</Text>)}</View>
           </View>
         </ImageBackground>
       </View>
 
       <View style={styles.actionDock}>
         <View style={styles.actionItem}>
-          <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><LinearGradient colors={['#FF355E', '#FF1493']} style={styles.passGradient}><Icon name="close" size={34} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
+          <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><LinearGradient colors={['#FF355E', '#FF1493']} style={styles.passGradient}><Icon name="close" size={28} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
           <Text style={styles.actionLabel}>Pass</Text>
         </View>
         <View style={styles.actionItem}>
-          <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Super like"><Icon name="star" size={28} color="#FFD700" /></TouchableOpacity>
+          <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Super like"><Icon name="star" size={23} color="#FFD700" /></TouchableOpacity>
           <Text style={styles.actionLabel}>Super {SUPER_LIKE_COST}</Text>
         </View>
         <View style={styles.actionItem}>
-          <TouchableOpacity onPress={likeProfile} style={styles.likeAction} accessibilityLabel="Like profile"><LinearGradient colors={['#FF1493', '#FF6F61']} style={styles.likeGradient}><Icon name="heart" size={36} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
+          <TouchableOpacity onPress={likeProfile} style={styles.likeAction} accessibilityLabel="Like profile"><LinearGradient colors={['#FF1493', '#FF6F61']} style={styles.likeGradient}><Icon name="heart" size={31} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
           <Text style={styles.actionLabel}>Like</Text>
         </View>
         <View style={styles.actionItem}>
-          <TouchableOpacity onPress={previous} style={styles.rewindAction} accessibilityLabel="Undo swipe"><Icon name="return-up-back" size={22} color="#FFD700" /></TouchableOpacity>
+          <TouchableOpacity onPress={previous} style={styles.rewindAction} accessibilityLabel="Undo swipe"><Icon name="return-up-back" size={19} color="#FFD700" /></TouchableOpacity>
           <Text style={styles.actionLabel}>Undo {UNDO_SWIPE_COST}</Text>
         </View>
       </View>
@@ -1134,36 +1134,48 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
 
   return (
     <View style={styles.chatScreen}>
-      <View style={styles.chatHeader}>
-        <View style={styles.chatIdentity}>
-          <Image source={localProfiles[0]!.photo} style={styles.chatHeaderAvatar} />
-          <View>
-            <Text style={styles.chatName}>Aisha</Text>
-            <Text style={styles.chatStatus}>Online now</Text>
-          </View>
+      <View style={styles.chatInboxStrip}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.kicker}>{status}</Text>
+          <Text style={styles.chatScreenTitle}>Matches ready to talk</Text>
         </View>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconButton}><Icon name="videocam-outline" size={22} color="#FF1493" /></TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}><Icon name="shield-checkmark-outline" size={22} color="#FFFFFF" /></TouchableOpacity>
-        </View>
+        <Text style={styles.chatTokenPill}>{tokens} tokens</Text>
       </View>
-      <Text style={styles.kicker}>{status}</Text>
-      <View style={styles.newMatches}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.newMatches}>
         {localProfiles.map((profile) => (
           <View key={profile.id} style={styles.matchAvatarWrap}>
             <Image source={profile.photo} style={styles.matchAvatar} />
             <Text style={styles.matchAvatarText}>{profile.name}</Text>
           </View>
         ))}
+      </ScrollView>
+
+      <View style={styles.conversationPanel}>
+        <View style={styles.chatHeader}>
+          <View style={styles.chatIdentity}>
+            <Image source={localProfiles[0]!.photo} style={styles.chatHeaderAvatar} />
+            <View>
+              <Text style={styles.chatName}>Aisha</Text>
+              <Text style={styles.chatStatus}>Online now - typing</Text>
+            </View>
+          </View>
+          <View style={styles.headerIcons}>
+            <TouchableOpacity style={styles.chatIconButton}><Icon name="videocam-outline" size={19} color="#FF1493" /></TouchableOpacity>
+            <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={19} color="#FFFFFF" /></TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.signalRow}>
+          <Text style={styles.signal}>Read {readReceipts ? 'on' : 'off'}</Text>
+          <Text style={styles.signal}>{modeLabel}</Text>
+        </View>
+        {starterMessages.map(([from, text, messageStatus]) => (
+          <View key={text} style={[styles.bubble, from === 'You' ? styles.sent : styles.received]}>
+            <Text style={from === 'You' ? styles.sentText : styles.receivedText}>{text}</Text>
+            <Text style={from === 'You' ? styles.sentMeta : styles.receivedMeta}>{messageStatus}</Text>
+          </View>
+        ))}
       </View>
-      <View style={styles.signalRow}>
-        <Text style={styles.signal}>Read {readReceipts ? 'on' : 'off'}</Text>
-        <Text style={styles.signal}>Typing live</Text>
-        <Text style={styles.signal}>{modeLabel}</Text>
-      </View>
-      <View style={styles.promptRow}>
-        {promptChips.map((prompt) => <Text key={prompt} style={styles.promptChip}>{prompt}</Text>)}
-      </View>
+
       {videoRequests.map((request) => (
         <View key={request.id} style={styles.videoInvite}>
           <Text style={styles.videoTitle}>{request.title}</Text>
@@ -1173,41 +1185,41 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
           </TouchableOpacity>
         </View>
       ))}
-      {starterMessages.map(([from, text, messageStatus]) => (
-        <View key={text} style={[styles.bubble, from === 'You' ? styles.sent : styles.received]}>
-          <Text style={from === 'You' ? styles.sentText : styles.receivedText}>{text}</Text>
-          <Text style={from === 'You' ? styles.sentMeta : styles.receivedMeta}>{messageStatus}</Text>
-        </View>
-      ))}
       {paidMessages.map((message) => (
         <View key={message.id} style={styles.lockedReply}>
-          <View style={styles.lockedHeader}><Icon name="lock-closed" size={18} color="#FFD700" /><Text style={styles.lockedTitle}>Blurred media preview</Text></View>
+          <View style={styles.lockedHeader}><Icon name="lock-closed" size={16} color="#FFD700" /><Text style={styles.lockedTitle}>Private media</Text></View>
           <Text style={styles.blurredMask}>{message.locked && !message.unlockedByActor ? '#### ####### ##### ### ########' : message.text}</Text>
-          <Text style={styles.lockedText}>Basic text stays free. Unlock only this optional voice note.</Text>
+          <Text style={styles.lockedText}>Unlock only this optional private media.</Text>
           <TouchableOpacity onPress={() => { if (message.locked && !message.unlockedByActor) { setTokens((value) => Math.max(0, value - Number(message.unlockCostTokens || 10))); void unlockMessage(message.id); } }} style={[styles.unlockButton, message.unlockedByActor && styles.unlockButtonDone]}>
             <Text style={styles.unlockButtonText}>{message.unlockedByActor ? 'Media unlocked' : `Unlock media (${message.unlockCostTokens || 10} tokens)`}</Text>
           </TouchableOpacity>
         </View>
       ))}
-      <View style={styles.segment}>
-        {(['standard', 'timed', 'viewOnce'] as MessageMode[]).map((mode) => (
-          <TouchableOpacity key={mode} onPress={() => setMessageMode(mode)} style={[styles.segmentItem, messageMode === mode && styles.segmentActive]}>
-            <Text style={[styles.segmentText, messageMode === mode && styles.segmentTextActive]}>{mode === 'viewOnce' ? 'Once' : mode}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <ToggleRow title="Read receipt add-on" value={readReceipts} onPress={() => setReadReceipts(!readReceipts)} />
-      <View style={styles.giftRow}>
-        {gifts.map((gift) => (
-          <TouchableOpacity key={gift.id} onPress={() => { setTokens((value) => Math.max(0, value - gift.tokens)); void sendGift(gift.id); }} style={styles.giftButton}>
-            <Text style={styles.giftName}>{gift.name}</Text>
-            <Text style={styles.giftMeta}>{gift.tokens} tokens</Text>
-          </TouchableOpacity>
-        ))}
+
+      <View style={styles.chatTools}>
+        <View style={styles.promptRow}>
+          {promptChips.map((prompt) => <Text key={prompt} style={styles.promptChip}>{prompt}</Text>)}
+        </View>
+        <View style={styles.segment}>
+          {(['standard', 'timed', 'viewOnce'] as MessageMode[]).map((mode) => (
+            <TouchableOpacity key={mode} onPress={() => setMessageMode(mode)} style={[styles.segmentItem, messageMode === mode && styles.segmentActive]}>
+              <Text style={[styles.segmentText, messageMode === mode && styles.segmentTextActive]}>{mode === 'viewOnce' ? 'Once' : mode}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <ToggleRow title="Read receipt add-on" value={readReceipts} onPress={() => setReadReceipts(!readReceipts)} />
+        <View style={styles.giftRow}>
+          {gifts.map((gift) => (
+            <TouchableOpacity key={gift.id} onPress={() => { setTokens((value) => Math.max(0, value - gift.tokens)); void sendGift(gift.id); }} style={styles.giftButton}>
+              <Text style={styles.giftName}>{gift.name}</Text>
+              <Text style={styles.giftMeta}>{gift.tokens} tokens</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
       <View style={styles.composer}>
         <TextInput value={draft} onChangeText={setDraft} placeholder="Send a charming message" style={styles.input} placeholderTextColor="#a45a72" />
-        <TouchableOpacity onPress={submit} style={styles.send}><Text style={styles.sendText}>Send</Text></TouchableOpacity>
+        <TouchableOpacity onPress={submit} style={styles.send}><Icon name="send" size={18} color="#FFFFFF" /></TouchableOpacity>
       </View>
     </View>
   );
@@ -1425,7 +1437,7 @@ const styles = StyleSheet.create({
   backButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#1E1222', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255, 20, 147, 0.24)' },
   backButtonText: { color: '#FFFFFF', fontWeight: '900' },
   apiPill: { color: '#FFD700', backgroundColor: '#1E1222', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, fontWeight: '900' },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   topControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logo: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: '#FFD700', backgroundColor: '#2A1A30' },
@@ -1437,10 +1449,10 @@ const styles = StyleSheet.create({
   walletText: { color: '#FFD700', fontWeight: '900', fontSize: 14 },
   safePill: { backgroundColor: '#1E1222', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
   safePillText: { color: '#FFD700', fontWeight: '900' },
-  discovery: { marginBottom: 12 },
-  deckShadow: { borderRadius: 28, marginBottom: 18, shadowColor: '#FF1493', shadowOpacity: 0.34, shadowRadius: 20, shadowOffset: { width: 0, height: 12 }, elevation: 10 },
-  profileCard: { minHeight: 560, aspectRatio: 9 / 14.5, width: '100%', borderRadius: 28, overflow: 'hidden', justifyContent: 'flex-end', backgroundColor: '#1E1222' },
-  profilePhoto: { borderRadius: 28 },
+  discovery: { marginBottom: 4 },
+  deckShadow: { borderRadius: 26, marginBottom: 10, shadowColor: '#FF1493', shadowOpacity: 0.34, shadowRadius: 20, shadowOffset: { width: 0, height: 12 }, elevation: 10 },
+  profileCard: { minHeight: 610, aspectRatio: 9 / 15.6, width: '100%', borderRadius: 26, overflow: 'hidden', justifyContent: 'flex-end', backgroundColor: '#1E1222' },
+  profilePhoto: { borderRadius: 26 },
   photoOverlay: { ...StyleSheet.absoluteFillObject },
   tapZones: { ...StyleSheet.absoluteFillObject, flexDirection: 'row' },
   tapZone: { flex: 1 },
@@ -1450,24 +1462,24 @@ const styles = StyleSheet.create({
   galleryLockNotice: { position: 'absolute', top: 28, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(18,9,20,0.82)', borderWidth: 1, borderColor: 'rgba(255,215,0,0.35)' },
   galleryLockText: { flex: 1, color: '#FFFFFF', fontWeight: '900', fontSize: 12, lineHeight: 17 },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, paddingTop: 30 },
-  pillRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  verifiedBadge: { color: '#00F0FF', backgroundColor: 'rgba(0,240,255,0.12)', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, fontWeight: '900', fontSize: 12 },
-  cardBadge: { color: '#120914', backgroundColor: '#FFD700', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6, fontWeight: '900', fontSize: 12 },
-  cardCopy: { padding: 20, paddingTop: 40 },
-  cardTitle: { color: '#FFFFFF', fontSize: 40, fontWeight: '900' },
-  cardSub: { color: 'rgba(255,255,255,0.72)', fontSize: 15, fontWeight: '800', marginTop: 4 },
-  cardPrompt: { color: '#FFFFFF', fontSize: 16, lineHeight: 23, marginTop: 10, fontWeight: '800' },
-  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  photoTag: { color: '#FFFFFF', backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden', paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, fontWeight: '900', fontSize: 12 },
-  actionDock: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 14, marginTop: -2, marginBottom: 18, paddingBottom: 12, zIndex: 2 },
-  actionItem: { alignItems: 'center', justifyContent: 'flex-start', minWidth: 58 },
-  actionLabel: { color: 'rgba(255,255,255,0.72)', fontWeight: '900', fontSize: 11, marginTop: 7 },
-  passAction: { width: 64, height: 64, borderRadius: 32, overflow: 'hidden', shadowColor: '#FF1493', shadowOpacity: 0.28, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 7 },
+  pillRow: { flexDirection: 'row', gap: 6, marginBottom: 5 },
+  verifiedBadge: { color: '#00F0FF', backgroundColor: 'rgba(0,240,255,0.12)', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5, fontWeight: '900', fontSize: 10 },
+  cardBadge: { color: '#120914', backgroundColor: '#FFD700', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, fontWeight: '900', fontSize: 10 },
+  cardCopy: { paddingHorizontal: 15, paddingBottom: 16, paddingTop: 56 },
+  cardTitle: { color: '#FFFFFF', fontSize: 30, fontWeight: '900' },
+  cardSub: { color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '800', marginTop: 2 },
+  cardPrompt: { color: '#FFFFFF', fontSize: 13, lineHeight: 18, marginTop: 6, fontWeight: '800' },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  photoTag: { color: '#FFFFFF', backgroundColor: 'rgba(255,255,255,0.16)', overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999, fontWeight: '900', fontSize: 10 },
+  actionDock: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 0, marginBottom: 12, paddingBottom: 8, zIndex: 2 },
+  actionItem: { alignItems: 'center', justifyContent: 'flex-start', minWidth: 50 },
+  actionLabel: { color: 'rgba(255,255,255,0.68)', fontWeight: '900', fontSize: 10, marginTop: 5 },
+  passAction: { width: 54, height: 54, borderRadius: 27, overflow: 'hidden', shadowColor: '#FF1493', shadowOpacity: 0.24, shadowRadius: 12, shadowOffset: { width: 0, height: 7 }, elevation: 6 },
   passGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
-  topAction: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#1E1222', borderWidth: 1.5, borderColor: '#FFD700', justifyContent: 'center', alignItems: 'center' },
-  likeAction: { width: 68, height: 68, borderRadius: 34, overflow: 'hidden' },
+  topAction: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#1E1222', borderWidth: 1.5, borderColor: '#FFD700', justifyContent: 'center', alignItems: 'center' },
+  likeAction: { width: 58, height: 58, borderRadius: 29, overflow: 'hidden' },
   likeGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
-  rewindAction: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#1E1222', borderWidth: 1.5, borderColor: 'rgba(255,215,0,0.55)', justifyContent: 'center', alignItems: 'center' },
+  rewindAction: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#1E1222', borderWidth: 1.5, borderColor: 'rgba(255,215,0,0.55)', justifyContent: 'center', alignItems: 'center' },
   smallAction: { backgroundColor: '#1E1222', paddingHorizontal: 14, paddingVertical: 14, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   smallActionText: { color: '#FFFFFF', fontWeight: '900' },
   passActionText: { color: '#8A7B89', fontWeight: '900' },
@@ -1500,11 +1512,17 @@ const styles = StyleSheet.create({
   nudgeTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginTop: 3 },
   nudgeAction: { color: '#FFD700', fontWeight: '900' },
   panel: { backgroundColor: '#1E1222', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', padding: 18, marginBottom: 14 },
-  chatScreen: { backgroundColor: '#120914', paddingBottom: 28 },
-  chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14, marginBottom: 14, borderBottomWidth: 1, borderBottomColor: '#1E1222' },
+  chatScreen: { backgroundColor: '#120914', paddingBottom: 24 },
+  chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   chatIdentity: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  chatHeaderAvatar: { width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: '#FF1493' },
-  chatName: { color: '#FFFFFF', fontWeight: '900', fontSize: 18 },
+  chatInboxStrip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1E1222', borderRadius: 20, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)' },
+  chatScreenTitle: { color: '#FFFFFF', fontSize: 21, fontWeight: '900' },
+  chatTokenPill: { color: '#120914', backgroundColor: '#FFD700', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 11, paddingVertical: 7, fontWeight: '900' },
+  conversationPanel: { backgroundColor: '#1E1222', borderRadius: 22, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)' },
+  chatIconButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#2A1A30', borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', alignItems: 'center', justifyContent: 'center' },
+  chatTools: { backgroundColor: '#1E1222', borderRadius: 20, padding: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
+  chatHeaderAvatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: '#FF1493' },
+  chatName: { color: '#FFFFFF', fontWeight: '900', fontSize: 17 },
   chatStatus: { color: '#16A34A', fontWeight: '800', fontSize: 12 },
   headerIcons: { flexDirection: 'row', gap: 10 },
   kicker: { color: '#FF1493', fontWeight: '900', textTransform: 'uppercase', marginBottom: 8, fontSize: 12 },
@@ -1513,16 +1531,16 @@ const styles = StyleSheet.create({
   title: { color: '#FFFFFF', fontSize: 27, fontWeight: '900', marginBottom: 12 },
   sectionLabel: { color: '#FFD700', fontWeight: '900', textTransform: 'uppercase', marginBottom: 10, fontSize: 12 },
   insight: { color: '#FFFFFF', backgroundColor: '#2A1A30', borderRadius: 16, padding: 13, marginTop: 8, fontWeight: '800', lineHeight: 21 },
-  newMatches: { flexDirection: 'row', gap: 12, marginBottom: 14 },
+  newMatches: { flexDirection: 'row', gap: 12, paddingRight: 8, marginBottom: 14 },
   matchAvatarWrap: { alignItems: 'center', gap: 6 },
-  matchAvatar: { width: 56, height: 56, borderRadius: 28, borderWidth: 3, borderColor: '#FF1493' },
+  matchAvatar: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: '#FF1493' },
   matchAvatarText: { color: 'rgba(255,255,255,0.72)', fontWeight: '900', fontSize: 12 },
   signalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   signal: { backgroundColor: '#2A1A30', color: '#FFFFFF', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, overflow: 'hidden', fontWeight: '900', fontSize: 12 },
   promptRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   promptChip: { backgroundColor: '#FFD700', color: '#120914', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 8, fontWeight: '900', fontSize: 12 },
-  videoInvite: { backgroundColor: '#1E1222', borderRadius: 20, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#FF1493', alignItems: 'center' },
-  videoTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 18, lineHeight: 24, textAlign: 'center' },
+  videoInvite: { backgroundColor: '#1E1222', borderRadius: 18, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#FF1493', alignItems: 'center' },
+  videoTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 22, textAlign: 'center' },
   videoTeaser: { color: 'rgba(255,255,255,0.68)', fontWeight: '800', lineHeight: 21, marginTop: 6, textAlign: 'center' },
   lockedReply: { backgroundColor: '#1E1222', borderWidth: 1, borderColor: '#FFD700', borderRadius: 20, padding: 16, marginVertical: 10, gap: 8 },
   lockedHeader: { flexDirection: 'row', gap: 8, alignItems: 'center' },
@@ -1532,7 +1550,7 @@ const styles = StyleSheet.create({
   unlockButton: { backgroundColor: '#FFD700', borderRadius: 14, alignItems: 'center', paddingVertical: 13, marginTop: 8 },
   unlockButtonDone: { backgroundColor: '#16A34A' },
   unlockButtonText: { color: '#120914', fontWeight: '900' },
-  bubble: { maxWidth: '84%', padding: 14, borderRadius: 20, marginVertical: 6 },
+  bubble: { maxWidth: '86%', padding: 13, borderRadius: 20, marginVertical: 5 },
   sent: { alignSelf: 'flex-end', backgroundColor: '#FF1493', borderBottomRightRadius: 4 },
   received: { alignSelf: 'flex-start', backgroundColor: '#1E1222', borderBottomLeftRadius: 4 },
   sentText: { color: '#FFFFFF', fontWeight: '800', lineHeight: 22 },
@@ -1548,9 +1566,9 @@ const styles = StyleSheet.create({
   giftButton: { flex: 1, backgroundColor: '#1E1222', borderRadius: 18, padding: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)' },
   giftName: { color: '#FFFFFF', fontWeight: '900' },
   giftMeta: { color: '#FFD700', fontWeight: '900', marginTop: 4, fontSize: 12 },
-  composer: { flexDirection: 'row', gap: 8, marginTop: 16 },
-  input: { flex: 1, borderWidth: 1, borderColor: 'rgba(255,20,147,0.26)', borderRadius: 999, paddingHorizontal: 16, color: '#FFFFFF', backgroundColor: '#1E1222' },
-  send: { backgroundColor: '#FF1493', borderRadius: 999, paddingHorizontal: 16, justifyContent: 'center' },
+  composer: { flexDirection: 'row', gap: 8, marginTop: 14, backgroundColor: '#1E1222', borderRadius: 999, padding: 5, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)' },
+  input: { flex: 1, minHeight: 42, paddingHorizontal: 14, color: '#FFFFFF' },
+  send: { width: 42, height: 42, backgroundColor: '#FF1493', borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   sendText: { color: '#FFFFFF', fontWeight: '900' },
   walletHero: { borderRadius: 28, padding: 20, marginBottom: 14 },
   balance: { color: '#120914', fontSize: 44, fontWeight: '900' },
