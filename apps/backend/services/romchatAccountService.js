@@ -108,7 +108,7 @@ async function sendRomChatEmail(to, subject, details, fallbackCode) {
     return { delivered: true };
   } catch (error) {
     const isAuthFailure = error?.code === 'EAUTH' || /535|authentication|invalid login/i.test(error?.message || '');
-    const logPayload = { to, subject, code: error.code || null, message: error.message, hint: isAuthFailure ? 'Check EMAIL_USER/EMAIL_PASS or SMTP_USER/SMTP_PASS. Many providers require an app password.' : undefined };
+    const logPayload = { to, subject, code: error.code || null, message: error.message, hint: isAuthFailure ? 'Check SMTP_USER/SMTP_PASS or EMAIL_AUTH_USER/EMAIL_AUTH_PASS. Zoho usually requires an app-specific password and the account must allow SMTP.' : undefined };
     if (isAuthFailure) console.warn('[romchat-email] smtp auth failed; using fallback', logPayload);
     else console.error('[romchat-email] delivery failed', logPayload);
     if (process.env.NODE_ENV !== 'production' || process.env.ROMCHAT_ALLOW_EMAIL_FALLBACK === 'true') {

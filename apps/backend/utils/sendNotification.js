@@ -3,6 +3,14 @@ import nodemailer from 'nodemailer';
 import crypto from 'node:crypto';
 import pool from '../config/db.js';
 
+function env(name, fallback = '') {
+  return String(process.env[name] || fallback || '').trim();
+}
+
+function maskEmail(email) {
+  return String(email || '').replace(/^(.{2}).*(@.*)$/, '$1***$2');
+}
+
 /* ─────────────────────────────────────────────────────────
  * Settings helper (Option B)
  *  - Reads from app_settings/site_settings/settings (key,value)
@@ -118,16 +126,30 @@ export const sendNotification = async ({ to, subject, body, details, suppressErr
       throw new Error('❌ Missing required email parameters.');
     }
 
-    const smtpHost = process.env.EMAIL_HOST || process.env.SMTP_HOST || process.env.MAIL_HOST || 'localhost';
-    const smtpPort = Number(process.env.EMAIL_PORT || process.env.SMTP_PORT || process.env.MAIL_PORT || 587);
-    const smtpUser = process.env.EMAIL_USER || process.env.SMTP_USER || process.env.MAIL_USER;
-    const smtpPass = process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.MAIL_PASS;
-    const isSecure = String(process.env.EMAIL_SECURE || process.env.SMTP_SECURE || process.env.MAIL_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
+    const smtpHost = env('EMAIL_HOST', process.env.SMTP_HOST || process.env.MAIL_HOST || 'smtp.zoho.com');
+    const smtpPort = Number(env('EMAIL_PORT', process.env.SMTP_PORT || process.env.MAIL_PORT || '587')) || 587;
+    const smtpUser = env('EMAIL_AUTH_USER', process.env.SMTP_USER || process.env.EMAIL_USER || process.env.MAIL_USER);
+    const smtpPass = env('EMAIL_AUTH_PASS', process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.MAIL_PASS);
+    const secureValue = env('EMAIL_SECURE', process.env.SMTP_SECURE || process.env.MAIL_SECURE || 'false').toLowerCase();
+    const isSecure = secureValue === 'true' || smtpPort === 465;
+    if (!smtpHost || !smtpUser || !smtpPass) {
+      const error = new Error('Email is not configured. Set SMTP_HOST plus SMTP_USER/SMTP_PASS, or EMAIL_HOST plus EMAIL_AUTH_USER/EMAIL_AUTH_PASS.');
+      error.code = 'EMAIL_CONFIG_MISSING';
+      throw error;
+    }
     const transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
       secure: isSecure, // true = SSL (465), false = STARTTLS (587)
-      auth: smtpUser || smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
+      requireTLS: !isSecure,
+      auth: { user: smtpUser, pass: smtpPass },
+      connectionTimeout: 20000,
+      greetingTimeout: 20000,
+      socketTimeout: 30000,
+      tls: {
+        servername: smtpHost,
+        minVersion: 'TLSv1.2',
+      },
     });
 
     // Prefer DB setting -> ENV -> rare fallback to /uploads/logo.png
@@ -163,7 +185,11 @@ export const sendNotification = async ({ to, subject, body, details, suppressErr
     const token = sign(to);
     const webUnsub = `${publicWebUrl()}/unsubscribe?e=${encodeURIComponent(to)}&t=${token}`;
     const apiOneClick = `${publicApiUrl()}/api/email/unsubscribe/one-click?e=${encodeURIComponent(to)}&t=${token}`;
-    const supportEmail = process.env.SUPPORT_EMAIL || 'support@daybreaklearner.com';
+    const supportEmail = process.env.SUPPORT_EMAIL || process.env.MAIL_REPLY_TO || process.env.EMAIL_REPLY_TO || 'support@daybreaklearner.com';
+    const fromName = env('EMAIL_FROM_NAME', process.env.MAIL_FROM_NAME || process.env.SMTP_FROM_NAME || brandName);
+    const fromAddress = env('EMAIL_FROM', process.env.MAIL_FROM_ADDRESS || process.env.SMTP_FROM || process.env.MAIL_FROM || smtpUser);
+    const replyTo = env('EMAIL_REPLY_TO', process.env.MAIL_REPLY_TO || fromAddress);
+    const formattedFrom = fromAddress.includes('<') ? fromAddress : `"${fromName}" <${fromAddress}>`;
 
     // Build the inline-CSS HTML template
     const html = `
@@ -212,8 +238,9 @@ export const sendNotification = async ({ to, subject, body, details, suppressErr
     </html>
     `;
 
+    console.info('[email] send:start', { to: maskEmail(to), from: fromAddress, authUser: maskEmail(smtpUser), host: smtpHost, port: smtpPort, secure: isSecure });
     const info = await transporter.sendMail({
-      from: `"${brandName} ${brandEmoji}" <${process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.MAIL_FROM || smtpUser}>`,
+      from: formattedFrom,
       to,
       subject,
       html,
@@ -224,6 +251,8 @@ export const sendNotification = async ({ to, subject, body, details, suppressErr
 
 Unsubscribe: ${webUnsub}
 `,
+      replyTo,
+      envelope: { from: fromAddress.includes('<') ? smtpUser : fromAddress, to },
       headers: {
         // Include One-Click + mailto option for mailbox providers
         'List-Unsubscribe': `<${apiOneClick}>, <mailto:${supportEmail}>`,
