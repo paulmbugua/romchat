@@ -201,7 +201,7 @@ export default function App() {
   const bottomContentPadding = bottomInset + 72;
   const profiles = romchat.profiles.length ? (romchat.profiles as ProfileSeed[]) : localProfiles;
   const profile = profiles[index % profiles.length]!;
-  const firstUploadedImageUrl = resolveMediaUrl(session?.profile?.media?.find((item) => item.mediaType === 'image' || item.mediaType === 'selfie')?.url);
+  const firstUploadedImageUrl = resolveMediaUrl([...(session?.profile?.media || [])].sort((a, b) => (a.position || 0) - (b.position || 0)).find((item) => item.mediaType === 'image' || item.mediaType === 'selfie')?.url);
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
   const activePlan = boosted ? 'Platinum' : 'Gold';
 
@@ -475,6 +475,18 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
 
+  async function setMainProfilePhoto(mediaId: string) {
+    if (!session?.token || !mediaId) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const response = await romchatAccountApi.setMainPhoto(session.token, mediaId);
+      const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
+      await persistSession(next);
+    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to update main photo.'); }
+    finally { setAuthBusy(false); }
+  }
+
   async function uploadVoiceIntro() {
     if (!session?.token) return;
     setAuthBusy(true);
@@ -577,7 +589,7 @@ export default function App() {
         />
       );
     }
-    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onRecordVoice={uploadVoiceIntro} onVerifySelfie={verifySelfieProfile} onSavePrompts={saveProfilePrompts} status={romchat.lastAction} onSignOut={signOut} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onRecordVoice={uploadVoiceIntro} onVerifySelfie={verifySelfieProfile} onSavePrompts={saveProfilePrompts} status={romchat.lastAction} onSignOut={signOut} />;
   }
 
   if (!authBooted) {
@@ -1193,11 +1205,11 @@ function resolveMediaUrl(url?: string) {
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onRecordVoice, onVerifySelfie, onSavePrompts, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onRecordVoice: () => Promise<void>; onVerifySelfie: () => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
+function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onRecordVoice, onVerifySelfie, onSavePrompts, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onRecordVoice: () => Promise<void>; onVerifySelfie: () => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
-  const photoMedia = (profile?.media || []).filter((item) => item.mediaType === 'image' || item.mediaType === 'selfie');
+  const photoMedia = [...(profile?.media || [])].filter((item) => item.mediaType === 'image' || item.mediaType === 'selfie').sort((a, b) => (a.position || 0) - (b.position || 0));
   const voiceReady = Boolean(profile?.voiceIntroUrl || profile?.media?.some((item) => item.mediaType === 'voice'));
   const promptSeed = profilePromptTemplates.map((prompt, index) => ({ prompt, answer: profile?.promptAnswers?.[index]?.answer || '' }));
   const [promptAnswers, setPromptAnswers] = useState<RomChatPromptAnswer[]>(promptSeed);
@@ -1222,7 +1234,8 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
         <View style={styles.photoSlotGrid}>{Array.from({ length: 6 }).map((_, index) => {
           const media = photoMedia[index];
           const uri = resolveMediaUrl(media?.url);
-          return <TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} key={index} style={styles.photoSlot}>{uri ? <Image source={{ uri }} style={styles.photoThumb} /> : <Icon name={index < imageCount ? 'image' : 'add'} size={22} color={index < imageCount ? '#FFD700' : '#FF1493'} />}<Text style={styles.photoSlotText}>{uri ? `Photo ${index + 1}` : 'Add'}</Text></TouchableOpacity>;
+          const isMain = Boolean(media && index === 0);
+          return <TouchableOpacity disabled={busy} onPress={() => media?.id ? void onSetMainPhoto(media.id) : void onUploadImage()} key={media?.id || index} style={[styles.photoSlot, isMain && styles.photoSlotMain]}>{uri ? <Image source={{ uri }} style={styles.photoThumb} /> : <Icon name={index < imageCount ? 'image' : 'add'} size={22} color={index < imageCount ? '#FFD700' : '#FF1493'} />}{isMain && <Text style={styles.mainPhotoBadge}>Main</Text>}<Text style={styles.photoSlotText}>{uri ? (isMain ? 'Main photo' : 'Make main') : 'Add'}</Text></TouchableOpacity>;
         })}</View>
         {profileTasks.map(([item, detail]) => (
           <View key={item} style={styles.listItem}>
@@ -1463,8 +1476,10 @@ const styles = StyleSheet.create({
   progressFill: { height: 9, backgroundColor: '#FF1493' },
   profileStrength: { color: '#FFD700', fontWeight: '900', fontSize: 18 },
   photoSlotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 12 },
-  photoSlot: { width: '30.5%', aspectRatio: 0.82, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,20,147,0.25)', backgroundColor: '#2A1A30', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  photoSlotText: { color: 'rgba(255,255,255,0.72)', fontWeight: '900', fontSize: 12 },
+  photoSlot: { width: '30.5%', aspectRatio: 0.82, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,20,147,0.25)', backgroundColor: '#2A1A30', alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden' },
+  photoSlotMain: { borderColor: '#FFD700', borderWidth: 2 },
+  photoSlotText: { color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 12, position: 'absolute', left: 6, right: 6, bottom: 7, textAlign: 'center', backgroundColor: 'rgba(18,9,20,0.72)', borderRadius: 999, overflow: 'hidden', paddingVertical: 4 },
+  mainPhotoBadge: { position: 'absolute', top: 7, left: 7, color: '#120914', backgroundColor: '#FFD700', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, fontWeight: '900', fontSize: 11 },
   photoThumb: { width: '100%', height: '100%', borderRadius: 12 },
   profileActionGrid: { flexDirection: 'row', gap: 8, marginTop: 8 },
   profileAction: { flex: 1, minHeight: 54, borderRadius: 18, backgroundColor: '#2A1A30', borderWidth: 1, borderColor: 'rgba(255,215,0,0.24)', alignItems: 'center', justifyContent: 'center', gap: 5 },

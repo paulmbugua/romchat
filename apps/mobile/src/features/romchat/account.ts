@@ -98,6 +98,11 @@ export const romchatAccountApi = {
       token,
       body: JSON.stringify(payload),
     }),
+  setMainPhoto: (token: string, mediaId: string) =>
+    apiFetch<{ media: RomChatProfileMedia; profile: RomChatMemberProfile }>('/api/romchat/profile/media/' + mediaId + '/main', {
+      method: 'PATCH',
+      token,
+    }),
   verifySelfie: (token: string, payload: { dataUri: string; contentType: string; fileName?: string }) =>
     apiFetch<{ media: RomChatProfileMedia; profile: RomChatMemberProfile; verification: { status: string; selfieVerified: boolean; verifiedAt: string } }>('/api/romchat/profile/selfie-verification', {
       method: 'POST',

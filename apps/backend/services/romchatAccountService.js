@@ -540,6 +540,29 @@ export async function uploadMemberMedia(memberId, payload = {}) {
   return { media: insertedMedia, profile };
 }
 
+export async function setMainProfilePhoto(memberId, mediaId) {
+  await ensureAccountSchema();
+  const selected = await queryWithRetry(
+    "SELECT * FROM romchat_profile_media WHERE id = $1 AND member_id = $2 AND media_type IN ('image','selfie')",
+    [mediaId, memberId]
+  );
+  const media = selected.rows[0];
+  if (!media) {
+    const error = new Error('Profile photo not found.');
+    error.status = 404;
+    throw error;
+  }
+  const existing = await queryWithRetry(
+    "SELECT id FROM romchat_profile_media WHERE member_id = $1 AND media_type IN ('image','selfie') ORDER BY position ASC, created_at ASC",
+    [memberId]
+  );
+  const orderedIds = [mediaId, ...existing.rows.map((row) => row.id).filter((id) => id !== mediaId)];
+  for (let position = 0; position < orderedIds.length; position += 1) {
+    await queryWithRetry('UPDATE romchat_profile_media SET position = $3 WHERE id = $1 AND member_id = $2', [orderedIds[position], memberId, position]);
+  }
+  return { media: mediaFromRow({ ...media, position: 0 }), profile: await getMemberProfile(memberId) };
+}
+
 export async function verifyMemberSelfie(memberId, payload = {}) {
   const result = await uploadMemberMedia(memberId, { ...payload, mediaType: 'selfie', fileName: payload.fileName || 'selfie-verification.jpg' });
   return { ...result, verification: { status: 'verified', selfieVerified: true, verifiedAt: new Date().toISOString() } };
