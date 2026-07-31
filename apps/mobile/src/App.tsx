@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { GestureResponderHandlers, ImageSourcePropType } from 'react-native';
+import type { GestureResponderHandlers, ImageSourcePropType, LayoutChangeEvent } from 'react-native';
 import {
   Image,
   ImageBackground,
@@ -865,32 +865,77 @@ function ProfileOnboardingScreen({ busy, error, accountName, profile, uploadedIm
   const [selectedInterests, setSelectedInterests] = useState<string[]>(profile?.interests?.length ? profile.interests : ['Coffee dates', 'Travel', 'Live music']);
   const hasProfile = Boolean(profile);
   const imageCount = profile?.imageCount || uploadedImageCount || 0;
+  const scrollRef = useRef<ScrollView | null>(null);
+  const sectionYRef = useRef<Record<string, number>>({});
+  const [missingSection, setMissingSection] = useState('');
   const toggleInterest = (interest: string) => setSelectedInterests((current) => current.includes(interest) ? current.filter((item) => item !== interest) : [...current, interest]);
+  const rememberSection = (key: string) => (event: LayoutChangeEvent) => { sectionYRef.current[key] = event.nativeEvent.layout.y; };
+  function jumpToMissing(section: string) {
+    setMissingSection(section);
+    const y = Math.max(0, (sectionYRef.current[section] || 0) - 16);
+    requestAnimationFrame(() => scrollRef.current?.scrollTo({ y, animated: true }));
+  }
+  function handleSaveProfile() {
+    const ageValue = Number(age);
+    const requiredSections = [
+      { key: 'displayName', missing: !displayName.trim() },
+      { key: 'age', missing: !ageValue || ageValue < 18 },
+      { key: 'gender', missing: !gender.trim() },
+      { key: 'city', missing: !city.trim() },
+      { key: 'intent', missing: !intent.trim() },
+      { key: 'interests', missing: selectedInterests.length === 0 },
+      { key: 'bio', missing: !bio.trim() },
+      { key: 'image', missing: imageCount < 1 },
+    ];
+    const firstMissing = requiredSections.find((item) => item.missing);
+    if (firstMissing) {
+      jumpToMissing(firstMissing.key);
+      return;
+    }
+    setMissingSection('');
+    void onSaveProfile({ displayName, age: ageValue, gender, city, intent, bio, interests: selectedInterests });
+  }
   useEffect(() => {
     if (!displayName.trim() && initialDisplayName.trim()) setDisplayName(initialDisplayName);
   }, [displayName, initialDisplayName]);
+  useEffect(() => {
+    if (!missingSection) return;
+    const ageValue = Number(age);
+    const fixed = {
+      displayName: Boolean(displayName.trim()),
+      age: Boolean(ageValue && ageValue >= 18),
+      gender: Boolean(gender.trim()),
+      city: Boolean(city.trim()),
+      intent: Boolean(intent.trim()),
+      interests: selectedInterests.length > 0,
+      bio: Boolean(bio.trim()),
+      image: imageCount >= 1,
+    }[missingSection];
+    if (fixed) setMissingSection('');
+  }, [age, bio, city, displayName, gender, imageCount, intent, missingSection, selectedInterests.length]);
 
   return (
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.authSafe}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0} style={styles.keyboardAvoider}>
-        <ScrollView contentContainerStyle={[styles.authContent, styles.authContentTop]} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
+        <ScrollView ref={scrollRef} contentContainerStyle={[styles.authContent, styles.authContentTop]} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
         <Text style={styles.authLogo}>RomChat</Text>
         <Text style={styles.authTitle}>{hasProfile ? 'Add your first photo' : 'Create your Kenyan dating profile'}</Text>
         <Text style={styles.authCopy}>Upload at least 1 image to enter Kenyan discovery. More uploaded images unlock more of other members' photo catalogues.</Text>
-        <TextInput value={displayName} onChangeText={setDisplayName} placeholder="Display name" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
-        <TextInput value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="Age" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
-        <View style={styles.genderRow}>{['female', 'male', 'nonbinary'].map((item) => <TouchableOpacity key={item} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
-        <TextInput value={city} onChangeText={setCity} placeholder="City" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
-        <Text style={styles.selectorTitle}>Dating intention in Kenya</Text>
-        <View style={styles.choiceWrap}>{datingIntentions.map((item) => <TouchableOpacity key={item} onPress={() => setIntent(item)} style={[styles.choiceChip, intent === item && styles.choiceChipActive]}><Text style={[styles.choiceText, intent === item && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>)}</View>
-        <Text style={styles.selectorTitle}>Interests and vibe signals</Text>
-        <View style={styles.choiceWrap}>{datingInterests.map((item) => { const active = selectedInterests.includes(item); return <TouchableOpacity key={item} onPress={() => toggleInterest(item)} style={[styles.choiceChip, active && styles.choiceChipActive]}><Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>; })}</View>
-        <TextInput value={bio} onChangeText={setBio} placeholder="Short Kenyan romance bio" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, styles.authTextArea]} multiline />
-        <TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} style={styles.uploadCard}>
+        <View onLayout={rememberSection('displayName')}><TextInput value={displayName} onChangeText={setDisplayName} placeholder="Display name" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, missingSection === 'displayName' && styles.inputMissing]} /></View>
+        <View onLayout={rememberSection('age')}><TextInput value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="Age" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, missingSection === 'age' && styles.inputMissing]} /></View>
+        <View onLayout={rememberSection('gender')} style={[styles.genderRow, missingSection === 'gender' && styles.sectionMissing]}>{['female', 'male', 'nonbinary'].map((item) => <TouchableOpacity key={item} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
+        <View onLayout={rememberSection('city')}><TextInput value={city} onChangeText={setCity} placeholder="City" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, missingSection === 'city' && styles.inputMissing]} /></View>
+        <View onLayout={rememberSection('intent')}><Text style={[styles.selectorTitle, missingSection === 'intent' && styles.selectorTitleMissing]}>Dating intention in Kenya</Text>
+        <View style={styles.choiceWrap}>{datingIntentions.map((item) => <TouchableOpacity key={item} onPress={() => setIntent(item)} style={[styles.choiceChip, intent === item && styles.choiceChipActive]}><Text style={[styles.choiceText, intent === item && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>)}</View></View>
+        <View onLayout={rememberSection('interests')}><Text style={[styles.selectorTitle, missingSection === 'interests' && styles.selectorTitleMissing]}>Interests and vibe signals</Text>
+        <View style={styles.choiceWrap}>{datingInterests.map((item) => { const active = selectedInterests.includes(item); return <TouchableOpacity key={item} onPress={() => toggleInterest(item)} style={[styles.choiceChip, active && styles.choiceChipActive]}><Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>; })}</View></View>
+        <View onLayout={rememberSection('bio')}><TextInput value={bio} onChangeText={setBio} placeholder="Short Kenyan romance bio" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, styles.authTextArea, missingSection === 'bio' && styles.inputMissing]} multiline /></View>
+        <TouchableOpacity onLayout={rememberSection('image')} disabled={busy} onPress={() => void onUploadImage()} style={[styles.uploadCard, missingSection === 'image' && styles.uploadCardMissing]}>
           <Icon name="image" size={24} color="#FFD700" />
-          <View style={{ flex: 1 }}><Text style={styles.uploadTitle}>{imageCount ? String(imageCount) + ' image uploaded' : 'Upload first profile image'}</Text><Text style={styles.uploadMeta}>Private RomChat photo gallery</Text></View>
+          <View style={{ flex: 1 }}><Text style={styles.uploadTitle}>{imageCount ? String(imageCount) + ' image uploaded' : 'Upload first profile image'}</Text><Text style={styles.uploadMeta}>{missingSection === 'image' ? 'Add at least one photo before saving.' : 'Private RomChat photo gallery'}</Text></View>
         </TouchableOpacity>
-        <TouchableOpacity disabled={busy} onPress={() => void onSaveProfile({ displayName, age: Number(age), gender, city, intent, bio, interests: selectedInterests })} style={styles.authPrimary}>
+        {!!missingSection && <Text style={styles.validationNudge}>Finish this highlighted section to continue.</Text>}
+        <TouchableOpacity disabled={busy} onPress={handleSaveProfile} style={styles.authPrimary}>
           <Text style={styles.authPrimaryText}>Save profile</Text>
         </TouchableOpacity>
         {!!error && <Text style={styles.authError}>{error}</Text>}
@@ -1328,6 +1373,8 @@ const styles = StyleSheet.create({
   authTabText: { color: 'rgba(255,255,255,0.7)', fontWeight: '900' },
   authTabTextActive: { color: '#FFFFFF' },
   authInput: { minHeight: 52, borderRadius: 18, backgroundColor: '#1E1222', borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', paddingHorizontal: 14, color: '#FFFFFF', fontWeight: '800', marginBottom: 10 },
+  inputMissing: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.08)' },
+  sectionMissing: { borderWidth: 1, borderColor: '#FFD700', borderRadius: 18, padding: 6, backgroundColor: 'rgba(255,215,0,0.06)' },
   passwordRow: { minHeight: 52, borderRadius: 18, backgroundColor: '#1E1222', borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', marginBottom: 10, flexDirection: 'row', alignItems: 'center' },
   passwordInput: { flex: 1, minHeight: 52, paddingHorizontal: 14, color: '#FFFFFF', fontWeight: '800' },
   passwordEye: { width: 50, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
@@ -1343,13 +1390,16 @@ const styles = StyleSheet.create({
   genderText: { color: '#FFFFFF', fontWeight: '900', textTransform: 'capitalize' },
   genderTextActive: { color: '#120914' },
   selectorTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 15, marginTop: 4, marginBottom: 10 },
+  selectorTitleMissing: { color: '#FFD700' },
   choiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
   choiceChip: { borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', backgroundColor: '#1E1222', paddingHorizontal: 13, paddingVertical: 10 },
   choiceChipActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
   choiceText: { color: 'rgba(255,255,255,0.78)', fontWeight: '900', fontSize: 13 },
   choiceTextActive: { color: '#120914' },
   uploadCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#1E1222', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,215,0,0.35)', padding: 16, marginBottom: 8 },
+  uploadCardMissing: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.08)' },
   uploadCardDisabled: { opacity: 0.45 },
+  validationNudge: { color: '#FFD700', fontWeight: '900', marginTop: 2, marginBottom: 10, textAlign: 'center' },
   uploadTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
   uploadMeta: { color: 'rgba(255,255,255,0.6)', fontWeight: '800', marginTop: 3 },
   content: { paddingHorizontal: 16, paddingTop: 8, backgroundColor: '#120914' },
