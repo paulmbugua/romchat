@@ -603,7 +603,7 @@ export default function App() {
   }
 
   if (!session.profile || session.onboarding.needsFirstImage) {
-    return <ProfileOnboardingScreen busy={authBusy} error={authError} profile={session.profile} onSaveProfile={saveOnboardingProfile} onUploadImage={uploadProfileImage} onSignOut={signOut} />;
+    return <ProfileOnboardingScreen busy={authBusy} error={authError} accountName={session.user.name} profile={session.profile} onSaveProfile={saveOnboardingProfile} onUploadImage={uploadProfileImage} onSignOut={signOut} />;
   }
 
   if (activeSection) {
@@ -841,15 +841,17 @@ function PasswordField({ value, onChangeText, visible, setVisible, placeholder }
   );
 }
 
-function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUploadImage, onSignOut }: {
+function ProfileOnboardingScreen({ busy, error, accountName, profile, onSaveProfile, onUploadImage, onSignOut }: {
   busy: boolean;
   error: string;
+  accountName: string;
   profile: RomChatMemberProfile | null;
   onSaveProfile: (payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>;
   onUploadImage: () => Promise<void>;
   onSignOut: () => Promise<void>;
 }) {
-  const [displayName, setDisplayName] = useState(profile?.displayName || '');
+  const initialDisplayName = profile?.displayName || accountName || '';
+  const [displayName, setDisplayName] = useState(initialDisplayName);
   const [age, setAge] = useState(profile?.age ? String(profile.age) : '');
   const [gender, setGender] = useState(profile?.gender || 'female');
   const [city, setCity] = useState(profile?.city || '');
@@ -859,6 +861,9 @@ function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUpload
   const hasProfile = Boolean(profile);
   const imageCount = profile?.imageCount || 0;
   const toggleInterest = (interest: string) => setSelectedInterests((current) => current.includes(interest) ? current.filter((item) => item !== interest) : [...current, interest]);
+  useEffect(() => {
+    if (!displayName.trim() && initialDisplayName.trim()) setDisplayName(initialDisplayName);
+  }, [displayName, initialDisplayName]);
 
   return (
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.authSafe}>
