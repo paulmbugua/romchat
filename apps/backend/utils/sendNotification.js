@@ -126,11 +126,16 @@ export const sendNotification = async ({ to, subject, body, details, suppressErr
       throw new Error('❌ Missing required email parameters.');
     }
 
-    const smtpHost = env('EMAIL_HOST', process.env.SMTP_HOST || process.env.MAIL_HOST || 'smtp.zoho.com');
-    const smtpPort = Number(env('EMAIL_PORT', process.env.SMTP_PORT || process.env.MAIL_PORT || '587')) || 587;
-    const smtpUser = env('EMAIL_AUTH_USER', process.env.SMTP_USER || process.env.EMAIL_USER || process.env.MAIL_USER);
-    const smtpPass = env('EMAIL_AUTH_PASS', process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.MAIL_PASS);
-    const secureValue = env('EMAIL_SECURE', process.env.SMTP_SECURE || process.env.MAIL_SECURE || 'false').toLowerCase();
+    const smtpHost = env('SMTP_HOST', process.env.EMAIL_HOST || process.env.MAIL_HOST || 'smtp.zoho.com');
+    const smtpPort = Number(env('SMTP_PORT', process.env.EMAIL_PORT || process.env.MAIL_PORT || '587')) || 587;
+    const smtpUser = env('SMTP_USER', process.env.EMAIL_AUTH_USER || process.env.EMAIL_USER || process.env.MAIL_USER);
+    const smtpPass = env('SMTP_PASS', process.env.EMAIL_AUTH_PASS || process.env.EMAIL_PASS || process.env.MAIL_PASS);
+    const secureValue = env('SMTP_SECURE', process.env.EMAIL_SECURE || process.env.MAIL_SECURE || 'false').toLowerCase();
+    const smtpEnvSource = {
+      host: process.env.SMTP_HOST ? 'SMTP_HOST' : process.env.EMAIL_HOST ? 'EMAIL_HOST' : process.env.MAIL_HOST ? 'MAIL_HOST' : 'default',
+      user: process.env.SMTP_USER ? 'SMTP_USER' : process.env.EMAIL_AUTH_USER ? 'EMAIL_AUTH_USER' : process.env.EMAIL_USER ? 'EMAIL_USER' : process.env.MAIL_USER ? 'MAIL_USER' : 'missing',
+      pass: process.env.SMTP_PASS ? 'SMTP_PASS' : process.env.EMAIL_AUTH_PASS ? 'EMAIL_AUTH_PASS' : process.env.EMAIL_PASS ? 'EMAIL_PASS' : process.env.MAIL_PASS ? 'MAIL_PASS' : 'missing',
+    };
     const isSecure = secureValue === 'true' || smtpPort === 465;
     if (!smtpHost || !smtpUser || !smtpPass) {
       const error = new Error('Email is not configured. Set SMTP_HOST plus SMTP_USER/SMTP_PASS, or EMAIL_HOST plus EMAIL_AUTH_USER/EMAIL_AUTH_PASS.');
@@ -238,7 +243,7 @@ export const sendNotification = async ({ to, subject, body, details, suppressErr
     </html>
     `;
 
-    console.info('[email] send:start', { to: maskEmail(to), from: fromAddress, authUser: maskEmail(smtpUser), host: smtpHost, port: smtpPort, secure: isSecure });
+    console.info('[email] send:start', { to: maskEmail(to), from: fromAddress, authUser: maskEmail(smtpUser), host: smtpHost, port: smtpPort, secure: isSecure, envSource: smtpEnvSource });
     const info = await transporter.sendMail({
       from: formattedFrom,
       to,
