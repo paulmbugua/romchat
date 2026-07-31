@@ -469,17 +469,23 @@ export async function getMemberProfile(memberId) {
   return profileFromRow(profileRows.rows[0], media);
 }
 
+async function getUploadedImageCount(memberId) {
+  const rows = await queryWithRetry("SELECT COUNT(*)::int AS count FROM romchat_profile_media WHERE member_id = $1 AND media_type IN ('image','selfie')", [memberId]);
+  return Number(rows.rows[0]?.count || 0);
+}
+
 export async function getAuthState(req) {
   const user = await requireRomchatAccount(req);
   const profile = await getMemberProfile(user.id);
+  const imageCount = profile?.imageCount ?? await getUploadedImageCount(user.id);
   return {
     user,
     profile,
     onboarding: {
       needsProfile: !profile,
-      needsFirstImage: !profile?.imageCount,
-      imageCount: profile?.imageCount || 0,
-      catalogueAccess: Math.min(6, Math.max(1, profile?.imageCount || 0)),
+      needsFirstImage: !imageCount,
+      imageCount,
+      catalogueAccess: Math.min(6, Math.max(1, imageCount)),
     },
   };
 }

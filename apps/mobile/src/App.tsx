@@ -471,8 +471,12 @@ export default function App() {
       const contentType = asset.mimeType || 'image/jpeg';
       const dataUri = `data:${contentType};base64,${asset.base64}`;
       const response = await romchatAccountApi.uploadMedia(session.token, { mediaType: 'image', dataUri, contentType, fileName: asset.fileName || 'profile.jpg' });
-      const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
-      await persistSession(next);
+      if (response.profile) {
+        const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
+        await persistSession(next);
+      } else {
+        await refreshSession(session.token);
+      }
     } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to upload image.'); }
     finally { setAuthBusy(false); }
   }
@@ -603,7 +607,7 @@ export default function App() {
   }
 
   if (!session.profile || session.onboarding.needsFirstImage) {
-    return <ProfileOnboardingScreen busy={authBusy} error={authError} accountName={session.user.name} profile={session.profile} onSaveProfile={saveOnboardingProfile} onUploadImage={uploadProfileImage} onSignOut={signOut} />;
+    return <ProfileOnboardingScreen busy={authBusy} error={authError} accountName={session.user.name} profile={session.profile} uploadedImageCount={session.onboarding.imageCount} onSaveProfile={saveOnboardingProfile} onUploadImage={uploadProfileImage} onSignOut={signOut} />;
   }
 
   if (activeSection) {
@@ -841,11 +845,12 @@ function PasswordField({ value, onChangeText, visible, setVisible, placeholder }
   );
 }
 
-function ProfileOnboardingScreen({ busy, error, accountName, profile, onSaveProfile, onUploadImage, onSignOut }: {
+function ProfileOnboardingScreen({ busy, error, accountName, profile, uploadedImageCount, onSaveProfile, onUploadImage, onSignOut }: {
   busy: boolean;
   error: string;
   accountName: string;
   profile: RomChatMemberProfile | null;
+  uploadedImageCount: number;
   onSaveProfile: (payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>;
   onUploadImage: () => Promise<void>;
   onSignOut: () => Promise<void>;
@@ -859,7 +864,7 @@ function ProfileOnboardingScreen({ busy, error, accountName, profile, onSaveProf
   const [bio, setBio] = useState(profile?.bio || '');
   const [selectedInterests, setSelectedInterests] = useState<string[]>(profile?.interests?.length ? profile.interests : ['Coffee dates', 'Travel', 'Live music']);
   const hasProfile = Boolean(profile);
-  const imageCount = profile?.imageCount || 0;
+  const imageCount = profile?.imageCount || uploadedImageCount || 0;
   const toggleInterest = (interest: string) => setSelectedInterests((current) => current.includes(interest) ? current.filter((item) => item !== interest) : [...current, interest]);
   useEffect(() => {
     if (!displayName.trim() && initialDisplayName.trim()) setDisplayName(initialDisplayName);
@@ -881,7 +886,7 @@ function ProfileOnboardingScreen({ busy, error, accountName, profile, onSaveProf
         <Text style={styles.selectorTitle}>Interests and vibe signals</Text>
         <View style={styles.choiceWrap}>{datingInterests.map((item) => { const active = selectedInterests.includes(item); return <TouchableOpacity key={item} onPress={() => toggleInterest(item)} style={[styles.choiceChip, active && styles.choiceChipActive]}><Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>; })}</View>
         <TextInput value={bio} onChangeText={setBio} placeholder="Short Kenyan romance bio" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, styles.authTextArea]} multiline />
-        <TouchableOpacity disabled={busy || !hasProfile} onPress={() => void onUploadImage()} style={[styles.uploadCard, !hasProfile && styles.uploadCardDisabled]}>
+        <TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} style={styles.uploadCard}>
           <Icon name="image" size={24} color="#FFD700" />
           <View style={{ flex: 1 }}><Text style={styles.uploadTitle}>{imageCount ? String(imageCount) + ' image uploaded' : 'Upload first profile image'}</Text><Text style={styles.uploadMeta}>Private RomChat photo gallery</Text></View>
         </TouchableOpacity>
