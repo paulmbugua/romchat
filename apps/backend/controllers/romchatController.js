@@ -35,12 +35,11 @@ function sendError(res, error) {
 }
 
 export function createRomchatController(io) {
-  async function catalogueAccessFor(req) {
+  async function authStateFor(req) {
     try {
-      const state = await getAuthState(req);
-      return state.onboarding.catalogueAccess || 1;
+      return await getAuthState(req);
     } catch {
-      return 1;
+      return null;
     }
   }
 
@@ -136,12 +135,14 @@ export function createRomchatController(io) {
       }
     },
     async bootstrap(req, res) {
-      res.json(await getBootstrap({ catalogueAccess: await catalogueAccessFor(req) }));
+      const state = await authStateFor(req);
+      res.json(await getBootstrap({ catalogueAccess: state?.onboarding?.catalogueAccess || 1, viewerId: state?.user?.id || null }));
     },
     async discovery(req, res) {
       const verifiedOnly = String(req.query.verifiedOnly ?? 'true') !== 'false';
-      const catalogueAccess = await catalogueAccessFor(req);
-      res.json({ profiles: await getProfiles({ verifiedOnly, catalogueAccess }), catalogueAccess, generatedAt: new Date().toISOString() });
+      const state = await authStateFor(req);
+      const catalogueAccess = state?.onboarding?.catalogueAccess || 1;
+      res.json({ profiles: await getProfiles({ verifiedOnly, catalogueAccess, viewerId: state?.user?.id || null }), catalogueAccess, generatedAt: new Date().toISOString() });
     },
     async swipe(req, res) {
       try {

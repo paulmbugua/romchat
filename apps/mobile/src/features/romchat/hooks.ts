@@ -17,14 +17,16 @@ type LocalProfile = RomChatProfile & {
 function mergeProfiles(remoteProfiles: RomChatProfile[], localProfiles: LocalProfile[]) {
   const localById = new Map(localProfiles.map((profile) => [profile.id, profile]));
   return remoteProfiles
-    .map((remote) => {
-      const local = localById.get(remote.id) || localProfiles[0];
+    .map((remote, index) => {
+      const local = localById.get(remote.id) || localProfiles[index % Math.max(1, localProfiles.length)] || localProfiles[0];
       if (!local) return null;
+      const photos = Array.isArray(remote.photos) ? remote.photos.filter(Boolean) : [];
       return {
         ...local,
         ...remote,
         match: Number(remote.match ?? local.match),
-        photo: local.photo,
+        photo: photos[0] ? { uri: photos[0] } : local.photo,
+        photos,
         color: remote.color || local.color,
         tags: remote.tags?.length ? remote.tags : local.tags,
         answers: remote.answers?.length ? remote.answers : local.answers,
@@ -39,14 +41,17 @@ function mergeProfiles(remoteProfiles: RomChatProfile[], localProfiles: LocalPro
         videoPrompt: remote.videoPrompt || local.videoPrompt,
         quote: remote.quote || local.quote,
         song: remote.song || local.song,
-        gallery: Number(remote.gallery ?? local.gallery),
+        gallery: Number(remote.gallery ?? photos.length ?? local.gallery),
+        fullGallery: Number(remote.fullGallery ?? remote.gallery ?? photos.length ?? local.gallery),
+        lockedGallery: Number(remote.lockedGallery ?? 0),
+        catalogueAccess: Number(remote.catalogueAccess ?? photos.length ?? 1),
       };
     })
     .filter(Boolean) as LocalProfile[];
 }
 
 export function useRomChatData(localProfiles: LocalProfile[], options: { enabled?: boolean; token?: string | null } = {}) {
-  const [profiles, setProfiles] = useState(localProfiles);
+  const [profiles, setProfiles] = useState<LocalProfile[]>([]);
   const [bootstrap, setBootstrap] = useState<RomChatBootstrap | null>(null);
   const [apiOnline, setApiOnline] = useState(false);
   const [lastAction, setLastAction] = useState('Ready');
@@ -61,7 +66,7 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     let mounted = true;
     if (!options.enabled) {
       setApiOnline(false);
-      setProfiles(localProfiles);
+      setProfiles([]);
       setLastAction('Login required');
       return () => {
         mounted = false;
@@ -72,7 +77,7 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
       .then((payload) => {
         if (!mounted) return;
         setBootstrap(payload);
-        setProfiles(payload.profiles?.length ? mergeProfiles(payload.profiles, localProfiles) : localProfiles);
+        setProfiles(payload.profiles?.length ? mergeProfiles(payload.profiles, localProfiles) : []);
         setApiOnline(true);
         setLastAction('Live API connected');
         setPaidMessages((payload.messages || []).filter((message) => message.locked));
@@ -81,8 +86,8 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
       .catch(() => {
         if (!mounted) return;
         setApiOnline(false);
-        setProfiles(localProfiles);
-        setLastAction('Offline demo mode');
+        setProfiles([]);
+        setLastAction('Live profiles unavailable');
       });
     return () => {
       mounted = false;

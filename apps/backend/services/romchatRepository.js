@@ -129,46 +129,44 @@ async function withDb(work, fallback) {
   }
 }
 
-function fromProfileRow(row, catalogueAccess = 1) {
-  const fullGallery = Number(row.gallery_count);
-  const visibleGallery = Math.min(fullGallery, Math.max(1, Number(catalogueAccess || 1)));
+function romanticMatchScore(row) {
+  const seed = String(row.member_id || row.id || '').split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return 84 + (seed % 14);
+}
+
+function fromMemberProfileRow(row, catalogueAccess = 1) {
+  const access = Math.max(1, Number(catalogueAccess || 1));
+  const photos = Array.isArray(row.photos) ? row.photos.filter(Boolean) : [];
+  const visiblePhotos = photos.slice(0, access);
+  const fullGallery = photos.length;
+  const interests = row.interests || [];
+  const promptAnswers = Array.isArray(row.prompt_answers) ? row.prompt_answers : [];
+  const answers = promptAnswers.map((item) => item?.answer).filter(Boolean).slice(0, 3);
   return {
-    id: row.id,
-    name: row.name,
+    id: row.member_id,
+    name: row.display_name,
     age: Number(row.age),
     city: row.city,
-    match: Number(row.match_score),
-    intent: row.intent,
-    prompt: row.prompt,
-    voiceNote: row.voice_note,
-    videoPrompt: row.video_prompt,
-    quote: row.quote,
-    song: row.song,
-    gallery: visibleGallery,
+    match: romanticMatchScore(row),
+    intent: row.intent || 'Intentional Kenyan connection',
+    prompt: row.bio || answers[0] || 'Ready for a real Kenyan romance with warm conversation.',
+    videoPrompt: 'Video vibe check after a mutual match.',
+    quote: row.bio || 'Looking for honest effort, chemistry, and consistency.',
+    song: interests[0] ? `Currently into: ${interests[0]}` : 'Currently into: Kenyan romance energy',
+    gallery: visiblePhotos.length || Math.min(fullGallery, access),
     fullGallery,
-    lockedGallery: Math.max(0, fullGallery - visibleGallery),
-    catalogueAccess: Math.max(1, Number(catalogueAccess || 1)),
-    tags: row.tags || [],
-    answers: row.answers || [],
-    poll: row.poll || {},
-    color: row.color,
-    verified: Boolean(row.verified),
-    online: Boolean(row.online),
+    lockedGallery: Math.max(0, fullGallery - visiblePhotos.length),
+    catalogueAccess: access,
+    photos: visiblePhotos,
+    tags: interests.slice(0, 5),
+    answers: answers.length ? answers : [row.intent || 'Intentional connection', row.city || 'Kenya', 'Real dates'],
+    poll: { id: `poll_${row.member_id}`, question: 'Coffee date or sunset walk?', yes: 64, no: 36 },
+    color: '#FF1493',
+    verified: Boolean(row.selfie_verified),
+    online: true,
   };
 }
 
-function limitProfileCatalogue(profile, catalogueAccess = 1) {
-  const access = Math.max(1, Number(catalogueAccess || 1));
-  const fullGallery = Number(profile.fullGallery || profile.gallery || 0);
-  const visibleGallery = Math.min(fullGallery, access);
-  return {
-    ...profile,
-    gallery: visibleGallery,
-    fullGallery,
-    lockedGallery: Math.max(0, fullGallery - visibleGallery),
-    catalogueAccess: access,
-  };
-}
 
 function fromMessageRow(row) {
   return {
@@ -234,17 +232,27 @@ async function seedProfiles() {
   );
 }
 
-export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1 } = {}) {
+export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, viewerId = null } = {}) {
   const access = Math.max(1, Number(catalogueAccess || 1));
   return withDb(async () => {
     const result = await queryWithRetry(
-      `SELECT * FROM romchat_profiles
-       WHERE ($1::boolean = false OR verified = true)
-       ORDER BY match_score DESC, created_at ASC`,
-      [Boolean(verifiedOnly)]
+      `SELECT
+         p.*,
+         COALESCE(
+           array_agg(m.url ORDER BY m.position ASC, m.created_at ASC)
+             FILTER (WHERE m.media_type = 'image'),
+           '{}'
+         ) AS photos
+       FROM romchat_member_profiles p
+       JOIN romchat_profile_media m ON m.member_id = p.member_id AND m.media_type = 'image'
+       WHERE ($1::text IS NULL OR p.member_id <> $1)
+         AND ($2::boolean = false OR p.selfie_verified = true)
+       GROUP BY p.member_id
+       ORDER BY p.selfie_verified DESC, p.profile_strength DESC, p.updated_at DESC`,
+      [viewerId, Boolean(verifiedOnly)]
     );
-    return result.rows.map((row) => fromProfileRow(row, access));
-  }, () => fallbackProfiles.filter((profile) => !verifiedOnly || profile.verified).map((profile) => limitProfileCatalogue(profile, access)));
+    return result.rows.map((row) => fromMemberProfileRow(row, access));
+  }, () => []);
 }
 
 export async function getMessages(matchId = 'match_elena') {
@@ -305,9 +313,9 @@ export async function getWallet() {
   }, () => ({ balance: 146, currency: 'KES', ledger: [] }));
 }
 
-export async function getBootstrap({ catalogueAccess = 1 } = {}) {
+export async function getBootstrap({ catalogueAccess = 1, viewerId = null, verifiedOnly = false } = {}) {
   const [profiles, messages, privacy, wallet] = await Promise.all([
-    getProfiles({ verifiedOnly: true, catalogueAccess }),
+    getProfiles({ verifiedOnly, catalogueAccess, viewerId }),
     getMessages('match_elena'),
     getPrivacy(),
     getWallet(),

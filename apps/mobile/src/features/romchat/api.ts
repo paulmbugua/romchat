@@ -13,6 +13,10 @@ export type RomChatProfile = {
   quote?: string;
   song?: string;
   gallery?: number;
+  fullGallery?: number;
+  lockedGallery?: number;
+  catalogueAccess?: number;
+  photos?: string[];
   tags?: string[];
   answers?: string[];
   poll?: { id?: string; question: string; yes?: number; no?: number };

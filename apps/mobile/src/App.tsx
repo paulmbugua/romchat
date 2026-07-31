@@ -18,9 +18,7 @@ import {
   View,
 } from 'react-native';
 import Constants from 'expo-constants';
-import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { Audio } from 'expo-av';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LinearGradient } from 'expo-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -52,6 +50,10 @@ type ProfileSeed = {
   quote: string;
   song: string;
   gallery: number;
+  fullGallery?: number;
+  lockedGallery?: number;
+  catalogueAccess?: number;
+  photos?: string[];
   tags: string[];
   answers: string[];
   poll: { question: string; yes: number; no: number };
@@ -201,9 +203,9 @@ export default function App() {
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 32);
   const bottomContentPadding = bottomInset + 72;
-  const profiles = romchat.profiles.length ? (romchat.profiles as ProfileSeed[]) : localProfiles;
-  const profile = profiles[index % profiles.length]!;
-  const firstUploadedImageUrl = resolveMediaUrl([...(session?.profile?.media || [])].sort((a, b) => (a.position || 0) - (b.position || 0)).find((item) => item.mediaType === 'image' || item.mediaType === 'selfie')?.url);
+  const profiles = romchat.profiles as ProfileSeed[];
+  const profile = profiles.length ? profiles[index % profiles.length]! : null;
+  const firstUploadedImageUrl = resolveMediaUrl([...(session?.profile?.media || [])].sort((a, b) => (a.position || 0) - (b.position || 0)).find((item) => item.mediaType === 'image')?.url);
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
   const activePlan = boosted ? 'Platinum' : 'Gold';
 
@@ -306,6 +308,7 @@ export default function App() {
 
   function passProfile() {
     clearMatchTimer();
+    if (!profile) return;
     void romchat.swipe(profile.id, 'pass');
     setIndex((value) => (value + 1) % profiles.length);
     setShowMatch(false);
@@ -323,6 +326,7 @@ export default function App() {
   }
 
   function likeProfile(action: 'like' | 'super_like' = 'like') {
+    if (!profile) return;
     void romchat.swipe(profile.id, action);
     openMatchedChatSoon();
   }
@@ -349,7 +353,7 @@ export default function App() {
           }
         },
       }).panHandlers,
-    [profile.id, profiles.length, romchat, likeProfile, passProfile]
+    [profile?.id, profiles.length, romchat, likeProfile, passProfile]
   );
 
   async function loginWithEmail(email: string, password: string) {
@@ -493,29 +497,6 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
 
-  async function uploadVoiceIntro() {
-    if (!session?.token) return;
-    setAuthBusy(true);
-    setAuthError('');
-    try {
-      const permission = await Audio.requestPermissionsAsync();
-      if (!permission.granted) throw new Error('Microphone permission is required.');
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
-      await new Promise((resolve) => setTimeout(resolve, 15000));
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      if (!uri) throw new Error('Unable to save voice intro.');
-      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' } as Parameters<typeof FileSystem.readAsStringAsync>[1]);
-      const response = await romchatAccountApi.uploadMedia(session.token, { mediaType: 'voice', dataUri: `data:audio/m4a;base64,${base64}`, contentType: 'audio/m4a', fileName: 'voice-intro.m4a' });
-      const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
-      await persistSession(next);
-    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to record voice intro.'); }
-    finally { setAuthBusy(false); }
-  }
-
   async function verifySelfieProfile() {
     if (!session?.token) return;
     setAuthBusy(true);
@@ -589,13 +570,13 @@ export default function App() {
           verifiedOnly={verifiedOnly}
           setVerifiedOnly={setVerifiedOnly}
           updatePrivacy={(next) => void romchat.updatePrivacy(next)}
-          report={() => void romchat.report(profile.id)}
+          report={() => profile ? void romchat.report(profile.id) : undefined}
           verify={romchat.verify}
           status={romchat.lastAction}
         />
       );
     }
-    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onRecordVoice={uploadVoiceIntro} onVerifySelfie={verifySelfieProfile} onSavePrompts={saveProfilePrompts} status={romchat.lastAction} onSignOut={signOut} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSavePrompts={saveProfilePrompts} status={romchat.lastAction} onSignOut={signOut} />;
   }
 
   if (!authBooted) {
@@ -657,24 +638,30 @@ export default function App() {
           </View>
         </View>
 
-        <Discover
-          profile={profile}
-          passProfile={passProfile}
-          likeProfile={() => likeProfile('like')}
-          topProfile={superLikeProfile}
-          previous={previous}
-          swipeHandlers={swipeHandlers}
-          showMatch={showMatch}
-          dismissMatch={passProfile}
-          openChat={() => {
-            clearMatchTimer();
-            setShowMatch(false);
-            setActiveSection('chat');
-          }}
-          profiles={profiles}
-        />
+        {profile ? (
+          <>
+            <Discover
+              profile={profile}
+              passProfile={passProfile}
+              likeProfile={() => likeProfile('like')}
+              topProfile={superLikeProfile}
+              previous={previous}
+              swipeHandlers={swipeHandlers}
+              showMatch={showMatch}
+              dismissMatch={passProfile}
+              openChat={() => {
+                clearMatchTimer();
+                setShowMatch(false);
+                setActiveSection('chat');
+              }}
+              profiles={profiles}
+            />
 
-        <HomeNudge profile={profile} openProfile={() => setActiveSection('profile')} status={romchat.lastAction + ' - ' + session.profile.imageCount + ' photo access'} />
+            <HomeNudge profile={profile} openProfile={() => setActiveSection('profile')} status={romchat.lastAction + ' - ' + session.profile.imageCount + ' photo access'} />
+          </>
+        ) : (
+          <EmptyDiscovery openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -980,6 +967,7 @@ function Discover({
   profiles: ProfileSeed[];
 }) {
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [galleryNotice, setGalleryNotice] = useState('');
   const popScale = useRef(new Animated.Value(0.82)).current;
   const popOpacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -991,9 +979,22 @@ function Discover({
       Animated.timing(popOpacity, { toValue: 1, duration: 180, useNativeDriver: true }),
     ]).start();
   }, [popOpacity, popScale, showMatch]);
-  const openers = [`Ask ${profile.name} about ${profile.tags[0]?.toLowerCase()}.`, `Start with: "${profile.poll.question}"`];
-  const photoSlots = [profile.photo, profile.photo, profile.photo];
-  const changePhoto = (direction: -1 | 1) => setPhotoIndex((value) => (value + direction + photoSlots.length) % photoSlots.length);
+  useEffect(() => {
+    setPhotoIndex(0);
+    setGalleryNotice('');
+  }, [profile.id]);
+  const openers = [`Ask ${profile.name} about ${profile.tags[0]?.toLowerCase() || 'her vibe'}.`, `Start with: "${profile.poll.question}"`];
+  const remotePhotos = (profile.photos || []).map((url) => ({ uri: resolveMediaUrl(url) })).filter((item) => Boolean(item.uri));
+  const photoSlots = remotePhotos.length ? remotePhotos : [profile.photo];
+  const totalGallery = Number(profile.fullGallery || profile.gallery || photoSlots.length);
+  const changePhoto = (direction: -1 | 1) => setPhotoIndex((value) => {
+    if (direction > 0 && value >= photoSlots.length - 1 && totalGallery > photoSlots.length) {
+      setGalleryNotice('Add more of your own photos to unlock the rest of this gallery.');
+      return value;
+    }
+    setGalleryNotice('');
+    return (value + direction + photoSlots.length) % photoSlots.length;
+  });
 
   return (
     <View style={styles.discovery}>
@@ -1009,6 +1010,12 @@ function Discover({
             <TouchableOpacity onPress={() => changePhoto(-1)} style={styles.tapZone} accessibilityLabel="Previous photo" />
             <TouchableOpacity onPress={() => changePhoto(1)} style={styles.tapZone} accessibilityLabel="Next photo" />
           </View>
+          {!!galleryNotice && (
+            <View style={styles.galleryLockNotice}>
+              <Icon name="images" size={17} color="#FFD700" />
+              <Text style={styles.galleryLockText}>{galleryNotice}</Text>
+            </View>
+          )}
           <View style={styles.cardCopy}>
             <View style={styles.pillRow}>
               <Text style={styles.cardBadge}>{profile.match}% Match</Text>
@@ -1046,7 +1053,7 @@ function Discover({
         <LinearGradient colors={['#120914', '#FF1493']} style={styles.matchSheet}>
           <View style={styles.matchAvatarPair}>
             <Image source={require('../assets/icon.png')} style={styles.matchAvatarLarge} />
-            <Image source={profile.photo} style={[styles.matchAvatarLarge, styles.matchAvatarOverlap]} />
+            <Image source={photoSlots[0]} style={[styles.matchAvatarLarge, styles.matchAvatarOverlap]} />
             <View style={styles.floatingHeart}><Icon name="heart" size={18} color="#FFFFFF" /></View>
           </View>
           <Text style={styles.matchKicker}>Ni match</Text>
@@ -1072,6 +1079,17 @@ function ShortcutRail({ setActiveSection }: { setActiveSection: (section: Sectio
           <Text style={styles.shortcutTitle}>{item.title}</Text>
         </TouchableOpacity>
       ))}
+    </View>
+  );
+}
+
+function EmptyDiscovery({ openProfile, status }: { openProfile: () => void; status: string }) {
+  return (
+    <View style={styles.emptyDiscovery}>
+      <Icon name="heart-circle" size={52} color="#FF1493" />
+      <Text style={styles.emptyDiscoveryTitle}>Real Kenyan profiles are loading</Text>
+      <Text style={styles.emptyDiscoveryText}>{status === 'Live API connected' ? 'No verified profiles with photos are available yet. Add more photos and pull down to refresh.' : 'Connect to the RomChat backend, then pull down to refresh live member profiles.'}</Text>
+      <TouchableOpacity onPress={openProfile} style={styles.emptyDiscoveryButton}><Text style={styles.emptyDiscoveryButtonText}>Improve my profile</Text></TouchableOpacity>
     </View>
   );
 }
@@ -1289,12 +1307,11 @@ function resolveMediaUrl(url?: string) {
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onRecordVoice, onVerifySelfie, onSavePrompts, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onRecordVoice: () => Promise<void>; onVerifySelfie: () => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
+function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSavePrompts, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
-  const photoMedia = [...(profile?.media || [])].filter((item) => item.mediaType === 'image' || item.mediaType === 'selfie').sort((a, b) => (a.position || 0) - (b.position || 0));
-  const voiceReady = Boolean(profile?.voiceIntroUrl || profile?.media?.some((item) => item.mediaType === 'voice'));
+  const photoMedia = [...(profile?.media || [])].filter((item) => item.mediaType === 'image').sort((a, b) => (a.position || 0) - (b.position || 0));
   const promptSeed = profilePromptTemplates.map((prompt, index) => ({ prompt, answer: profile?.promptAnswers?.[index]?.answer || '' }));
   const [promptAnswers, setPromptAnswers] = useState<RomChatPromptAnswer[]>(promptSeed);
   useEffect(() => { setPromptAnswers(promptSeed); }, [profile?.memberId, profile?.promptAnswers?.length]);
@@ -1302,7 +1319,6 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
   const profileTasks = [
     [`Images uploaded: ${imageCount}`, imageCount >= 3 ? 'Fuller catalogues unlocked' : 'Add photos to unlock more galleries'],
     [`Catalogue access: ${catalogueAccess} photos`, incognito ? 'Visible after like' : 'Discovery ready'],
-    ['15-second voice intro', voiceReady ? 'Voice intro live' : 'Record a warm hello'],
     ['Answer 7 prompts', completePrompts === 7 ? 'All prompts live' : `${completePrompts}/7 prompts answered`],
     ['Selfie verification', profile?.selfieVerified ? 'Verified badge active' : 'Verify with a live selfie'],
   ];
@@ -1319,7 +1335,7 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
           const media = photoMedia[index];
           const uri = resolveMediaUrl(media?.url);
           const isMain = Boolean(media && index === 0);
-          return <TouchableOpacity disabled={busy} onPress={() => media?.id ? void onSetMainPhoto(media.id) : void onUploadImage()} key={media?.id || index} style={[styles.photoSlot, isMain && styles.photoSlotMain]}>{uri ? <Image source={{ uri }} style={styles.photoThumb} /> : <Icon name={index < imageCount ? 'image' : 'add'} size={22} color={index < imageCount ? '#FFD700' : '#FF1493'} />}{isMain && <Text style={styles.mainPhotoBadge}>Main</Text>}<Text style={styles.photoSlotText}>{uri ? (isMain ? 'Main photo' : 'Make main') : 'Add'}</Text></TouchableOpacity>;
+          return <TouchableOpacity disabled={busy} onPress={() => media?.id ? void onSetMainPhoto(media.id) : void onUploadImage()} key={media?.id || index} style={[styles.photoSlot, isMain && styles.photoSlotMain]}>{uri ? <Image source={{ uri }} style={styles.photoThumb} /> : <Icon name={index < imageCount ? 'image' : 'add'} size={22} color={index < imageCount ? '#FFD700' : '#FF1493'} />}{!uri && <Text style={styles.photoSlotText}>Add</Text>}</TouchableOpacity>;
         })}</View>
         {profileTasks.map(([item, detail]) => (
           <View key={item} style={styles.listItem}>
@@ -1327,7 +1343,7 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
             <Text style={styles.caption}>{detail}</Text>
           </View>
         ))}
-        <View style={styles.profileActionGrid}><TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} style={styles.profileAction}><Icon name="images" size={18} color="#FFD700" /><Text style={styles.profileActionText}>Add photo</Text></TouchableOpacity><TouchableOpacity disabled={busy} onPress={() => void onRecordVoice()} style={styles.profileAction}><Icon name="mic" size={18} color="#FFD700" /><Text style={styles.profileActionText}>{voiceReady ? 'Redo voice' : '15s voice'}</Text></TouchableOpacity><TouchableOpacity disabled={busy} onPress={() => void onVerifySelfie()} style={styles.profileAction}><Icon name="shield-checkmark" size={18} color="#FFD700" /><Text style={styles.profileActionText}>{profile?.selfieVerified ? 'Verified' : 'Verify selfie'}</Text></TouchableOpacity></View>{!!error && <Text style={styles.authError}>{error}</Text>}
+        <View style={styles.profileActionGrid}><TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} style={styles.profileAction}><Icon name="images" size={18} color="#FFD700" /><Text style={styles.profileActionText}>Add photo</Text></TouchableOpacity><TouchableOpacity disabled={busy || !imageCount} onPress={() => void onVerifySelfie()} style={[styles.profileAction, !imageCount && styles.profileActionDisabled]}><Icon name="shield-checkmark" size={18} color="#FFD700" /><Text style={styles.profileActionText}>{profile?.selfieVerified ? 'Verified' : 'Verify selfie'}</Text></TouchableOpacity></View>{!!error && <Text style={styles.authError}>{error}</Text>}
         <TouchableOpacity onPress={() => void onSignOut()} style={styles.textButton}><Text style={styles.textButtonLabel}>Sign out</Text></TouchableOpacity>
       </View>
       <View style={styles.panel}>
@@ -1431,6 +1447,8 @@ const styles = StyleSheet.create({
   photoDots: { position: 'absolute', left: 12, right: 12, top: 12, flexDirection: 'row', gap: 4 },
   photoDot: { flex: 1, height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.4)' },
   photoDotActive: { backgroundColor: '#FF1493' },
+  galleryLockNotice: { position: 'absolute', top: 28, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(18,9,20,0.82)', borderWidth: 1, borderColor: 'rgba(255,215,0,0.35)' },
+  galleryLockText: { flex: 1, color: '#FFFFFF', fontWeight: '900', fontSize: 12, lineHeight: 17 },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, paddingTop: 30 },
   pillRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   verifiedBadge: { color: '#00F0FF', backgroundColor: 'rgba(0,240,255,0.12)', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, fontWeight: '900', fontSize: 12 },
@@ -1474,6 +1492,11 @@ const styles = StyleSheet.create({
   shortcutLabel: { color: '#FF1493', fontWeight: '900', fontSize: 12 },
   shortcutTitle: { color: '#FFFFFF', fontWeight: '900', marginTop: 4, fontSize: 12 },
   homeNudge: { backgroundColor: '#1E1222', borderRadius: 22, padding: 16, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 18 },
+  emptyDiscovery: { minHeight: 470, borderRadius: 28, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', backgroundColor: '#1E1222', alignItems: 'center', justifyContent: 'center', padding: 24, marginBottom: 18 },
+  emptyDiscoveryTitle: { color: '#FFFFFF', fontSize: 25, fontWeight: '900', textAlign: 'center', marginTop: 12 },
+  emptyDiscoveryText: { color: 'rgba(255,255,255,0.7)', fontWeight: '800', textAlign: 'center', lineHeight: 22, marginTop: 8 },
+  emptyDiscoveryButton: { backgroundColor: '#FF1493', borderRadius: 999, paddingHorizontal: 18, paddingVertical: 13, marginTop: 18 },
+  emptyDiscoveryButtonText: { color: '#FFFFFF', fontWeight: '900' },
   nudgeTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginTop: 3 },
   nudgeAction: { color: '#FFD700', fontWeight: '900' },
   panel: { backgroundColor: '#1E1222', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', padding: 18, marginBottom: 14 },
@@ -1573,11 +1596,11 @@ const styles = StyleSheet.create({
   photoSlot: { width: '30.5%', aspectRatio: 0.82, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,20,147,0.25)', backgroundColor: '#2A1A30', alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden' },
   photoSlotMain: { borderColor: '#FFD700', borderWidth: 2 },
   photoSlotText: { color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 12, position: 'absolute', left: 6, right: 6, bottom: 7, textAlign: 'center', backgroundColor: 'rgba(18,9,20,0.72)', borderRadius: 999, overflow: 'hidden', paddingVertical: 4 },
-  mainPhotoBadge: { position: 'absolute', top: 7, left: 7, color: '#120914', backgroundColor: '#FFD700', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, fontWeight: '900', fontSize: 11 },
   photoThumb: { width: '100%', height: '100%', borderRadius: 12 },
   profileActionGrid: { flexDirection: 'row', gap: 8, marginTop: 8 },
   profileAction: { flex: 1, minHeight: 54, borderRadius: 18, backgroundColor: '#2A1A30', borderWidth: 1, borderColor: 'rgba(255,215,0,0.24)', alignItems: 'center', justifyContent: 'center', gap: 5 },
   profileActionText: { color: '#FFFFFF', fontWeight: '900', fontSize: 12, textAlign: 'center' },
+  profileActionDisabled: { opacity: 0.48 },
   promptEditor: { backgroundColor: '#2A1A30', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)', padding: 12, marginTop: 9 },
   promptEditorLabel: { color: '#FFD700', fontWeight: '900', marginBottom: 7 },
   promptEditorInput: { minHeight: 46, color: '#FFFFFF', fontWeight: '800', lineHeight: 20, textAlignVertical: 'top' },
