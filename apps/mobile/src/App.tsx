@@ -697,9 +697,14 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onForgotP
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [otp, setOtp] = useState('');
   const [resetNotice, setResetNotice] = useState('');
+  const [localError, setLocalError] = useState('');
   const manifestExtra = (Constants.manifest as { extra?: unknown } | null | undefined)?.extra;
   const extra = (Constants.expoConfig?.extra || manifestExtra || {}) as { EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?: string; EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?: string; EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?: string };
   const googleConfigured = Boolean(extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID && extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID);
@@ -720,8 +725,13 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onForgotP
 
   async function submit() {
     setResetNotice('');
+    setLocalError('');
     if (mode === 'login') return onLogin(email, password);
     if (mode === 'signup') {
+      if (password !== confirmPassword) {
+        setLocalError('Passwords do not match.');
+        return;
+      }
       await onRequestOtp(name, email, password);
       setMode('verify');
       return;
@@ -769,10 +779,12 @@ function AuthScreen({ busy, error, onLogin, onRequestOtp, onVerifyOtp, onForgotP
         )}
         {mode === 'signup' && <TextInput value={name} onChangeText={setName} placeholder="Display name" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
         <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Email address" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />
-        {(mode === 'login' || mode === 'signup') && <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Password" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
+        {(mode === 'login' || mode === 'signup') && <PasswordField value={password} onChangeText={setPassword} visible={showPassword} setVisible={setShowPassword} placeholder="Password" />}
+        {mode === 'signup' && <PasswordField value={confirmPassword} onChangeText={setConfirmPassword} visible={showConfirmPassword} setVisible={setShowConfirmPassword} placeholder="Confirm password" />}
         {(mode === 'verify' || mode === 'reset') && <TextInput value={otp} onChangeText={setOtp} keyboardType="number-pad" placeholder={mode === 'reset' ? 'Reset code' : '6-digit email code'} placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
-        {mode === 'reset' && <TextInput value={resetPasswordValue} onChangeText={setResetPasswordValue} secureTextEntry placeholder="New password" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.authInput} />}
+        {mode === 'reset' && <PasswordField value={resetPasswordValue} onChangeText={setResetPasswordValue} visible={showResetPassword} setVisible={setShowResetPassword} placeholder="New password" />}
         {!!resetNotice && <Text style={styles.authSuccess}>{resetNotice}</Text>}
+        {!!localError && <Text style={styles.authError}>{localError}</Text>}
         <TouchableOpacity disabled={busy} onPress={() => void submit()} style={styles.authPrimary}>
           <Text style={styles.authPrimaryText}>{busy ? 'Please wait...' : primaryLabel}</Text>
         </TouchableOpacity>
@@ -813,6 +825,17 @@ const datingInterests = [
   'Books', 'Poetry', 'Podcasts', 'Tech', 'Startups', 'Business', 'Investing', 'Volunteering',
   'Church', 'Mosque', 'Family time', 'Parenting', 'Pets', 'Board games', 'Gaming', 'Art galleries',
 ];
+
+function PasswordField({ value, onChangeText, visible, setVisible, placeholder }: { value: string; onChangeText: (value: string) => void; visible: boolean; setVisible: (value: boolean) => void; placeholder: string }) {
+  return (
+    <View style={styles.passwordRow}>
+      <TextInput value={value} onChangeText={onChangeText} secureTextEntry={!visible} placeholder={placeholder} placeholderTextColor="rgba(255,255,255,0.45)" style={styles.passwordInput} />
+      <TouchableOpacity onPress={() => setVisible(!visible)} style={styles.passwordEye} accessibilityLabel={visible ? 'Hide password' : 'Show password'}>
+        <Icon name={visible ? 'eye-off' : 'eye'} size={20} color="#FFD700" />
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 function ProfileOnboardingScreen({ busy, error, profile, onSaveProfile, onUploadImage, onSignOut }: {
   busy: boolean;
@@ -1287,6 +1310,9 @@ const styles = StyleSheet.create({
   authTabText: { color: 'rgba(255,255,255,0.7)', fontWeight: '900' },
   authTabTextActive: { color: '#FFFFFF' },
   authInput: { minHeight: 52, borderRadius: 18, backgroundColor: '#1E1222', borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', paddingHorizontal: 14, color: '#FFFFFF', fontWeight: '800', marginBottom: 10 },
+  passwordRow: { minHeight: 52, borderRadius: 18, backgroundColor: '#1E1222', borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', marginBottom: 10, flexDirection: 'row', alignItems: 'center' },
+  passwordInput: { flex: 1, minHeight: 52, paddingHorizontal: 14, color: '#FFFFFF', fontWeight: '800' },
+  passwordEye: { width: 50, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
   authTextArea: { minHeight: 92, paddingTop: 14, textAlignVertical: 'top' },
   authPrimary: { minHeight: 54, borderRadius: 18, backgroundColor: '#FF1493', alignItems: 'center', justifyContent: 'center', marginTop: 4, marginBottom: 12 },
   authPrimaryText: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },

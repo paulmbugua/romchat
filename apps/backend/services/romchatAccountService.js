@@ -107,10 +107,13 @@ async function sendRomChatEmail(to, subject, details, fallbackCode) {
     });
     return { delivered: true };
   } catch (error) {
-    console.error('[romchat-email] delivery failed', { to, subject, code: error.code || null, message: error.message });
+    const isAuthFailure = error?.code === 'EAUTH' || /535|authentication|invalid login/i.test(error?.message || '');
+    const logPayload = { to, subject, code: error.code || null, message: error.message, hint: isAuthFailure ? 'Check EMAIL_USER/EMAIL_PASS or SMTP_USER/SMTP_PASS. Many providers require an app password.' : undefined };
+    if (isAuthFailure) console.warn('[romchat-email] smtp auth failed; using fallback', logPayload);
+    else console.error('[romchat-email] delivery failed', logPayload);
     if (process.env.NODE_ENV !== 'production' || process.env.ROMCHAT_ALLOW_EMAIL_FALLBACK === 'true') {
       console.warn('[romchat-email] development fallback code', { to, subject, code: fallbackCode });
-      return { delivered: false, fallbackCode, warning: 'Email delivery is not configured. Use the logged development code.' };
+      return { delivered: false, fallbackCode, warning: isAuthFailure ? 'Email sign-in is not configured. Use the logged development code.' : 'Email delivery is not configured. Use the logged development code.' };
     }
     return { delivered: false, warning: 'Email delivery is temporarily unavailable. Please try again shortly.' };
   }

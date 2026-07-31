@@ -118,15 +118,16 @@ export const sendNotification = async ({ to, subject, body, details, suppressErr
       throw new Error('❌ Missing required email parameters.');
     }
 
-    const isSecure = (process.env.EMAIL_SECURE || '').toLowerCase() === 'true';
+    const smtpHost = process.env.EMAIL_HOST || process.env.SMTP_HOST || process.env.MAIL_HOST || 'localhost';
+    const smtpPort = Number(process.env.EMAIL_PORT || process.env.SMTP_PORT || process.env.MAIL_PORT || 587);
+    const smtpUser = process.env.EMAIL_USER || process.env.SMTP_USER || process.env.MAIL_USER;
+    const smtpPass = process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.MAIL_PASS;
+    const isSecure = String(process.env.EMAIL_SECURE || process.env.SMTP_SECURE || process.env.MAIL_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
     const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST || 'localhost',
-      port: process.env.EMAIL_PORT ? parseInt(process.env.EMAIL_PORT, 10) : 587,
+      host: smtpHost,
+      port: smtpPort,
       secure: isSecure, // true = SSL (465), false = STARTTLS (587)
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
+      auth: smtpUser || smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
     });
 
     // Prefer DB setting -> ENV -> rare fallback to /uploads/logo.png
@@ -212,7 +213,7 @@ export const sendNotification = async ({ to, subject, body, details, suppressErr
     `;
 
     const info = await transporter.sendMail({
-      from: `"${brandName} ${brandEmoji}" <${process.env.EMAIL_USER}>`,
+      from: `"${brandName} ${brandEmoji}" <${process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.MAIL_FROM || smtpUser}>`,
       to,
       subject,
       html,
