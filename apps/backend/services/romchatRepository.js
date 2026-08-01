@@ -284,7 +284,7 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
     const viewerCoordinates = viewer ? rowCoordinates(viewer) : null;
     const maxDistanceKm = clampDistanceKm(viewer?.max_distance_km);
     const mapDiscoveryEnabled = viewer?.map_discovery_enabled !== false;
-    const result = await queryWithRetry(
+    let result = await queryWithRetry(
       `SELECT
          p.*,
          COALESCE(
@@ -300,6 +300,23 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
        ORDER BY p.selfie_verified DESC, p.profile_strength DESC, p.updated_at DESC`,
       [viewerId, Boolean(verifiedOnly)]
     );
+    if (!result.rows.length && verifiedOnly) {
+      result = await queryWithRetry(
+        `SELECT
+           p.*,
+           COALESCE(
+             array_agg(m.url ORDER BY m.position ASC, m.created_at ASC)
+               FILTER (WHERE m.media_type = 'image'),
+             '{}'
+           ) AS photos
+         FROM romchat_member_profiles p
+         JOIN romchat_profile_media m ON m.member_id = p.member_id AND m.media_type = 'image'
+         WHERE ($1::text IS NULL OR p.member_id <> $1)
+         GROUP BY p.member_id
+         ORDER BY p.selfie_verified DESC, p.profile_strength DESC, p.updated_at DESC`,
+        [viewerId]
+      );
+    }
     return result.rows
       .map((row) => ({ ...row, distance_km: viewerCoordinates ? haversineKm(viewerCoordinates, rowCoordinates(row)) : 0 }))
       .filter((row) => !viewerCoordinates || !mapDiscoveryEnabled || Number(row.distance_km || 0) <= maxDistanceKm)

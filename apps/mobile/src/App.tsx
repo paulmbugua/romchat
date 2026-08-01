@@ -568,6 +568,11 @@ export default function App() {
     } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to save distance settings.'); }
     finally { setAuthBusy(false); }
   }
+  function openSwipeDeck() {
+    setActiveSection(null);
+    if (appReady) void romchat.refresh();
+  }
+
   function renderSection(section: Section) {
     if (section === 'explore') {
       return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
@@ -642,7 +647,7 @@ export default function App() {
         >
           {renderSection(activeSection)}
         </ScrollView>
-        <FooterNav active={activeSection} setActiveSection={setActiveSection} bottomInset={bottomInset} />
+        <FooterNav active={activeSection} setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} />
       </SafeAreaView>
     );
   }
@@ -703,7 +708,7 @@ export default function App() {
           <EmptyDiscovery openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
         )}
       </ScrollView>
-      <FooterNav active="swipe" setActiveSection={setActiveSection} bottomInset={bottomInset} />
+      <FooterNav active="swipe" setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} />
     </SafeAreaView>
   );
 }
@@ -1124,7 +1129,7 @@ function ShortcutRail({ setActiveSection }: { setActiveSection: (section: Sectio
   );
 }
 
-function FooterNav({ active, setActiveSection, bottomInset }: { active: Section | 'swipe'; setActiveSection: (section: Section | null) => void; bottomInset: number }) {
+function FooterNav({ active, setActiveSection, openSwipeDeck, bottomInset }: { active: Section | 'swipe'; setActiveSection: (section: Section | null) => void; openSwipeDeck: () => void; bottomInset: number }) {
   const items: Array<{ key: Section | 'swipe'; label: string; icon: string; target: Section | null; badge?: string }> = [
     { key: 'swipe', label: 'Swipe', icon: 'flame', target: null },
     { key: 'explore', label: 'Explore', icon: 'compass', target: 'explore' },
@@ -1137,7 +1142,7 @@ function FooterNav({ active, setActiveSection, bottomInset }: { active: Section 
       {items.map((item) => {
         const selected = active === item.key;
         return (
-          <TouchableOpacity key={item.key} onPress={() => setActiveSection(item.target)} style={styles.footerItem} accessibilityLabel={item.label}>
+          <TouchableOpacity key={item.key} onPress={() => item.key === 'swipe' ? openSwipeDeck() : setActiveSection(item.target)} style={styles.footerItem} accessibilityLabel={item.label}>
             <View>
               <Icon name={item.icon} size={21} color={selected ? '#FFFFFF' : 'rgba(255,255,255,0.62)'} />
               {!!item.badge && <Text style={styles.footerBadge}>{item.badge}</Text>}
@@ -1205,8 +1210,8 @@ function EmptyDiscovery({ openProfile, status }: { openProfile: () => void; stat
   return (
     <View style={styles.emptyDiscovery}>
       <Icon name="heart-circle" size={52} color="#FF1493" />
-      <Text style={styles.emptyDiscoveryTitle}>Real Kenyan profiles are loading</Text>
-      <Text style={styles.emptyDiscoveryText}>{status === 'Live API connected' ? 'No verified profiles with photos are available yet. Add more photos and pull down to refresh.' : 'Connect to the RomChat backend, then pull down to refresh live member profiles.'}</Text>
+      <Text style={styles.emptyDiscoveryTitle}>Finding Kenyan profiles</Text>
+      <Text style={styles.emptyDiscoveryText}>{status === 'Live API connected' || status === 'Distance preferences applied' ? 'No profiles match your current filters yet. Open your profile, widen distance, or refresh after more members upload photos.' : 'Refreshing the RomChat backend. If this stays here, check the backend URL and try again.'}</Text>
       <TouchableOpacity onPress={openProfile} style={styles.emptyDiscoveryButton}><Text style={styles.emptyDiscoveryButtonText}>Improve my profile</Text></TouchableOpacity>
     </View>
   );
