@@ -23,6 +23,7 @@ export type RomChatProfile = {
   color?: string;
   verified?: boolean;
   online?: boolean;
+  distanceKm?: number;
 };
 
 export type RomChatMessage = {

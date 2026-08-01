@@ -34,6 +34,46 @@ export const addOns = [
   { id: 'single_read_receipt', name: 'Single read receipt', priceUsd: 0.49, description: 'See whether one message was read.' },
 ];
 
+const kenyaCityCoordinates = new Map([
+  ['nairobi', { latitude: -1.286389, longitude: 36.817223 }],
+  ['mombasa', { latitude: -4.043477, longitude: 39.668206 }],
+  ['kisumu', { latitude: -0.091702, longitude: 34.767956 }],
+  ['nakuru', { latitude: -0.303099, longitude: 36.080025 }],
+  ['eldoret', { latitude: 0.514277, longitude: 35.269779 }],
+  ['thika', { latitude: -1.03326, longitude: 37.06933 }],
+  ['malindi', { latitude: -3.219186, longitude: 40.11689 }],
+  ['kitale', { latitude: 1.01572, longitude: 35.00622 }],
+  ['naivasha', { latitude: -0.716667, longitude: 36.433333 }],
+  ['machakos', { latitude: -1.517684, longitude: 37.263414 }],
+]);
+
+function clampDistanceKm(value) {
+  const next = Number(value || 80);
+  if (!Number.isFinite(next)) return 80;
+  return Math.max(5, Math.min(500, Math.round(next / 5) * 5));
+}
+
+function coordinatesForCity(city) {
+  const key = String(city || '').trim().toLowerCase();
+  return kenyaCityCoordinates.get(key) || kenyaCityCoordinates.get('nairobi');
+}
+
+function rowCoordinates(row) {
+  const latitude = Number(row?.latitude);
+  const longitude = Number(row?.longitude);
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
+  return coordinatesForCity(row?.city);
+}
+
+function haversineKm(from, to) {
+  if (!from || !to) return 0;
+  const rad = (value) => (value * Math.PI) / 180;
+  const earthKm = 6371;
+  const dLat = rad(to.latitude - from.latitude);
+  const dLon = rad(to.longitude - from.longitude);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(from.latitude)) * Math.cos(rad(to.latitude)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(earthKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
 const fallbackProfiles = [
   {
     id: 'elena',
@@ -164,6 +204,7 @@ function fromMemberProfileRow(row, catalogueAccess = 1) {
     color: '#FF1493',
     verified: Boolean(row.selfie_verified),
     online: true,
+    distanceKm: Number(row.distance_km || 0),
   };
 }
 
@@ -235,6 +276,14 @@ async function seedProfiles() {
 export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, viewerId = null } = {}) {
   const access = Math.max(1, Number(catalogueAccess || 1));
   return withDb(async () => {
+    let viewer = null;
+    if (viewerId) {
+      const viewerRows = await queryWithRetry('SELECT member_id, city, latitude, longitude, max_distance_km, map_discovery_enabled FROM romchat_member_profiles WHERE member_id = $1', [viewerId]);
+      viewer = viewerRows.rows[0] || null;
+    }
+    const viewerCoordinates = viewer ? rowCoordinates(viewer) : null;
+    const maxDistanceKm = clampDistanceKm(viewer?.max_distance_km);
+    const mapDiscoveryEnabled = viewer?.map_discovery_enabled !== false;
     const result = await queryWithRetry(
       `SELECT
          p.*,
@@ -251,7 +300,11 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
        ORDER BY p.selfie_verified DESC, p.profile_strength DESC, p.updated_at DESC`,
       [viewerId, Boolean(verifiedOnly)]
     );
-    return result.rows.map((row) => fromMemberProfileRow(row, access));
+    return result.rows
+      .map((row) => ({ ...row, distance_km: viewerCoordinates ? haversineKm(viewerCoordinates, rowCoordinates(row)) : 0 }))
+      .filter((row) => !viewerCoordinates || !mapDiscoveryEnabled || Number(row.distance_km || 0) <= maxDistanceKm)
+      .sort((a, b) => Number(a.distance_km || 0) - Number(b.distance_km || 0) || Number(b.profile_strength || 0) - Number(a.profile_strength || 0))
+      .map((row) => fromMemberProfileRow(row, access));
   }, () => []);
 }
 

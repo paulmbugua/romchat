@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS romchat_member_profiles (
   selfie_verified BOOLEAN NOT NULL DEFAULT false,
   verification_status TEXT NOT NULL DEFAULT 'not_started',
   profile_strength INTEGER NOT NULL DEFAULT 25,
+  latitude NUMERIC(9,6),
+  longitude NUMERIC(9,6),
+  max_distance_km INTEGER NOT NULL DEFAULT 80,
+  map_discovery_enabled BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -83,12 +87,44 @@ ALTER TABLE romchat_member_profiles
   ADD COLUMN IF NOT EXISTS voice_intro_url TEXT,
   ADD COLUMN IF NOT EXISTS selfie_media_url TEXT,
   ADD COLUMN IF NOT EXISTS selfie_verified BOOLEAN NOT NULL DEFAULT false,
-  ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'not_started';
+  ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'not_started',
+  ADD COLUMN IF NOT EXISTS latitude NUMERIC(9,6),
+  ADD COLUMN IF NOT EXISTS longitude NUMERIC(9,6),
+  ADD COLUMN IF NOT EXISTS max_distance_km INTEGER NOT NULL DEFAULT 80,
+  ADD COLUMN IF NOT EXISTS map_discovery_enabled BOOLEAN NOT NULL DEFAULT true;
 
 ALTER TABLE romchat_profile_media DROP CONSTRAINT IF EXISTS romchat_profile_media_media_type_check;
 ALTER TABLE romchat_profile_media ADD CONSTRAINT romchat_profile_media_media_type_check CHECK (media_type IN ('image','video','voice','selfie'));
 `;
 
+const kenyaCityCoordinates = new Map([
+  ['nairobi', { latitude: -1.286389, longitude: 36.817223 }],
+  ['mombasa', { latitude: -4.043477, longitude: 39.668206 }],
+  ['kisumu', { latitude: -0.091702, longitude: 34.767956 }],
+  ['nakuru', { latitude: -0.303099, longitude: 36.080025 }],
+  ['eldoret', { latitude: 0.514277, longitude: 35.269779 }],
+  ['thika', { latitude: -1.03326, longitude: 37.06933 }],
+  ['malindi', { latitude: -3.219186, longitude: 40.11689 }],
+  ['kitale', { latitude: 1.01572, longitude: 35.00622 }],
+  ['naivasha', { latitude: -0.716667, longitude: 36.433333 }],
+  ['machakos', { latitude: -1.517684, longitude: 37.263414 }],
+]);
+
+function clampDistanceKm(value) {
+  const next = Number(value || 80);
+  if (!Number.isFinite(next)) return 80;
+  return Math.max(5, Math.min(500, Math.round(next / 5) * 5));
+}
+
+function coordinatesForCity(city) {
+  const key = String(city || '').trim().toLowerCase();
+  return kenyaCityCoordinates.get(key) || kenyaCityCoordinates.get('nairobi');
+}
+
+function numberOrNull(value) {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : null;
+}
 const id = (prefix) => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 const hashOtp = (email, otp) => crypto.createHash('sha256').update(`${email.toLowerCase()}:${otp}:${jwtSecret}`).digest('hex');
 
@@ -185,6 +221,10 @@ function profileFromRow(row, media = []) {
     imageCount: media.filter((item) => item.mediaType === 'image').length,
     videoCount: media.filter((item) => item.mediaType === 'video').length,
     voiceCount: media.filter((item) => item.mediaType === 'voice').length,
+    latitude: row.latitude == null ? null : Number(row.latitude),
+    longitude: row.longitude == null ? null : Number(row.longitude),
+    maxDistanceKm: Number(row.max_distance_km || 80),
+    mapDiscoveryEnabled: row.map_discovery_enabled !== false,
   };
 }
 
@@ -505,15 +545,20 @@ export async function upsertMemberProfile(memberId, payload = {}) {
   const intent = String(payload.intent || '').trim().slice(0, 120);
   const interests = Array.isArray(payload.interests) ? payload.interests.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 8) : [];
   const promptAnswers = Array.isArray(payload.promptAnswers) ? payload.promptAnswers.map((item) => ({ prompt: String(item?.prompt || '').trim().slice(0, 120), answer: String(item?.answer || '').trim().slice(0, 240) })).filter((item) => item.prompt && item.answer).slice(0, 7) : null;
+  const cityCoordinates = coordinatesForCity(city);
+  const latitude = numberOrNull(payload.latitude) ?? cityCoordinates.latitude;
+  const longitude = numberOrNull(payload.longitude) ?? cityCoordinates.longitude;
+  const maxDistanceKm = clampDistanceKm(payload.maxDistanceKm);
+  const mapDiscoveryEnabled = payload.mapDiscoveryEnabled !== false;
   const mediaRows = await queryWithRetry('SELECT media_type, COUNT(*)::int AS count FROM romchat_profile_media WHERE member_id = $1 GROUP BY media_type', [memberId]);
   const mediaCounts = Object.fromEntries(mediaRows.rows.map((row) => [row.media_type, Number(row.count || 0)]));
   const imageCount = Number(mediaCounts.image || 0);
   const strength = Math.min(100, 35 + Math.min(30, imageCount * 8) + (bio ? 15 : 0) + (interests.length ? 12 : 0) + (promptAnswers?.length === 7 ? 8 : 0));
   await queryWithRetry(
-    `INSERT INTO romchat_member_profiles (member_id, display_name, age, gender, city, intent, bio, interests, prompt_answers, profile_strength)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::jsonb, '[]'::jsonb),$10)
-     ON CONFLICT (member_id) DO UPDATE SET display_name = EXCLUDED.display_name, age = EXCLUDED.age, gender = EXCLUDED.gender, city = EXCLUDED.city, intent = EXCLUDED.intent, bio = EXCLUDED.bio, interests = EXCLUDED.interests, prompt_answers = COALESCE($9::jsonb, romchat_member_profiles.prompt_answers), profile_strength = EXCLUDED.profile_strength, updated_at = now()`,
-    [memberId, displayName, age, gender, city, intent, bio, interests, promptAnswers ? JSON.stringify(promptAnswers) : null, strength]
+    `INSERT INTO romchat_member_profiles (member_id, display_name, age, gender, city, intent, bio, interests, prompt_answers, profile_strength, latitude, longitude, max_distance_km, map_discovery_enabled)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::jsonb, '[]'::jsonb),$10,$11,$12,$13,$14)
+     ON CONFLICT (member_id) DO UPDATE SET display_name = EXCLUDED.display_name, age = EXCLUDED.age, gender = EXCLUDED.gender, city = EXCLUDED.city, intent = EXCLUDED.intent, bio = EXCLUDED.bio, interests = EXCLUDED.interests, prompt_answers = COALESCE($9::jsonb, romchat_member_profiles.prompt_answers), profile_strength = EXCLUDED.profile_strength, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, max_distance_km = EXCLUDED.max_distance_km, map_discovery_enabled = EXCLUDED.map_discovery_enabled, updated_at = now()`,
+    [memberId, displayName, age, gender, city, intent, bio, interests, promptAnswers ? JSON.stringify(promptAnswers) : null, strength, latitude, longitude, maxDistanceKm, mapDiscoveryEnabled]
   );
   return getMemberProfile(memberId);
 }

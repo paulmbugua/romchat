@@ -22,6 +22,7 @@ import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LinearGradient } from 'expo-linear-gradient';
+import Slider from '@react-native-community/slider';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { storage } from '../utils/storage';
@@ -53,6 +54,7 @@ type ProfileSeed = {
   gallery: number;
   fullGallery?: number;
   lockedGallery?: number;
+  distanceKm?: number;
   catalogueAccess?: number;
   photos?: string[];
   tags: string[];
@@ -543,6 +545,29 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
 
+  async function saveDiscoverySettings(payload: { maxDistanceKm: number; mapDiscoveryEnabled: boolean }) {
+    if (!session?.token || !session.profile) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const response = await romchatAccountApi.saveProfile(session.token, {
+        displayName: session.profile.displayName,
+        age: session.profile.age,
+        gender: session.profile.gender,
+        city: session.profile.city,
+        intent: session.profile.intent,
+        bio: session.profile.bio,
+        interests: session.profile.interests,
+        promptAnswers: session.profile.promptAnswers,
+        maxDistanceKm: payload.maxDistanceKm,
+        mapDiscoveryEnabled: payload.mapDiscoveryEnabled,
+      });
+      const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
+      await persistSession(next);
+      await romchat.refresh();
+    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to save distance settings.'); }
+    finally { setAuthBusy(false); }
+  }
   function renderSection(section: Section) {
     if (section === 'explore') {
       return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
@@ -588,7 +613,7 @@ export default function App() {
         />
       );
     }
-    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSavePrompts={saveProfilePrompts} status={romchat.lastAction} onSignOut={signOut} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} />;
   }
 
   if (!authBooted) {
@@ -1040,7 +1065,7 @@ function Discover({
               <Text style={styles.verifiedBadge}>Active</Text>
             </View>
             <Text style={styles.cardTitle}>{profile.name} <Text style={styles.cardAge}>{profile.age}</Text></Text>
-            <Text style={styles.cardSub}>{profile.city} - Kenya</Text>
+            <Text style={styles.cardSub}>{profile.city} - Kenya{typeof profile.distanceKm === 'number' && profile.distanceKm > 0 ? ` - ${profile.distanceKm} km away` : ''}</Text>
             <Text numberOfLines={2} style={styles.cardPrompt}>{profile.prompt}</Text>
             <View style={styles.tagRow}>{profile.tags.slice(0, 3).map((tag) => <Text key={tag} style={styles.photoTag}>{tag}</Text>)}</View>
           </View>
@@ -1412,7 +1437,7 @@ function resolveMediaUrl(url?: string) {
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSavePrompts, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
+function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSavePrompts, onSaveDiscoverySettings, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
@@ -1420,6 +1445,12 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
   const promptSeed = profilePromptTemplates.map((prompt, index) => ({ prompt, answer: profile?.promptAnswers?.[index]?.answer || '' }));
   const [promptAnswers, setPromptAnswers] = useState<RomChatPromptAnswer[]>(promptSeed);
   useEffect(() => { setPromptAnswers(promptSeed); }, [profile?.memberId, profile?.promptAnswers?.length]);
+  const [distanceKm, setDistanceKm] = useState(profile?.maxDistanceKm || 80);
+  const [mapEnabled, setMapEnabled] = useState(profile?.mapDiscoveryEnabled !== false);
+  useEffect(() => {
+    setDistanceKm(profile?.maxDistanceKm || 80);
+    setMapEnabled(profile?.mapDiscoveryEnabled !== false);
+  }, [profile?.memberId, profile?.maxDistanceKm, profile?.mapDiscoveryEnabled]);
   const completePrompts = promptAnswers.filter((item) => item.prompt && item.answer.trim()).length;
   const profileTasks = [
     [`Images uploaded: ${imageCount}`, imageCount >= 3 ? 'Fuller catalogues unlocked' : 'Add photos to unlock more galleries'],
@@ -1436,6 +1467,20 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
         <Text style={styles.caption}>{profile?.city ? `${profile.city} - ${profile.intent || 'Intentional connection'}` : status}</Text>
         <Text style={styles.profileStrength}>{computedStrength}% complete</Text>
         <View style={styles.progress}><View style={[styles.progressFill, { width: `${computedStrength}%` }]} /></View>
+        <View style={styles.distancePanel}>
+          <View style={styles.distanceHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.distanceTitle}>Distance preference</Text>
+              <Text style={styles.distanceMeta}>{mapEnabled ? 'Map discovery on' : 'Map discovery paused'} - show people within {distanceKm} km</Text>
+            </View>
+            <TouchableOpacity disabled={busy} onPress={() => setMapEnabled((value) => !value)} style={[styles.mapToggle, mapEnabled && styles.mapToggleActive]}>
+              <Icon name={mapEnabled ? 'map' : 'map-outline'} size={18} color={mapEnabled ? '#120914' : '#FFD700'} />
+            </TouchableOpacity>
+          </View>
+          <Slider value={distanceKm} minimumValue={5} maximumValue={500} step={5} minimumTrackTintColor="#FF1493" maximumTrackTintColor="rgba(255,255,255,0.20)" thumbTintColor="#FFD700" onValueChange={setDistanceKm} />
+          <View style={styles.distanceScale}><Text style={styles.distanceScaleText}>5 km</Text><Text style={styles.distanceScaleText}>500 km</Text></View>
+          <TouchableOpacity disabled={busy} onPress={() => void onSaveDiscoverySettings({ maxDistanceKm: distanceKm, mapDiscoveryEnabled: mapEnabled })} style={styles.distanceSaveButton}><Text style={styles.distanceSaveText}>Apply distance filter</Text></TouchableOpacity>
+        </View>
         <View style={styles.photoSlotGrid}>{Array.from({ length: 6 }).map((_, index) => {
           const media = photoMedia[index];
           const uri = resolveMediaUrl(media?.url);
@@ -1725,6 +1770,16 @@ const styles = StyleSheet.create({
   progress: { height: 9, backgroundColor: '#2A1A30', borderRadius: 999, overflow: 'hidden', marginVertical: 12 },
   progressFill: { height: 9, backgroundColor: '#FF1493' },
   profileStrength: { color: '#FFD700', fontWeight: '900', fontSize: 18 },
+  distancePanel: { backgroundColor: '#2A1A30', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', padding: 14, marginTop: 12, marginBottom: 12 },
+  distanceHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
+  distanceTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
+  distanceMeta: { color: 'rgba(255,255,255,0.66)', fontWeight: '800', marginTop: 3, lineHeight: 18 },
+  mapToggle: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: 'rgba(255,215,0,0.45)', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1E1222' },
+  mapToggleActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
+  distanceScale: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -2 },
+  distanceScaleText: { color: 'rgba(255,255,255,0.52)', fontSize: 11, fontWeight: '800' },
+  distanceSaveButton: { marginTop: 10, backgroundColor: '#FF1493', borderRadius: 999, alignItems: 'center', paddingVertical: 12 },
+  distanceSaveText: { color: '#FFFFFF', fontWeight: '900' },
   photoSlotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 12 },
   photoSlot: { width: '30.5%', aspectRatio: 0.82, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,20,147,0.25)', backgroundColor: '#2A1A30', alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden' },
   photoSlotMain: { borderColor: '#FFD700', borderWidth: 2 },

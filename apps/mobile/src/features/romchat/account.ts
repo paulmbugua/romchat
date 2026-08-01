@@ -35,6 +35,10 @@ export type RomChatMemberProfile = {
   media: RomChatProfileMedia[];
   imageCount: number;
   videoCount: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  maxDistanceKm?: number;
+  mapDiscoveryEnabled?: boolean;
 };
 
 export type RomChatOnboardingState = {
@@ -86,7 +90,7 @@ export const romchatAccountApi = {
       body: JSON.stringify({ idToken }),
     }),
   me: (token: string) => apiFetch<Omit<RomChatSessionPayload, 'token'>>('/api/romchat/auth/me', { token }),
-  saveProfile: (token: string, payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[]; promptAnswers?: Array<{ prompt: string; answer: string }> }) =>
+  saveProfile: (token: string, payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[]; promptAnswers?: Array<{ prompt: string; answer: string }>; latitude?: number | null; longitude?: number | null; maxDistanceKm?: number; mapDiscoveryEnabled?: boolean }) =>
     apiFetch<{ profile: RomChatMemberProfile }>('/api/romchat/profile', {
       method: 'PATCH',
       token,

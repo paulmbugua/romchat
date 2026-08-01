@@ -42,6 +42,7 @@ function mergeProfiles(remoteProfiles: RomChatProfile[], localProfiles: LocalPro
         quote: remote.quote || local.quote,
         song: remote.song || local.song,
         gallery: Number(remote.gallery ?? photos.length ?? local.gallery),
+        distanceKm: typeof remote.distanceKm === 'number' ? remote.distanceKm : undefined,
         fullGallery: Number(remote.fullGallery ?? remote.gallery ?? photos.length ?? local.gallery),
         lockedGallery: Number(remote.lockedGallery ?? 0),
         catalogueAccess: Number(remote.catalogueAccess ?? photos.length ?? 1),
@@ -94,6 +95,15 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     };
   }, [localProfiles, options.enabled, options.token]);
 
+  const refresh = useCallback(async () => {
+    if (!options.enabled) return;
+    const payload = await romchatApi.bootstrap(options.token);
+    setBootstrap(payload);
+    setProfiles(payload.profiles?.length ? mergeProfiles(payload.profiles, localProfiles) : []);
+    setApiOnline(true);
+    setLastAction('Distance preferences applied');
+    setPaidMessages((payload.messages || []).filter((message) => message.locked));
+  }, [localProfiles, options.enabled, options.token]);
   const swipe = useCallback(async (profileId: string, action: 'pass' | 'like' | 'super_like') => {
     setLastAction(action === 'pass' ? 'Passed' : action === 'super_like' ? 'Priority like sent' : 'Like sent');
     try {
@@ -197,5 +207,5 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, swipe, sendMessage, unlockMessage, unlockVideoRequest, sendGift, boost, updatePrivacy, report, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, unlockMessage, unlockVideoRequest, sendGift, boost, updatePrivacy, report, verify };
 }
