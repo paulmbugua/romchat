@@ -28,7 +28,7 @@ import { romchatAccountApi, romchatBackendHealth, type RomChatAccount, type RomC
 import { apiBaseUrl } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 
-type Section = 'chat' | 'premium' | 'safety' | 'profile';
+type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'safety' | 'profile';
 type MessageMode = 'standard' | 'timed' | 'viewOnce';
 type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
 type SessionState = RomChatSessionPayload & { onboarding: RomChatOnboardingState };
@@ -175,7 +175,9 @@ const starterMessages = [
 ];
 
 const screenTitles: Record<Section, string> = {
-  chat: 'Inbox',
+  explore: 'Explore',
+  likes: 'Likes',
+  chat: 'Chat',
   premium: 'RomChat Plus',
   safety: 'Kenya Safety',
   profile: 'My Kenyan Profile',
@@ -538,6 +540,12 @@ export default function App() {
   }
 
   function renderSection(section: Section) {
+    if (section === 'explore') {
+      return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
+    }
+    if (section === 'likes') {
+      return <LikesScreen profiles={profiles} openPremium={openTokenStore} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
+    }
     if (section === 'chat') {
       return (
         <Chat
@@ -597,7 +605,7 @@ export default function App() {
         <StatusBar barStyle="light-content" backgroundColor="#120914" />
         <ScreenHeader title={screenTitles[activeSection]} onBack={() => setActiveSection(null)} apiOnline={romchat.apiOnline} />
         <ScrollView
-          contentContainerStyle={[styles.screenContent, { paddingBottom: bottomContentPadding }]}
+          contentContainerStyle={[styles.screenContent, { paddingBottom: bottomContentPadding + 68 }]}
           contentInsetAdjustmentBehavior="automatic"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -605,6 +613,7 @@ export default function App() {
         >
           {renderSection(activeSection)}
         </ScrollView>
+        <FooterNav active={activeSection} setActiveSection={setActiveSection} />
       </SafeAreaView>
     );
   }
@@ -613,7 +622,7 @@ export default function App() {
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#120914" />
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: bottomContentPadding }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomContentPadding + 68 }]}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -656,13 +665,12 @@ export default function App() {
               }}
               profiles={profiles}
             />
-
-            <HomeNudge profile={profile} openProfile={() => setActiveSection('profile')} status={romchat.lastAction + ' - ' + session.profile.imageCount + ' photo access'} />
           </>
         ) : (
           <EmptyDiscovery openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
         )}
       </ScrollView>
+      <FooterNav active="swipe" setActiveSection={setActiveSection} />
     </SafeAreaView>
   );
 }
@@ -1019,33 +1027,31 @@ function Discover({
           <View style={styles.cardCopy}>
             <View style={styles.pillRow}>
               <Text style={styles.cardBadge}>{profile.match}%</Text>
-              <Text style={styles.verifiedBadge}>Verified</Text>
+              <Text style={styles.verifiedBadge}>Active</Text>
             </View>
-            <Text style={styles.cardTitle}>{profile.name}, {profile.age}</Text>
+            <Text style={styles.cardTitle}>{profile.name} <Text style={styles.cardAge}>{profile.age}</Text></Text>
             <Text style={styles.cardSub}>{profile.city} - Kenya</Text>
             <Text numberOfLines={2} style={styles.cardPrompt}>{profile.prompt}</Text>
             <View style={styles.tagRow}>{profile.tags.slice(0, 3).map((tag) => <Text key={tag} style={styles.photoTag}>{tag}</Text>)}</View>
           </View>
+          <View style={styles.actionDock}>
+            <View style={styles.actionItem}>
+              <TouchableOpacity onPress={previous} style={styles.rewindAction} accessibilityLabel="Undo swipe"><Icon name="return-up-back" size={18} color="#C9C3CB" /></TouchableOpacity>
+            </View>
+            <View style={styles.actionItem}>
+              <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><Icon name="close" size={30} color="#FFFFFF" /></TouchableOpacity>
+            </View>
+            <View style={styles.actionItem}>
+              <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Super like"><Icon name="star" size={22} color="#9BC6FF" /></TouchableOpacity>
+            </View>
+            <View style={styles.actionItem}>
+              <TouchableOpacity onPress={likeProfile} style={styles.likeAction} accessibilityLabel="Like profile"><Icon name="heart" size={30} color="#FF1200" /></TouchableOpacity>
+            </View>
+            <View style={styles.actionItem}>
+              <TouchableOpacity onPress={openChat} style={styles.messageAction} accessibilityLabel="Message match"><Icon name="paper-plane" size={21} color="#9BC6FF" /></TouchableOpacity>
+            </View>
+          </View>
         </ImageBackground>
-      </View>
-
-      <View style={styles.actionDock}>
-        <View style={styles.actionItem}>
-          <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><LinearGradient colors={['#FF355E', '#FF1493']} style={styles.passGradient}><Icon name="close" size={28} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
-          <Text style={styles.actionLabel}>Pass</Text>
-        </View>
-        <View style={styles.actionItem}>
-          <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Super like"><Icon name="star" size={23} color="#FFD700" /></TouchableOpacity>
-          <Text style={styles.actionLabel}>Super {SUPER_LIKE_COST}</Text>
-        </View>
-        <View style={styles.actionItem}>
-          <TouchableOpacity onPress={likeProfile} style={styles.likeAction} accessibilityLabel="Like profile"><LinearGradient colors={['#FF1493', '#FF6F61']} style={styles.likeGradient}><Icon name="heart" size={31} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
-          <Text style={styles.actionLabel}>Like</Text>
-        </View>
-        <View style={styles.actionItem}>
-          <TouchableOpacity onPress={previous} style={styles.rewindAction} accessibilityLabel="Undo swipe"><Icon name="return-up-back" size={19} color="#FFD700" /></TouchableOpacity>
-          <Text style={styles.actionLabel}>Undo {UNDO_SWIPE_COST}</Text>
-        </View>
       </View>
 
       {showMatch && (
@@ -1079,6 +1085,83 @@ function ShortcutRail({ setActiveSection }: { setActiveSection: (section: Sectio
           <Text style={styles.shortcutTitle}>{item.title}</Text>
         </TouchableOpacity>
       ))}
+    </View>
+  );
+}
+
+function FooterNav({ active, setActiveSection }: { active: Section | 'swipe'; setActiveSection: (section: Section | null) => void }) {
+  const items: Array<{ key: Section | 'swipe'; label: string; icon: string; target: Section | null; badge?: string }> = [
+    { key: 'swipe', label: 'Swipe', icon: 'flame', target: null },
+    { key: 'explore', label: 'Explore', icon: 'compass', target: 'explore' },
+    { key: 'likes', label: 'Likes', icon: 'heart-outline', target: 'likes', badge: '99+' },
+    { key: 'chat', label: 'Chat', icon: 'chatbubble', target: 'chat' },
+    { key: 'profile', label: 'Profile', icon: 'person-outline', target: 'profile' },
+  ];
+  return (
+    <View style={styles.footerNav}>
+      {items.map((item) => {
+        const selected = active === item.key;
+        return (
+          <TouchableOpacity key={item.key} onPress={() => setActiveSection(item.target)} style={styles.footerItem} accessibilityLabel={item.label}>
+            <View>
+              <Icon name={item.icon} size={21} color={selected ? '#FFFFFF' : 'rgba(255,255,255,0.62)'} />
+              {!!item.badge && <Text style={styles.footerBadge}>{item.badge}</Text>}
+            </View>
+            <Text style={[styles.footerLabel, selected && styles.footerLabelActive]}>{item.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+function ExploreScreen({ openLikes }: { openLikes: () => void }) {
+  const tiles: Array<[string, string, string, string]> = [
+    ['Long-term partner', 'rose', '1K', '#FF1493'],
+    ['Serious commitment', 'diamond', '614', '#F472B6'],
+    ['Binge watchers', 'tv', '334', '#FF6F61'],
+    ['Sporty', 'fitness', '299', '#60A5FA'],
+    ['Coast weekends', 'sunny', '528', '#FFD700'],
+    ['Soft romance', 'moon', '487', '#9BC6FF'],
+  ];
+  return (
+    <View>
+      <Text style={styles.exploreTitle}>Explore romance vibes</Text>
+      <View style={styles.exploreGrid}>
+        {tiles.map(([label, icon, count, color]) => (
+          <TouchableOpacity key={label} onPress={openLikes} style={styles.exploreTile}>
+            <Icon name={icon} size={44} color={color} />
+            <View style={styles.exploreTileFooter}>
+              <Text style={styles.exploreTileTitle}>{label}</Text>
+              <Text style={styles.exploreTileCount}>{count}</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function LikesScreen({ profiles, openPremium, likeProfile, passProfile }: { profiles: ProfileSeed[]; openPremium: () => void; likeProfile: () => void; passProfile: () => void }) {
+  const featured = profiles[0] || localProfiles[0]!;
+  const photo = featured.photos?.[0] ? { uri: resolveMediaUrl(featured.photos[0]) } : featured.photo;
+  return (
+    <View>
+      <View style={styles.likesTabs}><Text style={styles.likesTabActive}>99+ Likes</Text><Text style={styles.likesTab}>Likes Sent</Text><Text style={styles.likesTab}>Top Picks</Text></View>
+      <Text style={styles.exploreTitle}>Matches your vibe</Text>
+      <ImageBackground source={photo} resizeMode="cover" style={styles.likePreviewCard} imageStyle={styles.likePreviewImage}>
+        <LinearGradient colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.62)', 'rgba(0,0,0,0.92)']} style={styles.photoOverlay} />
+        <View style={styles.likePreviewCopy}>
+          <Text style={styles.cardTitle}>{featured.name} <Text style={styles.cardAge}>{featured.age}</Text></Text>
+          <Text style={styles.cardPrompt}>{featured.intent || 'Long-term partner'} - {featured.city}</Text>
+          <View style={styles.tagRow}>{featured.tags.slice(0, 3).map((tag) => <Text key={tag} style={styles.photoTag}>{tag}</Text>)}</View>
+          <View style={styles.likePreviewActions}>
+            <TouchableOpacity onPress={passProfile} style={styles.passAction}><Icon name="close" size={28} color="#FFFFFF" /></TouchableOpacity>
+            <TouchableOpacity onPress={likeProfile} style={styles.likeAction}><Icon name="heart" size={29} color="#FF1200" /></TouchableOpacity>
+          </View>
+        </View>
+      </ImageBackground>
+      <TouchableOpacity onPress={openPremium} style={styles.likesUnlockButton}><Text style={styles.likesUnlockText}>See all your likes now</Text></TouchableOpacity>
     </View>
   );
 }
@@ -1451,8 +1534,8 @@ const styles = StyleSheet.create({
   safePillText: { color: '#FFD700', fontWeight: '900' },
   discovery: { marginBottom: 4 },
   deckShadow: { borderRadius: 26, marginBottom: 10, shadowColor: '#FF1493', shadowOpacity: 0.34, shadowRadius: 20, shadowOffset: { width: 0, height: 12 }, elevation: 10 },
-  profileCard: { minHeight: 610, aspectRatio: 9 / 15.6, width: '100%', borderRadius: 26, overflow: 'hidden', justifyContent: 'flex-end', backgroundColor: '#1E1222' },
-  profilePhoto: { borderRadius: 26 },
+  profileCard: { minHeight: 642, aspectRatio: 9 / 16, width: '100%', borderRadius: 28, overflow: 'hidden', justifyContent: 'flex-end', backgroundColor: '#1E1222' },
+  profilePhoto: { borderRadius: 28 },
   photoOverlay: { ...StyleSheet.absoluteFillObject },
   tapZones: { ...StyleSheet.absoluteFillObject, flexDirection: 'row' },
   tapZone: { flex: 1 },
@@ -1465,21 +1548,23 @@ const styles = StyleSheet.create({
   pillRow: { flexDirection: 'row', gap: 6, marginBottom: 5 },
   verifiedBadge: { color: '#00F0FF', backgroundColor: 'rgba(0,240,255,0.12)', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5, fontWeight: '900', fontSize: 10 },
   cardBadge: { color: '#120914', backgroundColor: '#FFD700', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, fontWeight: '900', fontSize: 10 },
-  cardCopy: { paddingHorizontal: 15, paddingBottom: 16, paddingTop: 56 },
-  cardTitle: { color: '#FFFFFF', fontSize: 30, fontWeight: '900' },
+  cardCopy: { paddingHorizontal: 18, paddingBottom: 118, paddingTop: 56 },
+  cardTitle: { color: '#FFFFFF', fontSize: 31, fontWeight: '900' },
+  cardAge: { color: '#FFFFFF', fontWeight: '700' },
   cardSub: { color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '800', marginTop: 2 },
   cardPrompt: { color: '#FFFFFF', fontSize: 13, lineHeight: 18, marginTop: 6, fontWeight: '800' },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   photoTag: { color: '#FFFFFF', backgroundColor: 'rgba(255,255,255,0.16)', overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999, fontWeight: '900', fontSize: 10 },
-  actionDock: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 0, marginBottom: 12, paddingBottom: 8, zIndex: 2 },
-  actionItem: { alignItems: 'center', justifyContent: 'flex-start', minWidth: 50 },
+  actionDock: { position: 'absolute', left: 18, right: 18, bottom: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, zIndex: 3 },
+  actionItem: { alignItems: 'center', justifyContent: 'center' },
   actionLabel: { color: 'rgba(255,255,255,0.68)', fontWeight: '900', fontSize: 10, marginTop: 5 },
-  passAction: { width: 54, height: 54, borderRadius: 27, overflow: 'hidden', shadowColor: '#FF1493', shadowOpacity: 0.24, shadowRadius: 12, shadowOffset: { width: 0, height: 7 }, elevation: 6 },
+  passAction: { width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(20,20,22,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 7 }, elevation: 7 },
   passGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
-  topAction: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#1E1222', borderWidth: 1.5, borderColor: '#FFD700', justifyContent: 'center', alignItems: 'center' },
-  likeAction: { width: 58, height: 58, borderRadius: 29, overflow: 'hidden' },
+  topAction: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(20,20,22,0.88)', borderWidth: 1, borderColor: 'rgba(155,198,255,0.35)', justifyContent: 'center', alignItems: 'center' },
+  likeAction: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(20,20,22,0.88)', borderWidth: 1, borderColor: 'rgba(255,18,0,0.26)', alignItems: 'center', justifyContent: 'center' },
   likeGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
-  rewindAction: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#1E1222', borderWidth: 1.5, borderColor: 'rgba(255,215,0,0.55)', justifyContent: 'center', alignItems: 'center' },
+  rewindAction: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(20,20,22,0.76)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', justifyContent: 'center', alignItems: 'center' },
+  messageAction: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(20,20,22,0.78)', borderWidth: 1, borderColor: 'rgba(155,198,255,0.35)', justifyContent: 'center', alignItems: 'center' },
   smallAction: { backgroundColor: '#1E1222', paddingHorizontal: 14, paddingVertical: 14, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   smallActionText: { color: '#FFFFFF', fontWeight: '900' },
   passActionText: { color: '#8A7B89', fontWeight: '900' },
@@ -1509,6 +1594,26 @@ const styles = StyleSheet.create({
   emptyDiscoveryText: { color: 'rgba(255,255,255,0.7)', fontWeight: '800', textAlign: 'center', lineHeight: 22, marginTop: 8 },
   emptyDiscoveryButton: { backgroundColor: '#FF1493', borderRadius: 999, paddingHorizontal: 18, paddingVertical: 13, marginTop: 18 },
   emptyDiscoveryButtonText: { color: '#FFFFFF', fontWeight: '900' },
+  footerNav: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 68, paddingTop: 8, paddingBottom: 8, paddingHorizontal: 14, backgroundColor: '#080608', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  footerItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  footerLabel: { color: 'rgba(255,255,255,0.62)', fontSize: 10, fontWeight: '800' },
+  footerLabelActive: { color: '#FFFFFF', fontWeight: '900' },
+  footerBadge: { position: 'absolute', top: -7, right: -15, minWidth: 26, color: '#FFFFFF', backgroundColor: '#FF1200', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1, textAlign: 'center', fontSize: 9, fontWeight: '900' },
+  exploreTitle: { color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginBottom: 16 },
+  exploreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+  exploreTile: { width: '47.8%', aspectRatio: 0.78, borderRadius: 22, backgroundColor: '#211B1F', padding: 18, justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  exploreTileFooter: { gap: 4 },
+  exploreTileTitle: { color: '#FFFFFF', fontSize: 18, lineHeight: 22, fontWeight: '900' },
+  exploreTileCount: { color: 'rgba(255,255,255,0.62)', fontSize: 16, fontWeight: '900' },
+  likesTabs: { flexDirection: 'row', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.10)', marginBottom: 20 },
+  likesTab: { flex: 1, textAlign: 'center', color: 'rgba(255,255,255,0.58)', paddingBottom: 14, fontWeight: '900' },
+  likesTabActive: { flex: 1, textAlign: 'center', color: '#FFFFFF', paddingBottom: 14, borderBottomWidth: 2, borderBottomColor: '#FF1200', fontWeight: '900' },
+  likePreviewCard: { minHeight: 520, borderRadius: 28, overflow: 'hidden', justifyContent: 'flex-end', backgroundColor: '#211B1F', marginBottom: 16 },
+  likePreviewImage: { borderRadius: 28 },
+  likePreviewCopy: { padding: 20 },
+  likePreviewActions: { flexDirection: 'row', justifyContent: 'center', gap: 22, marginTop: 18 },
+  likesUnlockButton: { backgroundColor: '#FFFFFF', borderRadius: 999, alignItems: 'center', paddingVertical: 16, marginBottom: 14 },
+  likesUnlockText: { color: '#120914', fontSize: 18, fontWeight: '900' },
   nudgeTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginTop: 3 },
   nudgeAction: { color: '#FFD700', fontWeight: '900' },
   panel: { backgroundColor: '#1E1222', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', padding: 18, marginBottom: 14 },
