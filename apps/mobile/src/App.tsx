@@ -204,7 +204,8 @@ export default function App() {
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 32);
-  const bottomContentPadding = bottomInset + 72;
+  const footerHeight = 64 + bottomInset;
+  const bottomContentPadding = footerHeight + 18;
   const profiles = romchat.profiles as ProfileSeed[];
   const profile = profiles.length ? profiles[index % profiles.length]! : null;
   const firstUploadedImageUrl = resolveMediaUrl([...(session?.profile?.media || [])].sort((a, b) => (a.position || 0) - (b.position || 0)).find((item) => item.mediaType === 'image')?.url);
@@ -605,7 +606,7 @@ export default function App() {
         <StatusBar barStyle="light-content" backgroundColor="#120914" />
         <ScreenHeader title={screenTitles[activeSection]} onBack={() => setActiveSection(null)} apiOnline={romchat.apiOnline} />
         <ScrollView
-          contentContainerStyle={[styles.screenContent, { paddingBottom: bottomContentPadding + 68 }]}
+          contentContainerStyle={[styles.screenContent, { paddingBottom: bottomContentPadding }]}
           contentInsetAdjustmentBehavior="automatic"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -613,7 +614,7 @@ export default function App() {
         >
           {renderSection(activeSection)}
         </ScrollView>
-        <FooterNav active={activeSection} setActiveSection={setActiveSection} />
+        <FooterNav active={activeSection} setActiveSection={setActiveSection} bottomInset={bottomInset} />
       </SafeAreaView>
     );
   }
@@ -622,7 +623,7 @@ export default function App() {
     <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#120914" />
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: bottomContentPadding + 68 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomContentPadding }]}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -670,7 +671,7 @@ export default function App() {
           <EmptyDiscovery openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
         )}
       </ScrollView>
-      <FooterNav active="swipe" setActiveSection={setActiveSection} />
+      <FooterNav active="swipe" setActiveSection={setActiveSection} bottomInset={bottomInset} />
     </SafeAreaView>
   );
 }
@@ -1089,7 +1090,7 @@ function ShortcutRail({ setActiveSection }: { setActiveSection: (section: Sectio
   );
 }
 
-function FooterNav({ active, setActiveSection }: { active: Section | 'swipe'; setActiveSection: (section: Section | null) => void }) {
+function FooterNav({ active, setActiveSection, bottomInset }: { active: Section | 'swipe'; setActiveSection: (section: Section | null) => void; bottomInset: number }) {
   const items: Array<{ key: Section | 'swipe'; label: string; icon: string; target: Section | null; badge?: string }> = [
     { key: 'swipe', label: 'Swipe', icon: 'flame', target: null },
     { key: 'explore', label: 'Explore', icon: 'compass', target: 'explore' },
@@ -1098,7 +1099,7 @@ function FooterNav({ active, setActiveSection }: { active: Section | 'swipe'; se
     { key: 'profile', label: 'Profile', icon: 'person-outline', target: 'profile' },
   ];
   return (
-    <View style={styles.footerNav}>
+    <View style={[styles.footerNav, { paddingBottom: Math.max(bottomInset, 12), minHeight: 64 + Math.max(bottomInset, 12) }]}>
       {items.map((item) => {
         const selected = active === item.key;
         return (
@@ -1594,7 +1595,7 @@ const styles = StyleSheet.create({
   emptyDiscoveryText: { color: 'rgba(255,255,255,0.7)', fontWeight: '800', textAlign: 'center', lineHeight: 22, marginTop: 8 },
   emptyDiscoveryButton: { backgroundColor: '#FF1493', borderRadius: 999, paddingHorizontal: 18, paddingVertical: 13, marginTop: 18 },
   emptyDiscoveryButtonText: { color: '#FFFFFF', fontWeight: '900' },
-  footerNav: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 68, paddingTop: 8, paddingBottom: 8, paddingHorizontal: 14, backgroundColor: '#080608', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  footerNav: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 8, paddingHorizontal: 14, backgroundColor: '#080608', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   footerItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
   footerLabel: { color: 'rgba(255,255,255,0.62)', fontSize: 10, fontWeight: '800' },
   footerLabelActive: { color: '#FFFFFF', fontWeight: '900' },
