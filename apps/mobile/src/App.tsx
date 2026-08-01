@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
@@ -202,10 +203,12 @@ export default function App() {
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
   const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 32);
   const footerHeight = 64 + bottomInset;
   const bottomContentPadding = footerHeight + 18;
+  const swipeCardHeight = Math.max(500, windowHeight - insets.top - footerHeight - 92);
   const profiles = romchat.profiles as ProfileSeed[];
   const profile = profiles.length ? profiles[index % profiles.length]! : null;
   const firstUploadedImageUrl = resolveMediaUrl([...(session?.profile?.media || [])].sort((a, b) => (a.position || 0) - (b.position || 0)).find((item) => item.mediaType === 'image')?.url);
@@ -628,6 +631,9 @@ export default function App() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void pullToRefresh()} tintColor="#FF1493" colors={['#FF1493', '#FFD700']} progressBackgroundColor="#1E1222" />}
+        scrollEnabled={false}
+        bounces={false}
+        overScrollMode="never"
       >
         <View style={styles.topBar}>
           <TouchableOpacity onPress={() => setActiveSection('profile')} style={styles.brandRow}>
@@ -665,6 +671,7 @@ export default function App() {
                 setActiveSection('chat');
               }}
               profiles={profiles}
+              cardHeight={swipeCardHeight}
             />
           </>
         ) : (
@@ -963,6 +970,7 @@ function Discover({
   dismissMatch,
   openChat,
   profiles,
+  cardHeight,
 }: {
   profile: ProfileSeed;
   passProfile: () => void;
@@ -974,6 +982,7 @@ function Discover({
   dismissMatch: () => void;
   openChat: () => void;
   profiles: ProfileSeed[];
+  cardHeight: number;
 }) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [galleryNotice, setGalleryNotice] = useState('');
@@ -1008,7 +1017,7 @@ function Discover({
   return (
     <View style={styles.discovery}>
       <View style={styles.deckShadow} {...swipeHandlers}>
-        <ImageBackground source={photoSlots[photoIndex]} resizeMode="cover" style={styles.profileCard} imageStyle={styles.profilePhoto}>
+        <ImageBackground source={photoSlots[photoIndex]} resizeMode="cover" style={[styles.profileCard, { height: cardHeight, minHeight: cardHeight }]} imageStyle={styles.profilePhoto}>
           <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(18,9,20,0.2)', 'rgba(18,9,20,0.95)']} style={styles.photoOverlay} />
           <View style={styles.photoDots}>
             {photoSlots.map((_, itemIndex) => (
@@ -1535,7 +1544,7 @@ const styles = StyleSheet.create({
   safePillText: { color: '#FFD700', fontWeight: '900' },
   discovery: { marginBottom: 4 },
   deckShadow: { borderRadius: 26, marginBottom: 10, shadowColor: '#FF1493', shadowOpacity: 0.34, shadowRadius: 20, shadowOffset: { width: 0, height: 12 }, elevation: 10 },
-  profileCard: { minHeight: 642, aspectRatio: 9 / 16, width: '100%', borderRadius: 28, overflow: 'hidden', justifyContent: 'flex-end', backgroundColor: '#1E1222' },
+  profileCard: { width: '100%', borderRadius: 28, overflow: 'hidden', justifyContent: 'flex-end', backgroundColor: '#1E1222' },
   profilePhoto: { borderRadius: 28 },
   photoOverlay: { ...StyleSheet.absoluteFillObject },
   tapZones: { ...StyleSheet.absoluteFillObject, flexDirection: 'row' },
