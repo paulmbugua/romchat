@@ -524,6 +524,25 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
 
+  async function saveProfileDetails(payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) {
+    if (!session?.token || !session.profile) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const response = await romchatAccountApi.saveProfile(session.token, {
+        ...payload,
+        age: session.profile.age,
+        promptAnswers: session.profile.promptAnswers,
+        maxDistanceKm: session.profile.maxDistanceKm,
+        mapDiscoveryEnabled: session.profile.mapDiscoveryEnabled,
+      });
+      const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
+      await persistSession(next);
+      await romchat.refresh();
+    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to save profile details.'); }
+    finally { setAuthBusy(false); }
+  }
+
   async function saveProfilePrompts(promptAnswers: RomChatPromptAnswer[]) {
     if (!session?.token || !session.profile) return;
     setAuthBusy(true);
@@ -618,7 +637,7 @@ export default function App() {
         />
       );
     }
-    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} />;
   }
 
   if (!authBooted) {
@@ -1442,14 +1461,41 @@ function resolveMediaUrl(url?: string) {
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSavePrompts, onSaveDiscoverySettings, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
+function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
   const photoMedia = [...(profile?.media || [])].filter((item) => item.mediaType === 'image').sort((a, b) => (a.position || 0) - (b.position || 0));
   const promptSeed = profilePromptTemplates.map((prompt, index) => ({ prompt, answer: profile?.promptAnswers?.[index]?.answer || '' }));
+  const [displayName, setDisplayName] = useState(profile?.displayName || account?.name || '');
+  const [gender, setGender] = useState(profile?.gender || 'female');
+  const [city, setCity] = useState(profile?.city || '');
+  const [intent, setIntent] = useState(profile?.intent || 'Serious relationship');
+  const [bio, setBio] = useState(profile?.bio || '');
+  const [selectedInterests, setSelectedInterests] = useState<string[]>(profile?.interests?.length ? profile.interests : []);
+  const [detailsNotice, setDetailsNotice] = useState('');
   const [promptAnswers, setPromptAnswers] = useState<RomChatPromptAnswer[]>(promptSeed);
   useEffect(() => { setPromptAnswers(promptSeed); }, [profile?.memberId, profile?.promptAnswers?.length]);
+  useEffect(() => {
+    setDisplayName(profile?.displayName || account?.name || '');
+    setGender(profile?.gender || 'female');
+    setCity(profile?.city || '');
+    setIntent(profile?.intent || 'Serious relationship');
+    setBio(profile?.bio || '');
+    setSelectedInterests(profile?.interests?.length ? profile.interests : []);
+    setDetailsNotice('');
+  }, [account?.name, profile?.memberId]);
+  const toggleEditableInterest = (interest: string) => setSelectedInterests((current) => current.includes(interest) ? current.filter((item) => item !== interest) : [...current, interest]);
+  function saveEditableDetails() {
+    if (!displayName.trim()) return setDetailsNotice('Add a display name.');
+    if (!gender.trim()) return setDetailsNotice('Choose your gender.');
+    if (!city.trim()) return setDetailsNotice('Add your city.');
+    if (!intent.trim()) return setDetailsNotice('Choose your dating intention.');
+    if (!selectedInterests.length) return setDetailsNotice('Pick at least one interest.');
+    if (!bio.trim()) return setDetailsNotice('Write a short bio.');
+    setDetailsNotice('');
+    void onSaveDetails({ displayName, gender, city, intent, bio, interests: selectedInterests });
+  }
   const [distanceKm, setDistanceKm] = useState(profile?.maxDistanceKm || 80);
   const [mapEnabled, setMapEnabled] = useState(profile?.mapDiscoveryEnabled !== false);
   useEffect(() => {
@@ -1472,6 +1518,29 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
         <Text style={styles.caption}>{profile?.city ? `${profile.city} - ${profile.intent || 'Intentional connection'}` : status}</Text>
         <Text style={styles.profileStrength}>{computedStrength}% complete</Text>
         <View style={styles.progress}><View style={[styles.progressFill, { width: `${computedStrength}%` }]} /></View>
+        <View style={styles.editProfilePanel}>
+          <View style={styles.editProfileHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.distanceTitle}>Profile details</Text>
+              <Text style={styles.distanceMeta}>Age is locked after creation. Everything else stays editable.</Text>
+            </View>
+            <View style={styles.ageLockPill}><Icon name="lock-closed" size={14} color="#120914" /><Text style={styles.ageLockText}>{profile?.age || '--'}</Text></View>
+          </View>
+          <TextInput value={displayName} onChangeText={setDisplayName} placeholder="Display name" placeholderTextColor="rgba(255,255,255,0.42)" style={styles.authInput} />
+          <View style={styles.lockedAgeRow}>
+            <View><Text style={styles.lockedAgeLabel}>Age</Text><Text style={styles.lockedAgeValue}>{profile?.age || '--'} years</Text></View>
+            <Text style={styles.lockedAgeBadge}>Locked</Text>
+          </View>
+          <View style={styles.genderRow}>{['female', 'male', 'nonbinary'].map((item) => <TouchableOpacity key={item} disabled={busy} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
+          <TextInput value={city} onChangeText={setCity} placeholder="City" placeholderTextColor="rgba(255,255,255,0.42)" style={styles.authInput} />
+          <Text style={styles.selectorTitle}>Dating intention in Kenya</Text>
+          <View style={styles.choiceWrap}>{datingIntentions.map((item) => <TouchableOpacity key={item} disabled={busy} onPress={() => setIntent(item)} style={[styles.choiceChip, intent === item && styles.choiceChipActive]}><Text style={[styles.choiceText, intent === item && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>)}</View>
+          <Text style={styles.selectorTitle}>Interests and vibe signals</Text>
+          <View style={styles.choiceWrap}>{datingInterests.map((item) => { const active = selectedInterests.includes(item); return <TouchableOpacity key={item} disabled={busy} onPress={() => toggleEditableInterest(item)} style={[styles.choiceChip, active && styles.choiceChipActive]}><Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>; })}</View>
+          <TextInput value={bio} onChangeText={setBio} placeholder="Short Kenyan romance bio" placeholderTextColor="rgba(255,255,255,0.42)" style={[styles.authInput, styles.authTextArea]} multiline />
+          {!!detailsNotice && <Text style={styles.validationNudge}>{detailsNotice}</Text>}
+          <TouchableOpacity disabled={busy} onPress={saveEditableDetails} style={styles.distanceSaveButton}><Text style={styles.distanceSaveText}>Save profile details</Text></TouchableOpacity>
+        </View>
         <View style={styles.distancePanel}>
           <View style={styles.distanceHeader}>
             <View style={{ flex: 1 }}>
@@ -1503,8 +1572,8 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
       </View>
       <View style={styles.panel}>
         <Text style={styles.kicker}>Bio assistant</Text>
-        <Text style={styles.insight}>{profile?.bio || 'One-tap Kenyan bio: I am looking for something warm, honest, and intentional around real dates.'}</Text>
-        <Text style={styles.insight}>{profile?.interests?.length ? `Vibe signals: ${profile.interests.join(', ')}` : 'Best dates: Karura walks, Java chats, lakefront sunsets, and food worth remembering.'}</Text>
+        <Text style={styles.insight}>{bio || profile?.bio || 'One-tap Kenyan bio: I am looking for something warm, honest, and intentional around real dates.'}</Text>
+        <Text style={styles.insight}>{selectedInterests.length ? `Vibe signals: ${selectedInterests.join(', ')}` : 'Best dates: Karura walks, Java chats, lakefront sunsets, and food worth remembering.'}</Text>
         <Text style={styles.kicker}>Dating prompts</Text>
         {promptAnswers.map((item, index) => <View key={item.prompt} style={styles.promptEditor}><Text style={styles.promptEditorLabel}>{item.prompt}</Text><TextInput value={item.answer} onChangeText={(answer) => setPromptAnswers((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, answer } : row))} placeholder="Write a charming answer" placeholderTextColor="rgba(255,255,255,0.42)" style={styles.promptEditorInput} multiline /></View>)}
         <TouchableOpacity disabled={busy} onPress={() => void onSavePrompts(promptAnswers)} style={styles.boostButton}><Text style={styles.boostText}>Save 7 profile prompts</Text></TouchableOpacity>
@@ -1775,6 +1844,14 @@ const styles = StyleSheet.create({
   progress: { height: 9, backgroundColor: '#2A1A30', borderRadius: 999, overflow: 'hidden', marginVertical: 12 },
   progressFill: { height: 9, backgroundColor: '#FF1493' },
   profileStrength: { color: '#FFD700', fontWeight: '900', fontSize: 18 },
+  editProfilePanel: { backgroundColor: '#241528', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', padding: 14, marginTop: 12, marginBottom: 12 },
+  editProfileHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+  ageLockPill: { minWidth: 54, height: 38, borderRadius: 999, backgroundColor: '#FFD700', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10 },
+  ageLockText: { color: '#120914', fontWeight: '900' },
+  lockedAgeRow: { minHeight: 54, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,215,0,0.26)', paddingHorizontal: 14, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  lockedAgeLabel: { color: 'rgba(255,255,255,0.58)', fontWeight: '900', fontSize: 11, textTransform: 'uppercase' },
+  lockedAgeValue: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginTop: 2 },
+  lockedAgeBadge: { color: '#120914', backgroundColor: '#FFD700', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, fontWeight: '900', fontSize: 11 },
   distancePanel: { backgroundColor: '#2A1A30', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', padding: 14, marginTop: 12, marginBottom: 12 },
   distanceHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
   distanceTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },

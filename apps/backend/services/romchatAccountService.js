@@ -532,8 +532,11 @@ export async function getAuthState(req) {
 
 export async function upsertMemberProfile(memberId, payload = {}) {
   await ensureAccountSchema();
+  const existingProfileRows = await queryWithRetry('SELECT age FROM romchat_member_profiles WHERE member_id = $1', [memberId]);
+  const existingAge = Number(existingProfileRows.rows[0]?.age || 0);
   const displayName = String(payload.displayName || payload.name || '').trim().slice(0, 80);
-  const age = Number(payload.age || 0);
+  const requestedAge = Number(payload.age || 0);
+  const age = existingAge >= 18 ? existingAge : requestedAge;
   const gender = String(payload.gender || '').trim().toLowerCase();
   const city = String(payload.city || '').trim().slice(0, 80);
   if (!displayName || age < 18 || !gender || !city) {
@@ -557,7 +560,7 @@ export async function upsertMemberProfile(memberId, payload = {}) {
   await queryWithRetry(
     `INSERT INTO romchat_member_profiles (member_id, display_name, age, gender, city, intent, bio, interests, prompt_answers, profile_strength, latitude, longitude, max_distance_km, map_discovery_enabled)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::jsonb, '[]'::jsonb),$10,$11,$12,$13,$14)
-     ON CONFLICT (member_id) DO UPDATE SET display_name = EXCLUDED.display_name, age = EXCLUDED.age, gender = EXCLUDED.gender, city = EXCLUDED.city, intent = EXCLUDED.intent, bio = EXCLUDED.bio, interests = EXCLUDED.interests, prompt_answers = COALESCE($9::jsonb, romchat_member_profiles.prompt_answers), profile_strength = EXCLUDED.profile_strength, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, max_distance_km = EXCLUDED.max_distance_km, map_discovery_enabled = EXCLUDED.map_discovery_enabled, updated_at = now()`,
+     ON CONFLICT (member_id) DO UPDATE SET display_name = EXCLUDED.display_name, age = romchat_member_profiles.age, gender = EXCLUDED.gender, city = EXCLUDED.city, intent = EXCLUDED.intent, bio = EXCLUDED.bio, interests = EXCLUDED.interests, prompt_answers = COALESCE($9::jsonb, romchat_member_profiles.prompt_answers), profile_strength = EXCLUDED.profile_strength, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, max_distance_km = EXCLUDED.max_distance_km, map_discovery_enabled = EXCLUDED.map_discovery_enabled, updated_at = now()`,
     [memberId, displayName, age, gender, city, intent, bio, interests, promptAnswers ? JSON.stringify(promptAnswers) : null, strength, latitude, longitude, maxDistanceKm, mapDiscoveryEnabled]
   );
   return getMemberProfile(memberId);
