@@ -1533,13 +1533,7 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
           </View>
           <View style={styles.genderRow}>{['female', 'male', 'nonbinary'].map((item) => <TouchableOpacity key={item} disabled={busy} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
           <TextInput value={city} onChangeText={setCity} placeholder="City" placeholderTextColor="rgba(255,255,255,0.42)" style={styles.authInput} />
-          <Text style={styles.selectorTitle}>Dating intention in Kenya</Text>
-          <View style={styles.choiceWrap}>{datingIntentions.map((item) => <TouchableOpacity key={item} disabled={busy} onPress={() => setIntent(item)} style={[styles.choiceChip, intent === item && styles.choiceChipActive]}><Text style={[styles.choiceText, intent === item && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>)}</View>
-          <Text style={styles.selectorTitle}>Interests and vibe signals</Text>
-          <View style={styles.choiceWrap}>{datingInterests.map((item) => { const active = selectedInterests.includes(item); return <TouchableOpacity key={item} disabled={busy} onPress={() => toggleEditableInterest(item)} style={[styles.choiceChip, active && styles.choiceChipActive]}><Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>; })}</View>
           <TextInput value={bio} onChangeText={setBio} placeholder="Short Kenyan romance bio" placeholderTextColor="rgba(255,255,255,0.42)" style={[styles.authInput, styles.authTextArea]} multiline />
-          {!!detailsNotice && <Text style={styles.validationNudge}>{detailsNotice}</Text>}
-          <TouchableOpacity disabled={busy} onPress={saveEditableDetails} style={styles.distanceSaveButton}><Text style={styles.distanceSaveText}>Save profile details</Text></TouchableOpacity>
         </View>
         <View style={styles.distancePanel}>
           <View style={styles.distanceHeader}>
@@ -1574,6 +1568,12 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
         <Text style={styles.kicker}>Bio assistant</Text>
         <Text style={styles.insight}>{bio || profile?.bio || 'One-tap Kenyan bio: I am looking for something warm, honest, and intentional around real dates.'}</Text>
         <Text style={styles.insight}>{selectedInterests.length ? `Vibe signals: ${selectedInterests.join(', ')}` : 'Best dates: Karura walks, Java chats, lakefront sunsets, and food worth remembering.'}</Text>
+        <Text style={styles.selectorTitle}>Dating intention in Kenya</Text>
+        <View style={styles.choiceWrap}>{datingIntentions.map((item) => <TouchableOpacity key={item} disabled={busy} onPress={() => setIntent(item)} style={[styles.choiceChip, intent === item && styles.choiceChipActive]}><Text style={[styles.choiceText, intent === item && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>)}</View>
+        <Text style={styles.selectorTitle}>Interests and vibe signals</Text>
+        <View style={styles.choiceWrap}>{datingInterests.map((item) => { const active = selectedInterests.includes(item); return <TouchableOpacity key={item} disabled={busy} onPress={() => toggleEditableInterest(item)} style={[styles.choiceChip, active && styles.choiceChipActive]}><Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>; })}</View>
+        {!!detailsNotice && <Text style={styles.validationNudge}>{detailsNotice}</Text>}
+        <TouchableOpacity disabled={busy} onPress={saveEditableDetails} style={styles.distanceSaveButton}><Text style={styles.distanceSaveText}>Save profile details</Text></TouchableOpacity>
         <Text style={styles.kicker}>Dating prompts</Text>
         {promptAnswers.map((item, index) => <View key={item.prompt} style={styles.promptEditor}><Text style={styles.promptEditorLabel}>{item.prompt}</Text><TextInput value={item.answer} onChangeText={(answer) => setPromptAnswers((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, answer } : row))} placeholder="Write a charming answer" placeholderTextColor="rgba(255,255,255,0.42)" style={styles.promptEditorInput} multiline /></View>)}
         <TouchableOpacity disabled={busy} onPress={() => void onSavePrompts(promptAnswers)} style={styles.boostButton}><Text style={styles.boostText}>Save 7 profile prompts</Text></TouchableOpacity>
