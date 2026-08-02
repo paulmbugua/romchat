@@ -62,6 +62,8 @@ type ProfileSeed = {
   poll: { question: string; yes: number; no: number };
   color: string;
   photo: ImageSourcePropType;
+  online?: boolean;
+  verified?: boolean;
 };
 
 const localProfiles: ProfileSeed[] = [
@@ -171,7 +173,7 @@ const tokenCatalog = [
   ['Undo previous swipe', String(UNDO_SWIPE_COST)],
 ];
 
-const starterMessages = [
+const starterMessages: Array<[string, string, string]> = [
   ['Aisha', 'Your answer about building a life with room for quiet days was rare.', 'Seen 8:41 PM'],
   ['You', 'The best connection feels calm before it feels exciting.', 'Read'],
   ['Aisha', 'That deserves a golden-hour walk. Saturday?', 'Typing now'],
@@ -602,6 +604,7 @@ export default function App() {
     if (section === 'chat') {
       return (
         <Chat
+          profiles={profiles}
           readReceipts={readReceipts}
           setReadReceipts={setReadReceipts}
           messageMode={messageMode}
@@ -1248,7 +1251,8 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, sendMessage, sendGift, unlockMessage, unlockVideoRequest, paidMessages, videoRequests, status }: {
+function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, sendMessage, sendGift, unlockMessage, unlockVideoRequest, paidMessages, videoRequests, status }: {
+  profiles: ProfileSeed[];
   readReceipts: boolean;
   setReadReceipts: (value: boolean) => void;
   messageMode: MessageMode;
@@ -1263,42 +1267,35 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
   videoRequests: Array<{ id: string; title: string; teaser: string; unlockCostTokens: number; status: string }>;
   status: string;
 }) {
+  const matchPool = profiles.length ? profiles : localProfiles;
+  const onlineMatches = matchPool.filter((profile) => profile.online !== false);
+  const orderedMatches = [...onlineMatches, ...matchPool.filter((profile) => profile.online === false)];
   const [draft, setDraft] = useState('');
+  const [query, setQuery] = useState('');
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const selectedMatch = orderedMatches.find((profile) => profile.id === selectedMatchId) || null;
+  const visibleThreads = orderedMatches.filter((profile) => `${profile.name} ${profile.city} ${profile.intent} ${profile.tags.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
   const modeLabel = messageMode === 'standard' ? 'Standard' : messageMode === 'timed' ? 'Vanishes in 24h' : 'View once';
-  const promptChips = ['Ask about the gallery date', 'Send a rose', 'Suggest Saturday coffee'];
+  const promptChips = selectedMatch ? [`Ask ${selectedMatch.name} about ${selectedMatch.tags[0] || 'her vibe'}`, 'Send a rose', 'Suggest Saturday coffee'] : ['Open a match', 'Start soft', 'Keep it respectful'];
+  const activePhoto = selectedMatch?.photos?.[0] ? { uri: resolveMediaUrl(selectedMatch.photos[0]) } : selectedMatch?.photo || localProfiles[0]!.photo;
 
   function submit() {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || !selectedMatch) return;
     setDraft('');
     void sendMessage(text);
   }
 
-  return (
-    <View style={styles.chatScreen}>
-      <View style={styles.chatInboxStrip}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.kicker}>{status}</Text>
-          <Text style={styles.chatScreenTitle}>Matches ready to talk</Text>
-        </View>
-        <Text style={styles.chatTokenPill}>{tokens} tokens</Text>
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.newMatches}>
-        {localProfiles.map((profile) => (
-          <View key={profile.id} style={styles.matchAvatarWrap}>
-            <Image source={profile.photo} style={styles.matchAvatar} />
-            <Text style={styles.matchAvatarText}>{profile.name}</Text>
-          </View>
-        ))}
-      </ScrollView>
-
-      <View style={styles.conversationPanel}>
-        <View style={styles.chatHeader}>
+  if (selectedMatch) {
+    return (
+      <View style={styles.chatScreen}>
+        <View style={styles.threadTopBar}>
+          <TouchableOpacity onPress={() => setSelectedMatchId(null)} style={styles.chatBackButton}><Icon name="chevron-back" size={20} color="#FFFFFF" /></TouchableOpacity>
           <View style={styles.chatIdentity}>
-            <Image source={localProfiles[0]!.photo} style={styles.chatHeaderAvatar} />
+            <Image source={activePhoto} style={styles.chatHeaderAvatar} />
             <View>
-              <Text style={styles.chatName}>Aisha</Text>
-              <Text style={styles.chatStatus}>Online now - typing</Text>
+              <Text style={styles.chatName}>{selectedMatch.name}</Text>
+              <Text style={styles.chatStatus}>{selectedMatch.online === false ? 'Matched recently' : 'Online now - ready to talk'}</Text>
             </View>
           </View>
           <View style={styles.headerIcons}>
@@ -1306,62 +1303,113 @@ function Chat({ readReceipts, setReadReceipts, messageMode, setMessageMode, toke
             <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={19} color="#FFFFFF" /></TouchableOpacity>
           </View>
         </View>
-        <View style={styles.signalRow}>
-          <Text style={styles.signal}>Read {readReceipts ? 'on' : 'off'}</Text>
-          <Text style={styles.signal}>{modeLabel}</Text>
+
+        <View style={styles.conversationPanel}>
+          <View style={styles.signalRow}>
+            <Text style={styles.signal}>Read {readReceipts ? 'on' : 'off'}</Text>
+            <Text style={styles.signal}>{modeLabel}</Text>
+            <Text style={styles.signal}>{tokens} tokens</Text>
+          </View>
+          <Text style={styles.matchContext}>{selectedMatch.intent} - {selectedMatch.city}{typeof selectedMatch.distanceKm === 'number' && selectedMatch.distanceKm > 0 ? ` - ${selectedMatch.distanceKm} km` : ''}</Text>
+          {starterMessages.map(([from, text, messageStatus], index) => (
+            <View key={`${selectedMatch.id}_${text}`} style={[styles.bubble, from === 'You' ? styles.sent : styles.received]}>
+              <Text style={from === 'You' ? styles.sentText : styles.receivedText}>{index === 0 && from !== 'You' ? text.replace('Your answer', `${selectedMatch.name}'s answer`) : text}</Text>
+              <Text style={from === 'You' ? styles.sentMeta : styles.receivedMeta}>{messageStatus}</Text>
+            </View>
+          ))}
         </View>
-        {starterMessages.map(([from, text, messageStatus]) => (
-          <View key={text} style={[styles.bubble, from === 'You' ? styles.sent : styles.received]}>
-            <Text style={from === 'You' ? styles.sentText : styles.receivedText}>{text}</Text>
-            <Text style={from === 'You' ? styles.sentMeta : styles.receivedMeta}>{messageStatus}</Text>
+
+        {videoRequests.map((request) => (
+          <View key={request.id} style={styles.videoInvite}>
+            <Text style={styles.videoTitle}>{request.title}</Text>
+            <Text style={styles.videoTeaser}>{request.status === 'unlocked' ? 'Video room unlocked. Tap to join when ready.' : request.teaser}</Text>
+            <TouchableOpacity onPress={() => { if (request.status !== 'unlocked') { setTokens((value) => Math.max(0, value - request.unlockCostTokens)); void unlockVideoRequest(request.id); } }} style={[styles.unlockButton, request.status === 'unlocked' && styles.unlockButtonDone]}>
+              <Text style={styles.unlockButtonText}>{request.status === 'unlocked' ? 'Join video' : `Accept video request (${request.unlockCostTokens} tokens)`}</Text>
+            </TouchableOpacity>
           </View>
         ))}
-      </View>
-
-      {videoRequests.map((request) => (
-        <View key={request.id} style={styles.videoInvite}>
-          <Text style={styles.videoTitle}>{request.title}</Text>
-          <Text style={styles.videoTeaser}>{request.status === 'unlocked' ? 'Video room unlocked. Tap to join when ready.' : request.teaser}</Text>
-          <TouchableOpacity onPress={() => { if (request.status !== 'unlocked') { setTokens((value) => Math.max(0, value - request.unlockCostTokens)); void unlockVideoRequest(request.id); } }} style={[styles.unlockButton, request.status === 'unlocked' && styles.unlockButtonDone]}>
-            <Text style={styles.unlockButtonText}>{request.status === 'unlocked' ? 'Join video' : `Accept video request (${request.unlockCostTokens} tokens)`}</Text>
-          </TouchableOpacity>
-        </View>
-      ))}
-      {paidMessages.map((message) => (
-        <View key={message.id} style={styles.lockedReply}>
-          <View style={styles.lockedHeader}><Icon name="lock-closed" size={16} color="#FFD700" /><Text style={styles.lockedTitle}>Private media</Text></View>
-          <Text style={styles.blurredMask}>{message.locked && !message.unlockedByActor ? '#### ####### ##### ### ########' : message.text}</Text>
-          <Text style={styles.lockedText}>Unlock only this optional private media.</Text>
-          <TouchableOpacity onPress={() => { if (message.locked && !message.unlockedByActor) { setTokens((value) => Math.max(0, value - Number(message.unlockCostTokens || 10))); void unlockMessage(message.id); } }} style={[styles.unlockButton, message.unlockedByActor && styles.unlockButtonDone]}>
-            <Text style={styles.unlockButtonText}>{message.unlockedByActor ? 'Media unlocked' : `Unlock media (${message.unlockCostTokens || 10} tokens)`}</Text>
-          </TouchableOpacity>
-        </View>
-      ))}
-
-      <View style={styles.chatTools}>
-        <View style={styles.promptRow}>
-          {promptChips.map((prompt) => <Text key={prompt} style={styles.promptChip}>{prompt}</Text>)}
-        </View>
-        <View style={styles.segment}>
-          {(['standard', 'timed', 'viewOnce'] as MessageMode[]).map((mode) => (
-            <TouchableOpacity key={mode} onPress={() => setMessageMode(mode)} style={[styles.segmentItem, messageMode === mode && styles.segmentActive]}>
-              <Text style={[styles.segmentText, messageMode === mode && styles.segmentTextActive]}>{mode === 'viewOnce' ? 'Once' : mode}</Text>
+        {paidMessages.map((message) => (
+          <View key={message.id} style={styles.lockedReply}>
+            <View style={styles.lockedHeader}><Icon name="lock-closed" size={16} color="#FFD700" /><Text style={styles.lockedTitle}>Private media</Text></View>
+            <Text style={styles.blurredMask}>{message.locked && !message.unlockedByActor ? '#### ####### ##### ### ########' : message.text}</Text>
+            <Text style={styles.lockedText}>Unlock only this optional private media.</Text>
+            <TouchableOpacity onPress={() => { if (message.locked && !message.unlockedByActor) { setTokens((value) => Math.max(0, value - Number(message.unlockCostTokens || 10))); void unlockMessage(message.id); } }} style={[styles.unlockButton, message.unlockedByActor && styles.unlockButtonDone]}>
+              <Text style={styles.unlockButtonText}>{message.unlockedByActor ? 'Media unlocked' : `Unlock media (${message.unlockCostTokens || 10} tokens)`}</Text>
             </TouchableOpacity>
-          ))}
+          </View>
+        ))}
+
+        <View style={styles.chatTools}>
+          <View style={styles.promptRow}>
+            {promptChips.map((prompt) => <TouchableOpacity key={prompt} onPress={() => prompt === 'Send a rose' ? (setTokens((value) => Math.max(0, value - 5)), void sendGift('rose')) : setDraft(prompt)}><Text style={styles.promptChip}>{prompt}</Text></TouchableOpacity>)}
+          </View>
+          <View style={styles.segment}>
+            {(['standard', 'timed', 'viewOnce'] as MessageMode[]).map((mode) => (
+              <TouchableOpacity key={mode} onPress={() => setMessageMode(mode)} style={[styles.segmentItem, messageMode === mode && styles.segmentActive]}>
+                <Text style={[styles.segmentText, messageMode === mode && styles.segmentTextActive]}>{mode === 'viewOnce' ? 'Once' : mode}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <ToggleRow title="Read receipt add-on" value={readReceipts} onPress={() => setReadReceipts(!readReceipts)} />
         </View>
-        <ToggleRow title="Read receipt add-on" value={readReceipts} onPress={() => setReadReceipts(!readReceipts)} />
-        <View style={styles.giftRow}>
-          {gifts.map((gift) => (
-            <TouchableOpacity key={gift.id} onPress={() => { setTokens((value) => Math.max(0, value - gift.tokens)); void sendGift(gift.id); }} style={styles.giftButton}>
-              <Text style={styles.giftName}>{gift.name}</Text>
-              <Text style={styles.giftMeta}>{gift.tokens} tokens</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.composer}>
+          <TextInput value={draft} onChangeText={setDraft} placeholder={`Message ${selectedMatch.name}`} style={styles.input} placeholderTextColor="#a45a72" />
+          <TouchableOpacity onPress={submit} style={styles.send}><Icon name="send" size={18} color="#FFFFFF" /></TouchableOpacity>
         </View>
       </View>
-      <View style={styles.composer}>
-        <TextInput value={draft} onChangeText={setDraft} placeholder="Send a charming message" style={styles.input} placeholderTextColor="#a45a72" />
-        <TouchableOpacity onPress={submit} style={styles.send}><Icon name="send" size={18} color="#FFFFFF" /></TouchableOpacity>
+    );
+  }
+
+  return (
+    <View style={styles.chatScreen}>
+      <View style={styles.chatInboxHeader}>
+        <View>
+          <Text style={styles.chatHeroTitle}>Chat</Text>
+          <Text style={styles.chatHeroMeta}>{onlineMatches.length} ready now - {orderedMatches.length} matches</Text>
+        </View>
+        <View style={styles.headerIcons}>
+          <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={20} color="#FFFFFF" /></TouchableOpacity>
+          <TouchableOpacity style={styles.chatIconButton}><Icon name="chatbubbles-outline" size={20} color="#FF1493" /></TouchableOpacity>
+        </View>
+      </View>
+      <View style={styles.searchBox}>
+        <Icon name="search" size={20} color="rgba(255,255,255,0.62)" />
+        <TextInput value={query} onChangeText={setQuery} placeholder={`Search ${orderedMatches.length} Matches`} placeholderTextColor="rgba(255,255,255,0.58)" style={styles.searchInput} />
+      </View>
+      <Text style={styles.chatSectionTitle}>New Matches</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.readyMatchesRail}>
+        {onlineMatches.map((profile) => {
+          const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
+          return (
+            <TouchableOpacity key={profile.id} onPress={() => setSelectedMatchId(profile.id)} style={styles.readyMatchCard}>
+              <Image source={photo} style={styles.readyMatchPhoto} />
+              <View style={styles.onlineDot} />
+              <Text numberOfLines={1} style={styles.readyMatchName}>{profile.name}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+      <View style={styles.messagesPanel}>
+        <Text style={styles.messagesTitle}>Messages</Text>
+        {visibleThreads.map((profile, index) => {
+          const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
+          const preview = index % 3 === 0 ? 'Hello there' : index % 3 === 1 ? profile.prompt : 'Good morning love';
+          const yourTurn = index % 2 === 0;
+          return (
+            <TouchableOpacity key={profile.id} onPress={() => setSelectedMatchId(profile.id)} style={styles.threadRow}>
+              <View>
+                <Image source={photo} style={styles.threadAvatar} />
+                {profile.online !== false && <View style={styles.threadOnlineDot} />}
+              </View>
+              <View style={styles.threadCopy}>
+                <Text numberOfLines={1} style={styles.threadName}>{profile.name}{profile.verified ? ' verified' : ''}</Text>
+                <Text numberOfLines={1} style={styles.threadPreview}>{preview}</Text>
+              </View>
+              {yourTurn ? <Text style={styles.yourTurnPill}>Your Turn</Text> : <Icon name="heart" size={21} color="#FFD700" />}
+            </TouchableOpacity>
+          );
+        })}
+        {!visibleThreads.length && <Text style={styles.emptyThreadText}>No matched conversations found. New matches will appear here when they are ready to talk.</Text>}
       </View>
     </View>
   );
@@ -1746,6 +1794,30 @@ const styles = StyleSheet.create({
   nudgeTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginTop: 3 },
   nudgeAction: { color: '#FFD700', fontWeight: '900' },
   panel: { backgroundColor: '#1E1222', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', padding: 18, marginBottom: 14 },
+  chatInboxHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, marginBottom: 18 },
+  chatHeroTitle: { color: '#FFFFFF', fontSize: 36, fontWeight: '900' },
+  chatHeroMeta: { color: 'rgba(255,255,255,0.58)', fontWeight: '900', marginTop: 3 },
+  searchBox: { minHeight: 52, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.12)', flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 22 },
+  searchInput: { flex: 1, minHeight: 48, color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
+  chatSectionTitle: { color: '#FFFFFF', fontSize: 21, fontWeight: '900', marginBottom: 12 },
+  readyMatchesRail: { gap: 16, paddingRight: 12, paddingBottom: 18 },
+  readyMatchCard: { width: 86, alignItems: 'center' },
+  readyMatchPhoto: { width: 84, height: 104, borderRadius: 18, backgroundColor: '#1E1222' },
+  onlineDot: { position: 'absolute', top: 4, right: 2, width: 16, height: 16, borderRadius: 8, backgroundColor: '#16A34A', borderWidth: 3, borderColor: '#120914' },
+  readyMatchName: { color: '#FFFFFF', fontWeight: '900', marginTop: 7, maxWidth: 86, textAlign: 'center' },
+  messagesPanel: { backgroundColor: '#111011', borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  messagesTitle: { color: '#FFFFFF', fontSize: 21, fontWeight: '900', marginBottom: 8 },
+  threadRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  threadAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#241528' },
+  threadOnlineDot: { position: 'absolute', right: 1, bottom: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: '#16A34A', borderWidth: 2, borderColor: '#111011' },
+  threadCopy: { flex: 1, minWidth: 0 },
+  threadName: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
+  threadPreview: { color: 'rgba(255,255,255,0.62)', fontSize: 15, fontWeight: '800', marginTop: 4 },
+  yourTurnPill: { color: '#120914', backgroundColor: '#FFFFFF', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 7, fontWeight: '900', fontSize: 12 },
+  emptyThreadText: { color: 'rgba(255,255,255,0.62)', fontWeight: '800', lineHeight: 21, paddingVertical: 18, textAlign: 'center' },
+  threadTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14 },
+  chatBackButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#1E1222', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,20,147,0.20)' },
+  matchContext: { color: '#FFD700', fontWeight: '900', marginBottom: 10, lineHeight: 18 },
   chatScreen: { backgroundColor: '#120914', paddingBottom: 24 },
   chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   chatIdentity: { flexDirection: 'row', alignItems: 'center', gap: 12 },
