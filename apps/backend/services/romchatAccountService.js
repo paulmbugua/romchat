@@ -58,11 +58,17 @@ CREATE TABLE IF NOT EXISTS romchat_member_profiles (
   selfie_media_url TEXT,
   selfie_verified BOOLEAN NOT NULL DEFAULT false,
   verification_status TEXT NOT NULL DEFAULT 'not_started',
+  verification_method TEXT,
+  verification_provider TEXT,
+  verification_score NUMERIC(5,2),
+  verification_events JSONB NOT NULL DEFAULT '[]'::jsonb,
+  verified_at TIMESTAMPTZ,
   profile_strength INTEGER NOT NULL DEFAULT 25,
   latitude NUMERIC(9,6),
   longitude NUMERIC(9,6),
   max_distance_km INTEGER NOT NULL DEFAULT 80,
   map_discovery_enabled BOOLEAN NOT NULL DEFAULT true,
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -88,10 +94,16 @@ ALTER TABLE romchat_member_profiles
   ADD COLUMN IF NOT EXISTS selfie_media_url TEXT,
   ADD COLUMN IF NOT EXISTS selfie_verified BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'not_started',
+  ADD COLUMN IF NOT EXISTS verification_method TEXT,
+  ADD COLUMN IF NOT EXISTS verification_provider TEXT,
+  ADD COLUMN IF NOT EXISTS verification_score NUMERIC(5,2),
+  ADD COLUMN IF NOT EXISTS verification_events JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS latitude NUMERIC(9,6),
   ADD COLUMN IF NOT EXISTS longitude NUMERIC(9,6),
   ADD COLUMN IF NOT EXISTS max_distance_km INTEGER NOT NULL DEFAULT 80,
-  ADD COLUMN IF NOT EXISTS map_discovery_enabled BOOLEAN NOT NULL DEFAULT true;
+  ADD COLUMN IF NOT EXISTS map_discovery_enabled BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
 ALTER TABLE romchat_profile_media DROP CONSTRAINT IF EXISTS romchat_profile_media_media_type_check;
 ALTER TABLE romchat_profile_media ADD CONSTRAINT romchat_profile_media_media_type_check CHECK (media_type IN ('image','video','voice','selfie'));
@@ -216,6 +228,11 @@ function profileFromRow(row, media = []) {
     selfieMediaUrl: row.selfie_media_url || media.find((item) => item.mediaType === 'selfie')?.url || '',
     selfieVerified: Boolean(row.selfie_verified),
     verificationStatus: row.verification_status || 'not_started',
+    verificationMethod: row.verification_method || '',
+    verificationProvider: row.verification_provider || '',
+    verificationScore: row.verification_score == null ? null : Number(row.verification_score),
+    verificationEvents: Array.isArray(row.verification_events) ? row.verification_events : [],
+    verifiedAt: row.verified_at || null,
     profileStrength: Number(row.profile_strength || 0),
     media,
     imageCount: media.filter((item) => item.mediaType === 'image').length,
@@ -225,6 +242,7 @@ function profileFromRow(row, media = []) {
     longitude: row.longitude == null ? null : Number(row.longitude),
     maxDistanceKm: Number(row.max_distance_km || 80),
     mapDiscoveryEnabled: row.map_discovery_enabled !== false,
+    lastSeenAt: row.last_seen_at || null,
   };
 }
 
@@ -516,6 +534,9 @@ async function getUploadedImageCount(memberId) {
 
 export async function getAuthState(req) {
   const user = await requireRomchatAccount(req);
+  await queryWithRetry('UPDATE romchat_member_profiles SET last_seen_at = now(), updated_at = now() WHERE member_id = $1', [user.id]).catch((error) => {
+    console.warn('[romchat-presence] heartbeat skipped', { memberId: user.id, code: error.code || null, message: error.message });
+  });
   const profile = await getMemberProfile(user.id);
   const imageCount = profile?.imageCount ?? await getUploadedImageCount(user.id);
   return {
@@ -590,7 +611,7 @@ export async function uploadMemberMedia(memberId, payload = {}) {
     await queryWithRetry('UPDATE romchat_member_profiles SET voice_intro_url = $2, updated_at = now() WHERE member_id = $1', [memberId, insertedMedia.url]);
   }
   if (insertedMedia.mediaType === 'selfie') {
-    await queryWithRetry("UPDATE romchat_member_profiles SET selfie_media_url = $2, selfie_verified = true, verification_status = 'verified', updated_at = now() WHERE member_id = $1", [memberId, insertedMedia.url]);
+    await queryWithRetry("UPDATE romchat_member_profiles SET selfie_media_url = $2, selfie_verified = false, verification_status = 'reviewing', updated_at = now() WHERE member_id = $1", [memberId, insertedMedia.url]);
   }
   const profile = await getMemberProfile(memberId);
   return { media: insertedMedia, profile };
@@ -628,7 +649,8 @@ function buildFaceVerificationResult(mainPhoto, selfie) {
     status: 'verified',
     selfieVerified: true,
     confidence,
-    provider: 'romchat_auto_face_check',
+    method: 'main_photo_to_live_selfie_face_match',
+    provider: process.env.ROMCHAT_FACE_PROVIDER || 'romchat_auto_face_check',
     checks: {
       mainProfileFacePresent: true,
       liveSelfieFacePresent: true,
@@ -653,8 +675,18 @@ export async function verifyMemberSelfie(memberId, payload = {}) {
   const result = await uploadMemberMedia(memberId, { ...payload, mediaType: 'selfie', fileName: payload.fileName || 'selfie-verification.jpg' });
   const verification = buildFaceVerificationResult(mainPhoto, result.media);
   await queryWithRetry(
-    "UPDATE romchat_member_profiles SET selfie_media_url = $2, selfie_verified = $3, verification_status = $4, updated_at = now() WHERE member_id = $1",
-    [memberId, result.media.url, verification.selfieVerified, verification.status]
+    `UPDATE romchat_member_profiles
+     SET selfie_media_url = $2,
+         selfie_verified = $3,
+         verification_status = $4,
+         verification_method = $5,
+         verification_provider = $6,
+         verification_score = $7,
+         verification_events = COALESCE(verification_events, '[]'::jsonb) || jsonb_build_array($8::jsonb),
+         verified_at = CASE WHEN $3::boolean THEN now() ELSE verified_at END,
+         updated_at = now()
+     WHERE member_id = $1`,
+    [memberId, result.media.url, verification.selfieVerified, verification.status, verification.method, verification.provider, verification.confidence, JSON.stringify(verification)]
   );
   const profile = await getMemberProfile(memberId);
   return { ...result, profile, verification };

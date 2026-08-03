@@ -611,11 +611,10 @@ export default function App() {
           setMessageMode={setMessageMode}
           tokens={tokens}
           setTokens={setTokens}
+          openTokenStore={openTokenStore}
           sendMessage={romchat.sendMessage}
           sendGift={romchat.sendGift}
-          unlockMessage={romchat.unlockMessage}
           unlockVideoRequest={romchat.unlockVideoRequest}
-          paidMessages={romchat.paidMessages}
           videoRequests={romchat.videoRequests}
           status={romchat.lastAction}
         />
@@ -1251,7 +1250,7 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, sendMessage, sendGift, unlockMessage, unlockVideoRequest, paidMessages, videoRequests, status }: {
+function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, openTokenStore, sendMessage, sendGift, unlockVideoRequest, videoRequests, status }: {
   profiles: ProfileSeed[];
   readReceipts: boolean;
   setReadReceipts: (value: boolean) => void;
@@ -1259,31 +1258,37 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
   setMessageMode: (value: MessageMode) => void;
   tokens: number;
   setTokens: React.Dispatch<React.SetStateAction<number>>;
-  sendMessage: (text: string) => Promise<unknown>;
+  openTokenStore: () => void;
+  sendMessage: (text: string, matchId?: string) => Promise<unknown>;
   sendGift: (giftId: string) => Promise<void>;
-  unlockMessage: (messageId: string) => Promise<unknown>;
   unlockVideoRequest: (requestId: string) => Promise<unknown>;
-  paidMessages: Array<{ id: string; text: string; locked?: boolean; unlockCostTokens?: number; unlockedByActor?: boolean }>;
-  videoRequests: Array<{ id: string; title: string; teaser: string; unlockCostTokens: number; status: string }>;
+  videoRequests: Array<{ id: string; matchId?: string; senderProfileId?: string; title: string; teaser: string; unlockCostTokens: number; status: string }>;
   status: string;
 }) {
-  const matchPool = profiles.length ? profiles : localProfiles;
-  const onlineMatches = matchPool.filter((profile) => profile.online !== false);
-  const orderedMatches = [...onlineMatches, ...matchPool.filter((profile) => profile.online === false)];
+  const matchPool = profiles;
+  const onlineMatches = matchPool.filter((profile) => profile.online === true);
+  const orderedMatches = [...onlineMatches, ...matchPool.filter((profile) => profile.online !== true)];
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
+  const [threadMessages, setThreadMessages] = useState<Record<string, Array<{ id: string; from: 'You'; text: string; status: string }>>>({});
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const selectedMatch = orderedMatches.find((profile) => profile.id === selectedMatchId) || null;
   const visibleThreads = orderedMatches.filter((profile) => `${profile.name} ${profile.city} ${profile.intent} ${profile.tags.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
   const modeLabel = messageMode === 'standard' ? 'Standard' : messageMode === 'timed' ? 'Vanishes in 24h' : 'View once';
   const promptChips = selectedMatch ? [`Ask ${selectedMatch.name} about ${selectedMatch.tags[0] || 'her vibe'}`, 'Send a rose', 'Suggest Saturday coffee'] : ['Open a match', 'Start soft', 'Keep it respectful'];
-  const activePhoto = selectedMatch?.photos?.[0] ? { uri: resolveMediaUrl(selectedMatch.photos[0]) } : selectedMatch?.photo || localProfiles[0]!.photo;
+  const activePhoto = selectedMatch?.photos?.[0] ? { uri: resolveMediaUrl(selectedMatch.photos[0]) } : selectedMatch?.photo || require('../assets/icon.png');
+  const selectedVideoRequests = selectedMatch ? videoRequests.filter((request) => request.matchId === `match_${selectedMatch.id}` || request.senderProfileId === selectedMatch.id) : [];
+  const selectedMessages = selectedMatch ? threadMessages[selectedMatch.id] || [] : [];
 
   function submit() {
     const text = draft.trim();
     if (!text || !selectedMatch) return;
     setDraft('');
-    void sendMessage(text);
+    setThreadMessages((current) => ({
+      ...current,
+      [selectedMatch.id]: [...(current[selectedMatch.id] || []), { id: `local_${Date.now()}`, from: 'You', text, status: readReceipts ? 'Sent - receipt on' : 'Sent' }],
+    }));
+    void sendMessage(text, `match_${selectedMatch.id}`);
   }
 
   if (selectedMatch) {
@@ -1295,7 +1300,7 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
             <Image source={activePhoto} style={styles.chatHeaderAvatar} />
             <View>
               <Text style={styles.chatName}>{selectedMatch.name}</Text>
-              <Text style={styles.chatStatus}>{selectedMatch.online === false ? 'Matched recently' : 'Online now - ready to talk'}</Text>
+              <Text style={styles.chatStatus}>{selectedMatch.online === true ? 'Online now - ready to talk' : 'Matched recently'}</Text>
             </View>
           </View>
           <View style={styles.headerIcons}>
@@ -1311,37 +1316,51 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
             <Text style={styles.signal}>{tokens} tokens</Text>
           </View>
           <Text style={styles.matchContext}>{selectedMatch.intent} - {selectedMatch.city}{typeof selectedMatch.distanceKm === 'number' && selectedMatch.distanceKm > 0 ? ` - ${selectedMatch.distanceKm} km` : ''}</Text>
-          {starterMessages.map(([from, text, messageStatus], index) => (
-            <View key={`${selectedMatch.id}_${text}`} style={[styles.bubble, from === 'You' ? styles.sent : styles.received]}>
-              <Text style={from === 'You' ? styles.sentText : styles.receivedText}>{index === 0 && from !== 'You' ? text.replace('Your answer', `${selectedMatch.name}'s answer`) : text}</Text>
-              <Text style={from === 'You' ? styles.sentMeta : styles.receivedMeta}>{messageStatus}</Text>
+          {selectedMessages.length ? selectedMessages.map((message) => (
+            <View key={message.id} style={[styles.bubble, styles.sent]}>
+              <Text style={styles.sentText}>{message.text}</Text>
+              <Text style={styles.sentMeta}>{message.status}</Text>
             </View>
-          ))}
+          )) : (
+            <View style={styles.emptyThreadCard}>
+              <Text style={styles.emptyThreadTitle}>Start the chat freely</Text>
+              <Text style={styles.emptyThreadText}>Text messages are open after a match. Tokens only unlock optional 2-minute video vibe requests.</Text>
+            </View>
+          )}
         </View>
 
-        {videoRequests.map((request) => (
+        {selectedVideoRequests.map((request) => (
           <View key={request.id} style={styles.videoInvite}>
-            <Text style={styles.videoTitle}>{request.title}</Text>
+            <Text style={styles.videoTitle}>{request.title || '2-minute video vibe request'}</Text>
             <Text style={styles.videoTeaser}>{request.status === 'unlocked' ? 'Video room unlocked. Tap to join when ready.' : request.teaser}</Text>
-            <TouchableOpacity onPress={() => { if (request.status !== 'unlocked') { setTokens((value) => Math.max(0, value - request.unlockCostTokens)); void unlockVideoRequest(request.id); } }} style={[styles.unlockButton, request.status === 'unlocked' && styles.unlockButtonDone]}>
-              <Text style={styles.unlockButtonText}>{request.status === 'unlocked' ? 'Join video' : `Accept video request (${request.unlockCostTokens} tokens)`}</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
-        {paidMessages.map((message) => (
-          <View key={message.id} style={styles.lockedReply}>
-            <View style={styles.lockedHeader}><Icon name="lock-closed" size={16} color="#FFD700" /><Text style={styles.lockedTitle}>Private media</Text></View>
-            <Text style={styles.blurredMask}>{message.locked && !message.unlockedByActor ? '#### ####### ##### ### ########' : message.text}</Text>
-            <Text style={styles.lockedText}>Unlock only this optional private media.</Text>
-            <TouchableOpacity onPress={() => { if (message.locked && !message.unlockedByActor) { setTokens((value) => Math.max(0, value - Number(message.unlockCostTokens || 10))); void unlockMessage(message.id); } }} style={[styles.unlockButton, message.unlockedByActor && styles.unlockButtonDone]}>
-              <Text style={styles.unlockButtonText}>{message.unlockedByActor ? 'Media unlocked' : `Unlock media (${message.unlockCostTokens || 10} tokens)`}</Text>
+            <TouchableOpacity onPress={() => {
+              if (request.status === 'unlocked') return;
+              if (tokens < request.unlockCostTokens) {
+                openTokenStore();
+                return;
+              }
+              setTokens((value) => Math.max(0, value - request.unlockCostTokens));
+              void unlockVideoRequest(request.id);
+            }} style={[styles.unlockButton, request.status === 'unlocked' && styles.unlockButtonDone]}>
+              <Text style={styles.unlockButtonText}>{request.status === 'unlocked' ? 'Join video' : tokens < request.unlockCostTokens ? `Buy tokens for video (${request.unlockCostTokens})` : `Unlock 2-min vibe (${request.unlockCostTokens} tokens)`}</Text>
             </TouchableOpacity>
           </View>
         ))}
 
         <View style={styles.chatTools}>
           <View style={styles.promptRow}>
-            {promptChips.map((prompt) => <TouchableOpacity key={prompt} onPress={() => prompt === 'Send a rose' ? (setTokens((value) => Math.max(0, value - 5)), void sendGift('rose')) : setDraft(prompt)}><Text style={styles.promptChip}>{prompt}</Text></TouchableOpacity>)}
+            {promptChips.map((prompt) => <TouchableOpacity key={prompt} onPress={() => {
+              if (prompt === 'Send a rose') {
+                if (tokens < 5) {
+                  openTokenStore();
+                  return;
+                }
+                setTokens((value) => Math.max(0, value - 5));
+                void sendGift('rose');
+                return;
+              }
+              setDraft(prompt);
+            }}><Text style={styles.promptChip}>{prompt}</Text></TouchableOpacity>)}
           </View>
           <View style={styles.segment}>
             {(['standard', 'timed', 'viewOnce'] as MessageMode[]).map((mode) => (
@@ -1814,6 +1833,8 @@ const styles = StyleSheet.create({
   threadName: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
   threadPreview: { color: 'rgba(255,255,255,0.62)', fontSize: 15, fontWeight: '800', marginTop: 4 },
   yourTurnPill: { color: '#120914', backgroundColor: '#FFFFFF', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 7, fontWeight: '900', fontSize: 12 },
+  emptyThreadCard: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,20,147,0.16)', borderRadius: 18, padding: 16, marginTop: 8 },
+  emptyThreadTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 17, marginBottom: 5, textAlign: 'center' },
   emptyThreadText: { color: 'rgba(255,255,255,0.62)', fontWeight: '800', lineHeight: 21, paddingVertical: 18, textAlign: 'center' },
   threadTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14 },
   chatBackButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#1E1222', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,20,147,0.20)' },
@@ -1947,3 +1968,4 @@ const styles = StyleSheet.create({
   promptEditorLabel: { color: '#FFD700', fontWeight: '900', marginBottom: 7 },
   promptEditorInput: { minHeight: 46, color: '#FFFFFF', fontWeight: '800', lineHeight: 20, textAlignVertical: 'top' },
 });
+

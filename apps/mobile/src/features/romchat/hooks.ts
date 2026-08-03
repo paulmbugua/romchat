@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { romchatApi, type RomChatBootstrap, type RomChatMessage, type RomChatProfile, type RomChatVideoRequest } from './api';
 
 type LocalProfile = RomChatProfile & {
-  photo: unknown;
+  photo?: unknown;
   color: string;
   voiceNote: string;
   videoPrompt: string;
@@ -19,31 +19,30 @@ function mergeProfiles(remoteProfiles: RomChatProfile[], localProfiles: LocalPro
   return remoteProfiles
     .map((remote, index) => {
       const local = localById.get(remote.id) || localProfiles[index % Math.max(1, localProfiles.length)] || localProfiles[0];
-      if (!local) return null;
       const photos = Array.isArray(remote.photos) ? remote.photos.filter(Boolean) : [];
       return {
-        ...local,
+        ...(local || {}),
         ...remote,
-        match: Number(remote.match ?? local.match),
-        photo: photos[0] ? { uri: photos[0] } : local.photo,
+        match: Number(remote.match ?? local?.match ?? 88),
+        photo: photos[0] ? { uri: photos[0] } : undefined,
         photos,
-        color: remote.color || local.color,
-        tags: remote.tags?.length ? remote.tags : local.tags,
-        answers: remote.answers?.length ? remote.answers : local.answers,
+        color: remote.color || local?.color || '#FF1493',
+        tags: remote.tags?.length ? remote.tags : local?.tags || [],
+        answers: remote.answers?.length ? remote.answers : local?.answers || [],
         poll: remote.poll?.question
           ? {
               question: remote.poll.question,
-              yes: Number(remote.poll.yes ?? local.poll.yes),
-              no: Number(remote.poll.no ?? local.poll.no),
+              yes: Number(remote.poll.yes ?? local?.poll?.yes ?? 64),
+              no: Number(remote.poll.no ?? local?.poll?.no ?? 36),
             }
-          : local.poll,
-        voiceNote: remote.voiceNote || local.voiceNote,
-        videoPrompt: remote.videoPrompt || local.videoPrompt,
-        quote: remote.quote || local.quote,
-        song: remote.song || local.song,
-        gallery: Number(remote.gallery ?? photos.length ?? local.gallery),
+          : local?.poll || { question: 'Coffee date or sunset walk?', yes: 64, no: 36 },
+        voiceNote: remote.voiceNote || local?.voiceNote || '',
+        videoPrompt: remote.videoPrompt || local?.videoPrompt || '',
+        quote: remote.quote || local?.quote || '',
+        song: remote.song || local?.song || '',
+        gallery: Number(remote.gallery ?? photos.length ?? local?.gallery ?? 0),
         distanceKm: typeof remote.distanceKm === 'number' ? remote.distanceKm : undefined,
-        fullGallery: Number(remote.fullGallery ?? remote.gallery ?? photos.length ?? local.gallery),
+        fullGallery: Number(remote.fullGallery ?? remote.gallery ?? photos.length ?? local?.gallery ?? 0),
         lockedGallery: Number(remote.lockedGallery ?? 0),
         catalogueAccess: Number(remote.catalogueAccess ?? photos.length ?? 1),
       };
@@ -56,12 +55,8 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
   const [bootstrap, setBootstrap] = useState<RomChatBootstrap | null>(null);
   const [apiOnline, setApiOnline] = useState(false);
   const [lastAction, setLastAction] = useState('Ready');
-  const [paidMessages, setPaidMessages] = useState<RomChatMessage[]>([
-    { id: 'media_locked_1', matchId: 'match_elena', from: 'elena', senderId: 'elena', text: 'I sent a private voice note preview. Basic text stays free; unlock this optional media when you want the full moment.', locked: true, unlockCostTokens: 10, unlockedByActor: false, mediaUrl: 'romchat://demo/voice/elena-saturday-note', mediaType: 'voice', messageKind: 'locked_media' },
-  ]);
-  const [videoRequests, setVideoRequests] = useState<RomChatVideoRequest[]>([
-    { id: 'vr_elena_1', matchId: 'match_elena', senderProfileId: 'elena', title: 'Elena invited you to a 2-minute video vibe check', teaser: 'She is online now. Unlock to accept the request before it expires.', unlockCostTokens: 25, status: 'locked' },
-  ]);
+  const [paidMessages, setPaidMessages] = useState<RomChatMessage[]>([]);
+  const [videoRequests, setVideoRequests] = useState<RomChatVideoRequest[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -117,10 +112,10 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, matchId?: string) => {
     setLastAction('Sending message');
     try {
-      const result = await romchatApi.sendMessage(text);
+      const result = await romchatApi.sendMessage(text, matchId);
       setLastAction(result.trustInsight || 'Message sent');
       return result;
     } catch {
