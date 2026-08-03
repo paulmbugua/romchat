@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS romchat_member_profiles (
   latitude NUMERIC(9,6),
   longitude NUMERIC(9,6),
   max_distance_km INTEGER NOT NULL DEFAULT 80,
+  min_age INTEGER NOT NULL DEFAULT 18,
+  max_age INTEGER NOT NULL DEFAULT 80,
   map_discovery_enabled BOOLEAN NOT NULL DEFAULT true,
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -102,6 +104,8 @@ ALTER TABLE romchat_member_profiles
   ADD COLUMN IF NOT EXISTS latitude NUMERIC(9,6),
   ADD COLUMN IF NOT EXISTS longitude NUMERIC(9,6),
   ADD COLUMN IF NOT EXISTS max_distance_km INTEGER NOT NULL DEFAULT 80,
+  ADD COLUMN IF NOT EXISTS min_age INTEGER NOT NULL DEFAULT 18,
+  ADD COLUMN IF NOT EXISTS max_age INTEGER NOT NULL DEFAULT 80,
   ADD COLUMN IF NOT EXISTS map_discovery_enabled BOOLEAN NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
@@ -126,6 +130,22 @@ function clampDistanceKm(value) {
   const next = Number(value || 80);
   if (!Number.isFinite(next)) return 80;
   return Math.max(5, Math.min(500, Math.round(next / 5) * 5));
+}
+
+function clampAgeRange(minValue, maxValue) {
+  const min = Number(minValue);
+  const max = Number(maxValue);
+  let minAge = Number.isFinite(min) ? Math.max(18, Math.min(80, Math.round(min))) : 18;
+  let maxAge = Number.isFinite(max) ? Math.max(18, Math.min(80, Math.round(max))) : 80;
+  if (minAge >= maxAge) {
+    if (minAge >= 80) {
+      minAge = 79;
+      maxAge = 80;
+    } else {
+      maxAge = minAge + 1;
+    }
+  }
+  return { minAge, maxAge };
 }
 
 function coordinatesForCity(city) {
@@ -241,6 +261,8 @@ function profileFromRow(row, media = []) {
     latitude: row.latitude == null ? null : Number(row.latitude),
     longitude: row.longitude == null ? null : Number(row.longitude),
     maxDistanceKm: Number(row.max_distance_km || 80),
+    minAge: Number(row.min_age || 18),
+    maxAge: Number(row.max_age || 80),
     mapDiscoveryEnabled: row.map_discovery_enabled !== false,
     lastSeenAt: row.last_seen_at || null,
   };
@@ -573,16 +595,17 @@ export async function upsertMemberProfile(memberId, payload = {}) {
   const latitude = numberOrNull(payload.latitude) ?? cityCoordinates.latitude;
   const longitude = numberOrNull(payload.longitude) ?? cityCoordinates.longitude;
   const maxDistanceKm = clampDistanceKm(payload.maxDistanceKm);
+  const { minAge, maxAge } = clampAgeRange(payload.minAge, payload.maxAge);
   const mapDiscoveryEnabled = payload.mapDiscoveryEnabled !== false;
   const mediaRows = await queryWithRetry('SELECT media_type, COUNT(*)::int AS count FROM romchat_profile_media WHERE member_id = $1 GROUP BY media_type', [memberId]);
   const mediaCounts = Object.fromEntries(mediaRows.rows.map((row) => [row.media_type, Number(row.count || 0)]));
   const imageCount = Number(mediaCounts.image || 0);
   const strength = Math.min(100, 35 + Math.min(30, imageCount * 8) + (bio ? 15 : 0) + (interests.length ? 12 : 0) + (promptAnswers?.length === 7 ? 8 : 0));
   await queryWithRetry(
-    `INSERT INTO romchat_member_profiles (member_id, display_name, age, gender, city, intent, bio, interests, prompt_answers, profile_strength, latitude, longitude, max_distance_km, map_discovery_enabled)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::jsonb, '[]'::jsonb),$10,$11,$12,$13,$14)
-     ON CONFLICT (member_id) DO UPDATE SET display_name = EXCLUDED.display_name, age = romchat_member_profiles.age, gender = EXCLUDED.gender, city = EXCLUDED.city, intent = EXCLUDED.intent, bio = EXCLUDED.bio, interests = EXCLUDED.interests, prompt_answers = COALESCE($9::jsonb, romchat_member_profiles.prompt_answers), profile_strength = EXCLUDED.profile_strength, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, max_distance_km = EXCLUDED.max_distance_km, map_discovery_enabled = EXCLUDED.map_discovery_enabled, updated_at = now()`,
-    [memberId, displayName, age, gender, city, intent, bio, interests, promptAnswers ? JSON.stringify(promptAnswers) : null, strength, latitude, longitude, maxDistanceKm, mapDiscoveryEnabled]
+    `INSERT INTO romchat_member_profiles (member_id, display_name, age, gender, city, intent, bio, interests, prompt_answers, profile_strength, latitude, longitude, max_distance_km, min_age, max_age, map_discovery_enabled)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::jsonb, '[]'::jsonb),$10,$11,$12,$13,$14,$15,$16)
+     ON CONFLICT (member_id) DO UPDATE SET display_name = EXCLUDED.display_name, age = romchat_member_profiles.age, gender = EXCLUDED.gender, city = EXCLUDED.city, intent = EXCLUDED.intent, bio = EXCLUDED.bio, interests = EXCLUDED.interests, prompt_answers = COALESCE($9::jsonb, romchat_member_profiles.prompt_answers), profile_strength = EXCLUDED.profile_strength, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, max_distance_km = EXCLUDED.max_distance_km, min_age = EXCLUDED.min_age, max_age = EXCLUDED.max_age, map_discovery_enabled = EXCLUDED.map_discovery_enabled, updated_at = now()`,
+    [memberId, displayName, age, gender, city, intent, bio, interests, promptAnswers ? JSON.stringify(promptAnswers) : null, strength, latitude, longitude, maxDistanceKm, minAge, maxAge, mapDiscoveryEnabled]
   );
   return getMemberProfile(memberId);
 }

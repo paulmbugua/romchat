@@ -536,6 +536,8 @@ export default function App() {
         age: session.profile.age,
         promptAnswers: session.profile.promptAnswers,
         maxDistanceKm: session.profile.maxDistanceKm,
+        minAge: session.profile.minAge,
+        maxAge: session.profile.maxAge,
         mapDiscoveryEnabled: session.profile.mapDiscoveryEnabled,
       });
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
@@ -559,6 +561,10 @@ export default function App() {
         bio: session.profile.bio,
         interests: session.profile.interests,
         promptAnswers,
+        maxDistanceKm: session.profile.maxDistanceKm,
+        minAge: session.profile.minAge,
+        maxAge: session.profile.maxAge,
+        mapDiscoveryEnabled: session.profile.mapDiscoveryEnabled,
       });
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
@@ -566,7 +572,7 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
 
-  async function saveDiscoverySettings(payload: { maxDistanceKm: number; mapDiscoveryEnabled: boolean }) {
+  async function saveDiscoverySettings(payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) {
     if (!session?.token || !session.profile) return;
     setAuthBusy(true);
     setAuthError('');
@@ -581,6 +587,8 @@ export default function App() {
         interests: session.profile.interests,
         promptAnswers: session.profile.promptAnswers,
         maxDistanceKm: payload.maxDistanceKm,
+        minAge: payload.minAge,
+        maxAge: payload.maxAge,
         mapDiscoveryEnabled: payload.mapDiscoveryEnabled,
       });
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
@@ -1528,7 +1536,7 @@ function resolveMediaUrl(url?: string) {
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
+function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
@@ -1564,11 +1572,17 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
     void onSaveDetails({ displayName, gender, city, intent, bio, interests: selectedInterests });
   }
   const [distanceKm, setDistanceKm] = useState(profile?.maxDistanceKm || 80);
+  const [minAge, setMinAge] = useState(profile?.minAge || 18);
+  const [maxAge, setMaxAge] = useState(profile?.maxAge || 80);
   const [mapEnabled, setMapEnabled] = useState(profile?.mapDiscoveryEnabled !== false);
   useEffect(() => {
     setDistanceKm(profile?.maxDistanceKm || 80);
+    setMinAge(profile?.minAge || 18);
+    setMaxAge(profile?.maxAge || 80);
     setMapEnabled(profile?.mapDiscoveryEnabled !== false);
-  }, [profile?.memberId, profile?.maxDistanceKm, profile?.mapDiscoveryEnabled]);
+  }, [profile?.memberId, profile?.maxDistanceKm, profile?.minAge, profile?.maxAge, profile?.mapDiscoveryEnabled]);
+  const updateMinAge = (value: number) => setMinAge(Math.min(Math.round(value), maxAge - 1));
+  const updateMaxAge = (value: number) => setMaxAge(Math.max(Math.round(value), minAge + 1));
   const completePrompts = promptAnswers.filter((item) => item.prompt && item.answer.trim()).length;
   const profileTasks = [
     [`Images uploaded: ${imageCount}`, imageCount >= 3 ? 'Fuller catalogues unlocked' : 'Add photos to unlock more galleries'],
@@ -1614,7 +1628,17 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
           </View>
           <Slider value={distanceKm} minimumValue={5} maximumValue={500} step={5} minimumTrackTintColor="#FF1493" maximumTrackTintColor="rgba(255,255,255,0.20)" thumbTintColor="#FFD700" onValueChange={setDistanceKm} />
           <View style={styles.distanceScale}><Text style={styles.distanceScaleText}>5 km</Text><Text style={styles.distanceScaleText}>500 km</Text></View>
-          <TouchableOpacity disabled={busy} onPress={() => void onSaveDiscoverySettings({ maxDistanceKm: distanceKm, mapDiscoveryEnabled: mapEnabled })} style={styles.distanceSaveButton}><Text style={styles.distanceSaveText}>Apply distance filter</Text></TouchableOpacity>
+          <View style={styles.ageRangeBlock}>
+            <View style={styles.ageRangeHeader}>
+              <Text style={styles.distanceTitle}>Age range</Text>
+              <Text style={styles.ageRangeValue}>{minAge} - {maxAge}</Text>
+            </View>
+            <Text style={styles.distanceMeta}>Show profiles in this age range, like Tinder discovery.</Text>
+            <Slider value={minAge} minimumValue={18} maximumValue={79} step={1} minimumTrackTintColor="#FF1493" maximumTrackTintColor="rgba(255,255,255,0.18)" thumbTintColor="#FFD700" onValueChange={updateMinAge} />
+            <Slider value={maxAge} minimumValue={19} maximumValue={80} step={1} minimumTrackTintColor="#FF6F61" maximumTrackTintColor="rgba(255,255,255,0.18)" thumbTintColor="#FFFFFF" onValueChange={updateMaxAge} />
+            <View style={styles.distanceScale}><Text style={styles.distanceScaleText}>18</Text><Text style={styles.distanceScaleText}>80+</Text></View>
+          </View>
+          <TouchableOpacity disabled={busy} onPress={() => void onSaveDiscoverySettings({ maxDistanceKm: distanceKm, minAge, maxAge, mapDiscoveryEnabled: mapEnabled })} style={styles.distanceSaveButton}><Text style={styles.distanceSaveText}>Apply discovery filters</Text></TouchableOpacity>
         </View>
         <View style={styles.photoSlotGrid}>{Array.from({ length: 6 }).map((_, index) => {
           const media = photoMedia[index];
@@ -1953,6 +1977,9 @@ const styles = StyleSheet.create({
   mapToggleActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
   distanceScale: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -2 },
   distanceScaleText: { color: 'rgba(255,255,255,0.52)', fontSize: 11, fontWeight: '800' },
+  ageRangeBlock: { marginTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', paddingTop: 14 },
+  ageRangeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  ageRangeValue: { color: '#FFD700', fontWeight: '900', fontSize: 16 },
   distanceSaveButton: { marginTop: 10, backgroundColor: '#FF1493', borderRadius: 999, alignItems: 'center', paddingVertical: 12 },
   distanceSaveText: { color: '#FFFFFF', fontWeight: '900' },
   photoSlotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 12 },

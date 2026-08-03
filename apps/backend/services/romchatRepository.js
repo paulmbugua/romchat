@@ -286,11 +286,13 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
   return withDb(async () => {
     let viewer = null;
     if (viewerId) {
-      const viewerRows = await queryWithRetry('SELECT member_id, city, latitude, longitude, max_distance_km, map_discovery_enabled FROM romchat_member_profiles WHERE member_id = $1', [viewerId]);
+      const viewerRows = await queryWithRetry('SELECT member_id, city, latitude, longitude, max_distance_km, min_age, max_age, map_discovery_enabled FROM romchat_member_profiles WHERE member_id = $1', [viewerId]);
       viewer = viewerRows.rows[0] || null;
     }
     const viewerCoordinates = viewer ? rowCoordinates(viewer) : null;
     const maxDistanceKm = clampDistanceKm(viewer?.max_distance_km);
+    const minAge = Number(viewer?.min_age || 18);
+    const maxAge = Number(viewer?.max_age || 80);
     const mapDiscoveryEnabled = viewer?.map_discovery_enabled !== false;
     let result = await queryWithRetry(
       `SELECT
@@ -328,6 +330,7 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
     return result.rows
       .map((row) => ({ ...row, distance_km: viewerCoordinates ? haversineKm(viewerCoordinates, rowCoordinates(row)) : 0 }))
       .filter((row) => !viewerCoordinates || !mapDiscoveryEnabled || Number(row.distance_km || 0) <= maxDistanceKm)
+      .filter((row) => Number(row.age || 0) >= minAge && Number(row.age || 0) <= maxAge)
       .sort((a, b) => Number(a.distance_km || 0) - Number(b.distance_km || 0) || Number(b.profile_strength || 0) - Number(a.profile_strength || 0))
       .map((row) => fromMemberProfileRow(row, access));
   }, () => []);
