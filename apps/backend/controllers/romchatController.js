@@ -5,6 +5,7 @@ import {
   createReport,
   createSwipe,
   createVerification,
+  createVideoRequest as createVideoVibeRequest,
   getBootstrap,
   getMessages,
   getProfiles,
@@ -221,6 +222,15 @@ export function createRomchatController(io) {
     },
     async videoRequests(req, res) {
       res.json({ videoRequests: await getVideoRequests(req.query.matchId || 'match_elena') });
+    },
+    async createVideoRequest(req, res) {
+      try {
+        const videoRequest = await createVideoVibeRequest(req.body || {});
+        io?.to(videoRequest?.matchId).emit('romchat:video-request', videoRequest);
+        res.status(201).json({ videoRequest });
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async unlockMessage(req, res) {
       try {

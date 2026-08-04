@@ -112,10 +112,10 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  const sendMessage = useCallback(async (text: string, matchId?: string) => {
+  const sendMessage = useCallback(async (text: string, matchId?: string, options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean } = {}) => {
     setLastAction('Sending message');
     try {
-      const result = await romchatApi.sendMessage(text, matchId);
+      const result = await romchatApi.sendMessage(text, matchId, options);
       setLastAction(result.trustInsight || 'Message sent');
       return result;
     } catch {
@@ -152,13 +152,26 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  const sendGift = useCallback(async (giftId: string) => {
+  const sendGift = useCallback(async (giftId: string, matchId?: string) => {
     setLastAction('Sending gift');
     try {
-      await romchatApi.sendGift(giftId);
+      await romchatApi.sendGift(giftId, matchId);
       setLastAction('Gift delivered');
     } catch {
       setLastAction('Gift queued locally');
+    }
+  }, []);
+
+  const createVideoRequest = useCallback(async (matchId: string, senderProfileId: string) => {
+    setLastAction('Requesting video vibe');
+    try {
+      const result = await romchatApi.createVideoRequest(matchId, senderProfileId);
+      if (result.videoRequest) setVideoRequests((requests) => [result.videoRequest, ...requests.filter((request) => request.id !== result.videoRequest.id)]);
+      setLastAction('Video vibe requested');
+      return result.videoRequest;
+    } catch {
+      setLastAction('Video request unavailable');
+      return null;
     }
   }, []);
 
@@ -202,5 +215,5 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, unlockMessage, unlockVideoRequest, sendGift, boost, updatePrivacy, report, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, updatePrivacy, report, verify };
 }

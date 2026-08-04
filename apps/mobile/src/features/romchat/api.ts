@@ -77,12 +77,17 @@ export const romchatApi = {
       method: 'POST',
       body: JSON.stringify({ profileId, action }),
     }),
-  sendMessage: (text: string, matchId = 'match_elena') =>
+  sendMessage: (text: string, matchId = 'match_elena', options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean } = {}) =>
     apiFetch<{ message: RomChatMessage; trustInsight: string }>('/api/romchat/messages', {
       method: 'POST',
-      body: JSON.stringify({ matchId, text }),
+      body: JSON.stringify({ matchId, text, viewOnce: options.mode === 'viewOnce', expiresInSeconds: options.mode === 'timed' ? 86400 : null, readReceiptRequested: Boolean(options.readReceiptRequested) }),
     }),
   videoRequests: (matchId = 'match_elena') => apiFetch<{ videoRequests: RomChatVideoRequest[] }>(`/api/romchat/video-requests?matchId=${matchId}`),
+  createVideoRequest: (matchId: string, senderProfileId: string) =>
+    apiFetch<{ videoRequest: RomChatVideoRequest }>('/api/romchat/video-requests', {
+      method: 'POST',
+      body: JSON.stringify({ matchId, senderProfileId }),
+    }),
   unlockMessage: (messageId: string) =>
     apiFetch<{ message: RomChatMessage; spent: number; wallet: { balance: number; currency: string } }>(`/api/romchat/messages/${messageId}/unlock`, {
       method: 'POST',

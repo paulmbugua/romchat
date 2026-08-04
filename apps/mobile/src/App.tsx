@@ -200,6 +200,7 @@ export default function App() {
   const [antiGrab, setAntiGrab] = useState(true);
   const [readReceipts, setReadReceipts] = useState(true);
   const [messageMode, setMessageMode] = useState<MessageMode>('timed');
+  const [chatBadgeCount, setChatBadgeCount] = useState(0);
   const [tokens, setTokens] = useState(146);
   const [boosted, setBoosted] = useState(false);
   const [showMatch, setShowMatch] = useState(false);
@@ -620,8 +621,10 @@ export default function App() {
           tokens={tokens}
           setTokens={setTokens}
           openTokenStore={openTokenStore}
+          onChatNotification={() => setChatBadgeCount((value) => Math.min(99, value + 1))}
           sendMessage={romchat.sendMessage}
           sendGift={romchat.sendGift}
+          createVideoRequest={romchat.createVideoRequest}
           unlockVideoRequest={romchat.unlockVideoRequest}
           videoRequests={romchat.videoRequests}
           status={romchat.lastAction}
@@ -676,7 +679,7 @@ export default function App() {
         >
           {renderSection(activeSection)}
         </ScrollView>
-        <FooterNav active={activeSection} setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} />
+        <FooterNav active={activeSection} setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} />
       </SafeAreaView>
     );
   }
@@ -737,7 +740,7 @@ export default function App() {
           <EmptyDiscovery openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
         )}
       </ScrollView>
-      <FooterNav active="swipe" setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} />
+      <FooterNav active="swipe" setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} />
     </SafeAreaView>
   );
 }
@@ -1158,12 +1161,13 @@ function ShortcutRail({ setActiveSection }: { setActiveSection: (section: Sectio
   );
 }
 
-function FooterNav({ active, setActiveSection, openSwipeDeck, bottomInset }: { active: Section | 'swipe'; setActiveSection: (section: Section | null) => void; openSwipeDeck: () => void; bottomInset: number }) {
+function FooterNav({ active, setActiveSection, openSwipeDeck, bottomInset, chatBadgeCount }: { active: Section | 'swipe'; setActiveSection: (section: Section | null) => void; openSwipeDeck: () => void; bottomInset: number; chatBadgeCount: number }) {
+  const chatBadge = chatBadgeCount > 0 ? (chatBadgeCount > 99 ? '99+' : String(chatBadgeCount)) : undefined;
   const items: Array<{ key: Section | 'swipe'; label: string; icon: string; target: Section | null; badge?: string }> = [
     { key: 'swipe', label: 'Swipe', icon: 'flame', target: null },
     { key: 'explore', label: 'Explore', icon: 'compass', target: 'explore' },
     { key: 'likes', label: 'Likes', icon: 'heart-outline', target: 'likes', badge: '99+' },
-    { key: 'chat', label: 'Chat', icon: 'chatbubble', target: 'chat' },
+    { key: 'chat', label: 'Chat', icon: 'chatbubble', target: 'chat', badge: chatBadge },
     { key: 'profile', label: 'Profile', icon: 'person-outline', target: 'profile' },
   ];
   return (
@@ -1258,7 +1262,7 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, openTokenStore, sendMessage, sendGift, unlockVideoRequest, videoRequests, status }: {
+function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, openTokenStore, onChatNotification, sendMessage, sendGift, createVideoRequest, unlockVideoRequest, videoRequests, status }: {
   profiles: ProfileSeed[];
   readReceipts: boolean;
   setReadReceipts: (value: boolean) => void;
@@ -1267,8 +1271,10 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
   tokens: number;
   setTokens: React.Dispatch<React.SetStateAction<number>>;
   openTokenStore: () => void;
-  sendMessage: (text: string, matchId?: string) => Promise<unknown>;
-  sendGift: (giftId: string) => Promise<void>;
+  onChatNotification: () => void;
+  sendMessage: (text: string, matchId?: string, options?: { mode?: MessageMode; readReceiptRequested?: boolean }) => Promise<unknown>;
+  sendGift: (giftId: string, matchId?: string) => Promise<void>;
+  createVideoRequest: (matchId: string, senderProfileId: string) => Promise<{ id: string; matchId?: string; senderProfileId?: string; title: string; teaser: string; unlockCostTokens: number; status: string } | null>;
   unlockVideoRequest: (requestId: string) => Promise<unknown>;
   videoRequests: Array<{ id: string; matchId?: string; senderProfileId?: string; title: string; teaser: string; unlockCostTokens: number; status: string }>;
   status: string;
@@ -1279,6 +1285,7 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
   const [threadMessages, setThreadMessages] = useState<Record<string, Array<{ id: string; from: 'You'; text: string; status: string }>>>({});
+  const [threadAlerts, setThreadAlerts] = useState<Record<string, number>>({});
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const selectedMatch = orderedMatches.find((profile) => profile.id === selectedMatchId) || null;
   const visibleThreads = orderedMatches.filter((profile) => `${profile.name} ${profile.city} ${profile.intent} ${profile.tags.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
@@ -1288,15 +1295,42 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
   const selectedVideoRequests = selectedMatch ? videoRequests.filter((request) => request.matchId === `match_${selectedMatch.id}` || request.senderProfileId === selectedMatch.id) : [];
   const selectedMessages = selectedMatch ? threadMessages[selectedMatch.id] || [] : [];
 
+  const modeStatus = messageMode === 'timed' ? '24h timed' : messageMode === 'viewOnce' ? 'view once' : 'standard';
+  function appendLocalMessage(profileId: string, text: string, statusText = `Delivered - notified - ${modeStatus}`) {
+    setThreadMessages((current) => ({
+      ...current,
+      [profileId]: [...(current[profileId] || []), { id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, from: 'You', text, status: readReceipts ? `${statusText} - read receipt on` : statusText }],
+    }));
+    setThreadAlerts((current) => ({ ...current, [profileId]: Math.min(99, (current[profileId] || 0) + 1) }));
+    onChatNotification();
+  }
+  function sendChatText(text: string) {
+    if (!text || !selectedMatch) return;
+    appendLocalMessage(selectedMatch.id, text);
+    void sendMessage(text, `match_${selectedMatch.id}`, { mode: messageMode, readReceiptRequested: readReceipts });
+  }
   function submit() {
     const text = draft.trim();
     if (!text || !selectedMatch) return;
     setDraft('');
-    setThreadMessages((current) => ({
-      ...current,
-      [selectedMatch.id]: [...(current[selectedMatch.id] || []), { id: `local_${Date.now()}`, from: 'You', text, status: readReceipts ? 'Sent - receipt on' : 'Sent' }],
-    }));
-    void sendMessage(text, `match_${selectedMatch.id}`);
+    sendChatText(text);
+  }
+  async function openVideoVibe(requestOverride?: { id: string; unlockCostTokens: number; status: string }) {
+    if (!selectedMatch) return;
+    const matchId = `match_${selectedMatch.id}`;
+    const request = requestOverride || selectedVideoRequests[0] || await createVideoRequest(matchId, selectedMatch.id);
+    if (!request) return;
+    if (request.status === 'unlocked') {
+      appendLocalMessage(selectedMatch.id, '2-minute video vibe is already open.', 'Video room ready');
+      return;
+    }
+    if (tokens < request.unlockCostTokens) {
+      openTokenStore();
+      return;
+    }
+    setTokens((value) => Math.max(0, value - request.unlockCostTokens));
+    appendLocalMessage(selectedMatch.id, '2-minute video vibe unlocked. Your match earns 20 tokens and RomChat keeps 5.', 'Video unlocked - recipient notified');
+    void unlockVideoRequest(request.id);
   }
 
   if (selectedMatch) {
@@ -1312,7 +1346,7 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
             </View>
           </View>
           <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.chatIconButton}><Icon name="videocam-outline" size={19} color="#FF1493" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => void openVideoVibe()} style={styles.chatIconButton}><Icon name="videocam-outline" size={19} color="#FF1493" /></TouchableOpacity>
             <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={19} color="#FFFFFF" /></TouchableOpacity>
           </View>
         </View>
@@ -1341,15 +1375,7 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
           <View key={request.id} style={styles.videoInvite}>
             <Text style={styles.videoTitle}>{request.title || '2-minute video vibe request'}</Text>
             <Text style={styles.videoTeaser}>{request.status === 'unlocked' ? 'Video room unlocked. Tap to join when ready.' : request.teaser}</Text>
-            <TouchableOpacity onPress={() => {
-              if (request.status === 'unlocked') return;
-              if (tokens < request.unlockCostTokens) {
-                openTokenStore();
-                return;
-              }
-              setTokens((value) => Math.max(0, value - request.unlockCostTokens));
-              void unlockVideoRequest(request.id);
-            }} style={[styles.unlockButton, request.status === 'unlocked' && styles.unlockButtonDone]}>
+            <TouchableOpacity onPress={() => void openVideoVibe(request)} style={[styles.unlockButton, request.status === 'unlocked' && styles.unlockButtonDone]}>
               <Text style={styles.unlockButtonText}>{request.status === 'unlocked' ? 'Join video' : tokens < request.unlockCostTokens ? `Buy tokens for video (${request.unlockCostTokens})` : `Unlock 2-min vibe (${request.unlockCostTokens} tokens)`}</Text>
             </TouchableOpacity>
           </View>
@@ -1364,10 +1390,11 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
                   return;
                 }
                 setTokens((value) => Math.max(0, value - 5));
-                void sendGift('rose');
+                appendLocalMessage(selectedMatch.id, 'Rose gift sent.', 'Gift delivered - recipient notified');
+                void sendGift('rose', `match_${selectedMatch.id}`);
                 return;
               }
-              setDraft(prompt);
+              sendChatText(prompt);
             }}><Text style={styles.promptChip}>{prompt}</Text></TouchableOpacity>)}
           </View>
           <View style={styles.segment}>
@@ -1377,6 +1404,7 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
               </TouchableOpacity>
             ))}
           </View>
+          <Text style={styles.modeHint}>{messageMode === 'standard' ? 'Standard sends a normal free chat.' : messageMode === 'timed' ? 'Timed messages expire after 24 hours.' : 'Once marks this message as view-once.'}</Text>
           <ToggleRow title="Read receipt add-on" value={readReceipts} onPress={() => setReadReceipts(!readReceipts)} />
         </View>
         <View style={styles.composer}>
@@ -1420,8 +1448,10 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
         <Text style={styles.messagesTitle}>Messages</Text>
         {visibleThreads.map((profile, index) => {
           const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
-          const preview = index % 3 === 0 ? 'Hello there' : index % 3 === 1 ? profile.prompt : 'Good morning love';
-          const yourTurn = index % 2 === 0;
+          const messages = threadMessages[profile.id] || [];
+          const alertCount = threadAlerts[profile.id] || 0;
+          const preview = messages.length ? messages[messages.length - 1]!.text : profile.prompt;
+          const yourTurn = !messages.length;
           return (
             <TouchableOpacity key={profile.id} onPress={() => setSelectedMatchId(profile.id)} style={styles.threadRow}>
               <View>
@@ -1432,7 +1462,7 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
                 <Text numberOfLines={1} style={styles.threadName}>{profile.name}{profile.verified ? ' verified' : ''}</Text>
                 <Text numberOfLines={1} style={styles.threadPreview}>{preview}</Text>
               </View>
-              {yourTurn ? <Text style={styles.yourTurnPill}>Your Turn</Text> : <Icon name="heart" size={21} color="#FFD700" />}
+              {alertCount ? <Text style={styles.threadBadge}>{alertCount > 9 ? '9+' : alertCount}</Text> : yourTurn ? <Text style={styles.yourTurnPill}>Your Turn</Text> : <Icon name="heart" size={21} color="#FFD700" />}
             </TouchableOpacity>
           );
         })}
@@ -1857,6 +1887,8 @@ const styles = StyleSheet.create({
   threadName: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
   threadPreview: { color: 'rgba(255,255,255,0.62)', fontSize: 15, fontWeight: '800', marginTop: 4 },
   yourTurnPill: { color: '#120914', backgroundColor: '#FFFFFF', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 7, fontWeight: '900', fontSize: 12 },
+  threadBadge: { minWidth: 24, height: 24, borderRadius: 12, overflow: 'hidden', backgroundColor: '#FF1493', color: '#FFFFFF', textAlign: 'center', paddingTop: 3, fontWeight: '900', fontSize: 12 },
+  modeHint: { color: 'rgba(255,255,255,0.58)', fontWeight: '800', fontSize: 12, marginTop: 8, lineHeight: 17 },
   emptyThreadCard: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,20,147,0.16)', borderRadius: 18, padding: 16, marginTop: 8 },
   emptyThreadTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 17, marginBottom: 5, textAlign: 'center' },
   emptyThreadText: { color: 'rgba(255,255,255,0.62)', fontWeight: '800', lineHeight: 21, paddingVertical: 18, textAlign: 'center' },
