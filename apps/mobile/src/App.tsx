@@ -28,6 +28,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { storage } from '../utils/storage';
 import { romchatAccountApi, romchatBackendHealth, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
 import { apiBaseUrl } from './lib/api';
+import { checkForAppUpdate } from './lib/appUpdates';
 import { useRomChatData } from './features/romchat/hooks';
 
 type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'safety' | 'profile';
@@ -305,6 +306,10 @@ export default function App() {
       if (mounted) setAuthBooted(true);
     })();
     return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    void checkForAppUpdate();
   }, []);
 
   useEffect(() => {
