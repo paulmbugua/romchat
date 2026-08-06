@@ -221,10 +221,24 @@ export default function App() {
   const activePlan = boosted ? 'Platinum' : 'Gold';
 
   function normalizeSession(payload: RomChatSessionPayload | (Omit<RomChatSessionPayload, 'token'> & { token?: string }), tokenFallback?: string | null): SessionState {
-    const token = payload.token || tokenFallback || '';
-    const profile = payload.profile || null;
-    const onboarding = payload.onboarding || { needsProfile: !profile, needsFirstImage: !profile?.imageCount, imageCount: profile?.imageCount || 0, catalogueAccess: Math.min(6, Math.max(1, profile?.imageCount || 0)) };
-    return { token, user: payload.user, profile, onboarding };
+    const raw = (payload || {}) as Partial<RomChatSessionPayload> & { token?: string; message?: string; routes?: unknown };
+    const token = raw.token || tokenFallback || '';
+    const user = raw.user;
+    if (!token || !user?.id || !user?.email) {
+      console.warn('[romchat-auth] invalid session payload', {
+        hasToken: Boolean(token),
+        hasUser: Boolean(user),
+        payloadKeys: raw && typeof raw === 'object' ? Object.keys(raw).slice(0, 8) : [],
+        message: raw.message || null,
+        hasRoutes: Boolean(raw.routes),
+      });
+      throw new Error('RomChat session expired. Please sign in again.');
+    }
+    const safeUser: RomChatAccount = { ...user, name: user.name || user.email.split('@')[0] || 'RomChat member' };
+    const profile = raw.profile || null;
+    const imageCount = Number(profile?.imageCount || 0);
+    const onboarding = raw.onboarding || { needsProfile: !profile, needsFirstImage: !imageCount, imageCount, catalogueAccess: Math.min(6, Math.max(1, imageCount)) };
+    return { token, user: safeUser, profile, onboarding };
   }
 
   async function persistSession(next: SessionState | null) {
@@ -274,14 +288,18 @@ export default function App() {
       const savedToken = await storage.getItem(ROMCHAT_TOKEN_KEY);
       const savedSession = await storage.getItem(ROMCHAT_SESSION_KEY);
       if (savedSession && mounted) {
-        try { setSession(JSON.parse(savedSession) as SessionState); } catch {}
+        try { setSession(normalizeSession(JSON.parse(savedSession) as SessionState, savedToken)); } catch { await persistSession(null); }
       }
       if (savedToken) {
         try {
           const payload = await romchatAccountApi.me(savedToken);
           if (mounted) await persistSession(normalizeSession(payload, savedToken));
-        } catch {
-          if (mounted) await persistSession(null);
+        } catch (error) {
+          console.warn('[romchat-auth] boot refresh failed', error instanceof Error ? error.message : String(error));
+          if (mounted) {
+            setAuthError(error instanceof Error ? error.message : 'Please sign in again.');
+            await persistSession(null);
+          }
         }
       }
       if (mounted) setAuthBooted(true);
@@ -662,7 +680,7 @@ export default function App() {
   }
 
   if (!session.profile || session.onboarding.needsFirstImage) {
-    return <ProfileOnboardingScreen busy={authBusy} error={authError} accountName={session.user.name} profile={session.profile} uploadedImageCount={session.onboarding.imageCount} onSaveProfile={saveOnboardingProfile} onUploadImage={uploadProfileImage} onSignOut={signOut} />;
+    return <ProfileOnboardingScreen busy={authBusy} error={authError} accountName={session.user?.name || session.user?.email?.split('@')[0] || 'RomChat member'} profile={session.profile} uploadedImageCount={session.onboarding.imageCount} onSaveProfile={saveOnboardingProfile} onUploadImage={uploadProfileImage} onSignOut={signOut} />;
   }
 
   if (activeSection) {
