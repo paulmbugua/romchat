@@ -31,8 +31,9 @@ module.exports = function expoConfig({ config }) {
   const BACKENDS = {
     androidEmu: 'http://10.0.2.2:4000',
     iosSim: 'http://localhost:4000',
-    lan1: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://192.168.137.1:4000',
-    hotspot: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.254.198.47:4001',
+    devDevice: process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL || process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.42.11.111:4009',
+    lan1: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://192.168.137.1:4009',
+    hotspot: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.254.198.47:4009',
     prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://server.desiredoha.com',
   };
 

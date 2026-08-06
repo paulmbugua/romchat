@@ -77,6 +77,7 @@ type ExpoExtra = {
   EXPO_PUBLIC_DEVICE_BACKEND_PORT?: string;
   EXPO_PUBLIC_DEVICE_BACKEND_URL?: string;
   EXPO_PUBLIC_PROD_BACKEND_URL?: string;
+  EXPO_PUBLIC_LAN_BACKEND_URL?: string;
   BACKENDS?: Record<string, string>;
   DEFAULT_BACKEND?: string;
 };
@@ -84,8 +85,20 @@ type ExpoExtra = {
 const manifestExtra = (Constants.manifest as { extra?: unknown } | null | undefined)?.extra;
 const extra = (Constants.expoConfig?.extra || manifestExtra || {}) as ExpoExtra;
 const selectedBackendKey = extra.DEFAULT_BACKEND || 'direct';
+const explicitDeviceBackendUrl = (
+  process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL ||
+  extra.EXPO_PUBLIC_DEVICE_BACKEND_URL ||
+  process.env.EXPO_PUBLIC_LAN_BACKEND_URL ||
+  extra.EXPO_PUBLIC_LAN_BACKEND_URL ||
+  ''
+).replace(/\/$/, '');
+
 const selectedBackend =
-  extra.BACKENDS && extra.DEFAULT_BACKEND ? extra.BACKENDS[extra.DEFAULT_BACKEND] : undefined;
+  extra.DEFAULT_BACKEND === 'devDevice'
+    ? explicitDeviceBackendUrl
+    : extra.BACKENDS && extra.DEFAULT_BACKEND
+      ? extra.BACKENDS[extra.DEFAULT_BACKEND]
+      : undefined;
 
 const configuredApiBaseUrl = (
   selectedBackend ||
@@ -126,8 +139,7 @@ const metroHost = hostFromExpoRuntime();
 const lanBackendPort = extra.EXPO_PUBLIC_DEVICE_BACKEND_PORT || process.env.EXPO_PUBLIC_DEVICE_BACKEND_PORT || '4009';
 const lanBackendUrl = metroHost ? `http://${metroHost}:${lanBackendPort}` : '';
 const physicalAndroidBackendUrl = (
-  process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL ||
-  extra.EXPO_PUBLIC_DEVICE_BACKEND_URL ||
+  explicitDeviceBackendUrl ||
   lanBackendUrl ||
   'http://server.desiredoha.com'
 ).replace(/\/$/, '');
@@ -160,6 +172,7 @@ if (apiDebugEnabled) {
     backendKey: selectedBackendKey,
     androidEmulatorBackendSelected,
     developmentDeviceBackendSelected,
+    explicitDeviceBackendUrl,
     appEnv: extra.EXPO_PUBLIC_APP_ENV || process.env.EXPO_PUBLIC_APP_ENV || 'unknown',
     hasManifestBackend: Boolean(extra.EXPO_PUBLIC_BACKEND_URL || selectedBackend),
   });
@@ -196,7 +209,11 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
       });
     }
     if (!response.ok) {
+      const isHtmlBlock = /text\/html/i.test(contentType) || /^<!DOCTYPE html>/i.test(rawSnippet || '');
       const detail = payload.message || rawSnippet || `Request failed: ${response.status}`;
+      if (isHtmlBlock && response.status === 403) {
+        throw new Error(`RomChat backend is blocked at ${apiBaseUrl}. In development, start the backend on your PC and set EXPO_PUBLIC_DEVICE_BACKEND_URL to your PC LAN IP, for example http://10.42.11.111:4009, then restart Expo with -c.`);
+      }
       throw new Error(`Request failed: ${response.status}. ${detail}`);
     }
     return payload as T;
