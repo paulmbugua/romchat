@@ -27,6 +27,7 @@ function mergeProfiles(remoteProfiles: RomChatProfile[], localProfiles: LocalPro
         photo: photos[0] ? { uri: photos[0] } : undefined,
         photos,
         color: remote.color || local?.color || '#FF1493',
+        gender: remote.gender || local?.gender || '',
         tags: remote.tags?.length ? remote.tags : local?.tags || [],
         answers: remote.answers?.length ? remote.answers : local?.answers || [],
         poll: remote.poll?.question

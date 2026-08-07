@@ -21,6 +21,7 @@ export type RomChatProfile = {
   answers?: string[];
   poll?: { id?: string; question: string; yes?: number; no?: number };
   color?: string;
+  gender?: string;
   verified?: boolean;
   online?: boolean;
   distanceKm?: number;

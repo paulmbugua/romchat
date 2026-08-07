@@ -62,6 +62,7 @@ type ProfileSeed = {
   answers: string[];
   poll: { question: string; yes: number; no: number };
   color: string;
+  gender?: 'female' | 'male' | string;
   photo: ImageSourcePropType;
   online?: boolean;
   verified?: boolean;
@@ -85,6 +86,7 @@ const localProfiles: ProfileSeed[] = [
     answers: ['Intentional effort', 'Dinner first', 'Texts with substance'],
     poll: { question: 'Mutura date after sunset?', yes: 68, no: 32 },
     color: '#ff4f88',
+    gender: 'female',
     photo: require('../assets/romchat/profile-elena.png'),
   },
   {
@@ -104,6 +106,7 @@ const localProfiles: ProfileSeed[] = [
     answers: ['Plan the date', 'Acts of service', 'Sunday market'],
     poll: { question: 'Diani weekend or Nairobi rooftop?', yes: 74, no: 26 },
     color: '#ff6a3d',
+    gender: 'female',
     photo: require('../assets/romchat/profile-amara.png'),
   },
   {
@@ -123,6 +126,7 @@ const localProfiles: ProfileSeed[] = [
     answers: ['Early flight', 'Rooftop view', 'Calls over voice notes'],
     poll: { question: 'Matatu adventure or Bolt comfort?', yes: 57, no: 43 },
     color: '#8a3ffc',
+    gender: 'male',
     photo: require('../assets/romchat/profile-noah.png'),
   },
 ];
@@ -209,13 +213,22 @@ export default function App() {
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
   const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { height: windowHeight } = useWindowDimensions();
+  const swipePosition = useRef(new Animated.ValueXY()).current;
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 32);
   const footerHeight = 64 + bottomInset;
   const bottomContentPadding = footerHeight + 18;
   const swipeCardHeight = Math.max(500, windowHeight - insets.top - footerHeight - 92);
-  const profiles = romchat.profiles as ProfileSeed[];
+  const swipeRotation = swipePosition.x.interpolate({ inputRange: [-windowWidth * 0.55, 0, windowWidth * 0.55], outputRange: ['-14deg', '0deg', '14deg'], extrapolate: 'clamp' });
+  const swipeLift = swipePosition.x.interpolate({ inputRange: [-windowWidth * 0.55, 0, windowWidth * 0.55], outputRange: [-10, 0, -10], extrapolate: 'clamp' });
+  const swipeCardStyle = { transform: [{ translateX: swipePosition.x }, { translateY: Animated.add(swipePosition.y, swipeLift) }, { rotate: swipeRotation }] };
+  const viewerGender = String(session?.profile?.gender || '').toLowerCase();
+  const desiredDiscoveryGender = viewerGender === 'female' ? 'male' : viewerGender === 'male' ? 'female' : '';
+  const profiles = useMemo(() => {
+    const liveProfiles = romchat.profiles as ProfileSeed[];
+    return desiredDiscoveryGender ? liveProfiles.filter((item) => String(item.gender || '').toLowerCase() === desiredDiscoveryGender) : liveProfiles;
+  }, [desiredDiscoveryGender, romchat.profiles]);
   const profile = profiles.length ? profiles[index % profiles.length]! : null;
   const firstUploadedImageUrl = resolveMediaUrl([...(session?.profile?.media || [])].sort((a, b) => (a.position || 0) - (b.position || 0)).find((item) => item.mediaType === 'image')?.url);
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
@@ -340,11 +353,15 @@ export default function App() {
     }, MATCH_POP_DURATION_MS);
   }
 
+  function advanceProfile() {
+    setIndex((value) => profiles.length ? (value + 1) % profiles.length : 0);
+  }
+
   function passProfile() {
     clearMatchTimer();
     if (!profile) return;
     void romchat.swipe(profile.id, 'pass');
-    setIndex((value) => (value + 1) % profiles.length);
+    advanceProfile();
     setShowMatch(false);
   }
 
@@ -359,10 +376,15 @@ export default function App() {
     setShowMatch(false);
   }
 
-  function likeProfile(action: 'like' | 'super_like' = 'like') {
+  async function likeProfile(action: 'like' | 'super_like' = 'like') {
     if (!profile) return;
-    void romchat.swipe(profile.id, action);
-    openMatchedChatSoon();
+    clearMatchTimer();
+    const result = await romchat.swipe(profile.id, action);
+    if (result?.matched) openMatchedChatSoon();
+    else {
+      setShowMatch(false);
+      advanceProfile();
+    }
   }
 
   function superLikeProfile() {
@@ -377,17 +399,27 @@ export default function App() {
   const swipeHandlers = useMemo(
     () =>
       PanResponder.create({
-        onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 18 && Math.abs(gesture.dy) < 24,
+        onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.15,
+        onPanResponderMove: Animated.event([null, { dx: swipePosition.x, dy: swipePosition.y }], { useNativeDriver: false }),
         onPanResponderRelease: (_event, gesture) => {
-          if (gesture.dx > 48) {
-            likeProfile('like');
-          }
-          if (gesture.dx < -48) {
-            passProfile();
-          }
+          const swipeOut = (direction: 'left' | 'right') => {
+            Animated.timing(swipePosition, {
+              toValue: { x: direction === 'right' ? windowWidth * 1.18 : -windowWidth * 1.18, y: gesture.dy * 0.6 },
+              duration: 210,
+              useNativeDriver: false,
+            }).start(() => {
+              swipePosition.setValue({ x: 0, y: 0 });
+              if (direction === 'right') void likeProfile('like');
+              else passProfile();
+            });
+          };
+          if (gesture.dx > 92) return swipeOut('right');
+          if (gesture.dx < -92) return swipeOut('left');
+          Animated.spring(swipePosition, { toValue: { x: 0, y: 0 }, friction: 7, tension: 95, useNativeDriver: false }).start();
         },
+        onPanResponderTerminate: () => Animated.spring(swipePosition, { toValue: { x: 0, y: 0 }, friction: 7, tension: 95, useNativeDriver: false }).start(),
       }).panHandlers,
-    [profile?.id, profiles.length, romchat, likeProfile, passProfile]
+    [profile?.id, profiles.length, windowWidth, swipePosition, likeProfile, passProfile]
   );
 
   async function loginWithEmail(email: string, password: string) {
@@ -748,6 +780,7 @@ export default function App() {
               topProfile={superLikeProfile}
               previous={previous}
               swipeHandlers={swipeHandlers}
+              swipeCardStyle={swipeCardStyle}
               showMatch={showMatch}
               dismissMatch={passProfile}
               openChat={() => {
@@ -1011,7 +1044,7 @@ function ProfileOnboardingScreen({ busy, error, accountName, profile, uploadedIm
         <Text style={styles.authCopy}>Upload at least 1 image to enter Kenyan discovery. More uploaded images unlock more of other members' photo catalogues.</Text>
         <View onLayout={rememberSection('displayName')}><TextInput value={displayName} onChangeText={setDisplayName} placeholder="Display name" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, missingSection === 'displayName' && styles.inputMissing]} /></View>
         <View onLayout={rememberSection('age')}><TextInput value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="Age" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, missingSection === 'age' && styles.inputMissing]} /></View>
-        <View onLayout={rememberSection('gender')} style={[styles.genderRow, missingSection === 'gender' && styles.sectionMissing]}>{['female', 'male', 'nonbinary'].map((item) => <TouchableOpacity key={item} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
+        <View onLayout={rememberSection('gender')} style={[styles.genderRow, missingSection === 'gender' && styles.sectionMissing]}>{['female', 'male'].map((item) => <TouchableOpacity key={item} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
         <View onLayout={rememberSection('city')}><TextInput value={city} onChangeText={setCity} placeholder="City" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, missingSection === 'city' && styles.inputMissing]} /></View>
         <View onLayout={rememberSection('intent')}><Text style={[styles.selectorTitle, missingSection === 'intent' && styles.selectorTitleMissing]}>Dating intention in Kenya</Text>
         <View style={styles.choiceWrap}>{datingIntentions.map((item) => <TouchableOpacity key={item} onPress={() => setIntent(item)} style={[styles.choiceChip, intent === item && styles.choiceChipActive]}><Text style={[styles.choiceText, intent === item && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>)}</View></View>
@@ -1051,6 +1084,7 @@ function Discover({
   topProfile,
   previous,
   swipeHandlers,
+  swipeCardStyle,
   showMatch,
   dismissMatch,
   openChat,
@@ -1063,6 +1097,7 @@ function Discover({
   topProfile: () => void;
   previous: () => void;
   swipeHandlers: GestureResponderHandlers;
+  swipeCardStyle: object;
   showMatch: boolean;
   dismissMatch: () => void;
   openChat: () => void;
@@ -1101,7 +1136,7 @@ function Discover({
 
   return (
     <View style={styles.discovery}>
-      <View style={styles.deckShadow} {...swipeHandlers}>
+      <Animated.View style={[styles.deckShadow, swipeCardStyle]} {...swipeHandlers}>
         <ImageBackground source={photoSlots[photoIndex]} resizeMode="cover" style={[styles.profileCard, { height: cardHeight, minHeight: cardHeight }]} imageStyle={styles.profilePhoto}>
           <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(18,9,20,0.2)', 'rgba(18,9,20,0.95)']} style={styles.photoOverlay} />
           <View style={styles.photoDots}>
@@ -1147,7 +1182,7 @@ function Discover({
             </View>
           </View>
         </ImageBackground>
-      </View>
+      </Animated.View>
 
       {showMatch && (
         <Animated.View pointerEvents="box-none" style={[styles.matchPopOverlay, { opacity: popOpacity, transform: [{ scale: popScale }] }]}>
@@ -1665,7 +1700,7 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
             <View><Text style={styles.lockedAgeLabel}>Age</Text><Text style={styles.lockedAgeValue}>{profile?.age || '--'} years</Text></View>
             <Text style={styles.lockedAgeBadge}>Locked</Text>
           </View>
-          <View style={styles.genderRow}>{['female', 'male', 'nonbinary'].map((item) => <TouchableOpacity key={item} disabled={busy} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
+          <View style={styles.genderRow}>{['female', 'male'].map((item) => <TouchableOpacity key={item} disabled={busy} onPress={() => setGender(item)} style={[styles.genderChip, gender === item && styles.genderChipActive]}><Text style={[styles.genderText, gender === item && styles.genderTextActive]}>{item}</Text></TouchableOpacity>)}</View>
           <TextInput value={city} onChangeText={setCity} placeholder="City" placeholderTextColor="rgba(255,255,255,0.42)" style={styles.authInput} />
           <TextInput value={bio} onChangeText={setBio} placeholder="Short Kenyan romance bio" placeholderTextColor="rgba(255,255,255,0.42)" style={[styles.authInput, styles.authTextArea]} multiline />
         </View>

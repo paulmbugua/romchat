@@ -582,6 +582,11 @@ export async function upsertMemberProfile(memberId, payload = {}) {
   const age = existingAge >= 18 ? existingAge : requestedAge;
   const gender = String(payload.gender || '').trim().toLowerCase();
   const city = String(payload.city || '').trim().slice(0, 80);
+  if (!['female', 'male'].includes(gender)) {
+    const error = new Error('Choose either female or male.');
+    error.status = 400;
+    throw error;
+  }
   if (!displayName || age < 18 || !gender || !city) {
     const error = new Error('Display name, age 18+, gender, and city are required.');
     error.status = 400;
