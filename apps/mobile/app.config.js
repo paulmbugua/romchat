@@ -34,7 +34,7 @@ module.exports = function expoConfig({ config }) {
     devDevice: process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL || process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.42.11.111:4009',
     lan1: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://192.168.137.1:4009',
     hotspot: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.254.198.47:4009',
-    prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://server.desiredoha.com',
+    prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://server.romchat.co.ke',
   };
 
   const DEFAULT_BACKEND =
@@ -137,8 +137,8 @@ module.exports = function expoConfig({ config }) {
             usesCleartextTraffic,
             enableProguardInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
-            compileSdkVersion: 35,
-            targetSdkVersion: 35,
+            compileSdkVersion: 36,
+            targetSdkVersion: 36,
             javaVersion: 17,
           },
           ios: { deploymentTarget: '15.1' },

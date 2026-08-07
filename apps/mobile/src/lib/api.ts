@@ -106,7 +106,7 @@ const configuredApiBaseUrl = (
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   extra.EXPO_PUBLIC_PROD_BACKEND_URL ||
   process.env.EXPO_PUBLIC_PROD_BACKEND_URL ||
-  'https://server.desiredoha.com'
+  'https://server.romchat.co.ke'
 ).replace(/\/$/, '');
 
 const allowAndroidEmulatorBackend =
@@ -141,7 +141,7 @@ const lanBackendUrl = metroHost ? `http://${metroHost}:${lanBackendPort}` : '';
 const physicalAndroidBackendUrl = (
   explicitDeviceBackendUrl ||
   lanBackendUrl ||
-  'http://server.desiredoha.com'
+  'http://server.romchat.co.ke'
 ).replace(/\/$/, '');
 
 const developmentDeviceBackendSelected =

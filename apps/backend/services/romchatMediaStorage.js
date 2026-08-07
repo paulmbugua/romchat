@@ -5,8 +5,8 @@ import { r2Client } from './r2.js';
 
 const imageBucket = process.env.R2_BUCKET_IMAGES || 'images-romchat';
 const videoBucket = process.env.R2_BUCKET_VIDEOS || 'videos-romchat';
-const imagePublicBase = (process.env.R2_PUBLIC_BASE_URL_IMAGES || 'https://image.desiredoha.com').replace(/\/$/, '');
-const videoPublicBase = (process.env.R2_PUBLIC_BASE_URL_VIDEOS || 'https://videos.desiredoha.com').replace(/\/$/, '');
+const imagePublicBase = (process.env.R2_PUBLIC_BASE_URL_IMAGES || 'https://image.romchat.co.ke').replace(/\/$/, '');
+const videoPublicBase = (process.env.R2_PUBLIC_BASE_URL_VIDEOS || 'https://videos.romchat.co.ke').replace(/\/$/, '');
 
 const mediaDriver = process.env.ROMCHAT_MEDIA_DRIVER || (process.env.NODE_ENV === 'production' ? 'r2' : 'local');
 export const localMediaRoot = process.env.ROMCHAT_LOCAL_MEDIA_DIR || path.join(process.cwd(), '.romchat-media');
