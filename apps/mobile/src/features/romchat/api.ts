@@ -60,6 +60,7 @@ export type RomChatBootstrap = {
   profiles: RomChatProfile[];
   messages: RomChatMessage[];
   wallet?: { balance: number; currency: string };
+  likes?: { receivedCount: number };
   privacy?: {
     incognito: boolean;
     screenshotsBlocked: boolean;

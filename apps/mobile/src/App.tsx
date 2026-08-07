@@ -233,6 +233,7 @@ export default function App() {
   const firstUploadedImageUrl = resolveMediaUrl([...(session?.profile?.media || [])].sort((a, b) => (a.position || 0) - (b.position || 0)).find((item) => item.mediaType === 'image')?.url);
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
   const activePlan = boosted ? 'Platinum' : 'Gold';
+  const likesReceivedCount = Math.max(0, Number(romchat.bootstrap?.likes?.receivedCount || 0));
 
   function normalizeSession(payload: RomChatSessionPayload | (Omit<RomChatSessionPayload, 'token'> & { token?: string }), tokenFallback?: string | null): SessionState {
     const raw = (payload || {}) as Partial<RomChatSessionPayload> & { token?: string; message?: string; routes?: unknown };
@@ -663,7 +664,7 @@ export default function App() {
       return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={profiles} openPremium={openTokenStore} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
+      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} openPremium={openTokenStore} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
     }
     if (section === 'chat') {
       return (
@@ -734,7 +735,7 @@ export default function App() {
         >
           {renderSection(activeSection)}
         </ScrollView>
-        <FooterNav active={activeSection} setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} />
+        <FooterNav active={activeSection} setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} likesReceivedCount={likesReceivedCount} />
       </SafeAreaView>
     );
   }
@@ -796,7 +797,7 @@ export default function App() {
           <EmptyDiscovery openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
         )}
       </ScrollView>
-      <FooterNav active="swipe" setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} />
+      <FooterNav active="swipe" setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} likesReceivedCount={likesReceivedCount} />
     </SafeAreaView>
   );
 }
@@ -1219,12 +1220,13 @@ function ShortcutRail({ setActiveSection }: { setActiveSection: (section: Sectio
   );
 }
 
-function FooterNav({ active, setActiveSection, openSwipeDeck, bottomInset, chatBadgeCount }: { active: Section | 'swipe'; setActiveSection: (section: Section | null) => void; openSwipeDeck: () => void; bottomInset: number; chatBadgeCount: number }) {
+function FooterNav({ active, setActiveSection, openSwipeDeck, bottomInset, chatBadgeCount, likesReceivedCount }: { active: Section | 'swipe'; setActiveSection: (section: Section | null) => void; openSwipeDeck: () => void; bottomInset: number; chatBadgeCount: number; likesReceivedCount: number }) {
   const chatBadge = chatBadgeCount > 0 ? (chatBadgeCount > 99 ? '99+' : String(chatBadgeCount)) : undefined;
+  const likesBadge = likesReceivedCount > 0 ? (likesReceivedCount > 99 ? '99+' : String(likesReceivedCount)) : undefined;
   const items: Array<{ key: Section | 'swipe'; label: string; icon: string; target: Section | null; badge?: string }> = [
     { key: 'swipe', label: 'Swipe', icon: 'flame', target: null },
     { key: 'explore', label: 'Explore', icon: 'compass', target: 'explore' },
-    { key: 'likes', label: 'Likes', icon: 'heart-outline', target: 'likes', badge: '99+' },
+    { key: 'likes', label: 'Likes', icon: 'heart-outline', target: 'likes', badge: likesBadge },
     { key: 'chat', label: 'Chat', icon: 'chatbubble', target: 'chat', badge: chatBadge },
     { key: 'profile', label: 'Profile', icon: 'person-outline', target: 'profile' },
   ];
@@ -1273,12 +1275,13 @@ function ExploreScreen({ openLikes }: { openLikes: () => void }) {
   );
 }
 
-function LikesScreen({ profiles, openPremium, likeProfile, passProfile }: { profiles: ProfileSeed[]; openPremium: () => void; likeProfile: () => void; passProfile: () => void }) {
+function LikesScreen({ profiles, likesReceivedCount, openPremium, likeProfile, passProfile }: { profiles: ProfileSeed[]; likesReceivedCount: number; openPremium: () => void; likeProfile: () => void; passProfile: () => void }) {
   const featured = profiles[0] || localProfiles[0]!;
   const photo = featured.photos?.[0] ? { uri: resolveMediaUrl(featured.photos[0]) } : featured.photo;
+  const likesLabel = likesReceivedCount > 99 ? '99+' : String(likesReceivedCount);
   return (
     <View>
-      <View style={styles.likesTabs}><Text style={styles.likesTabActive}>99+ Likes</Text><Text style={styles.likesTab}>Likes Sent</Text><Text style={styles.likesTab}>Top Picks</Text></View>
+      <View style={styles.likesTabs}><Text style={styles.likesTabActive}>{likesLabel} Likes</Text><Text style={styles.likesTab}>Likes Sent</Text><Text style={styles.likesTab}>Top Picks</Text></View>
       <Text style={styles.exploreTitle}>Matches your vibe</Text>
       <ImageBackground source={photo} resizeMode="cover" style={styles.likePreviewCard} imageStyle={styles.likePreviewImage}>
         <LinearGradient colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.62)', 'rgba(0,0,0,0.92)']} style={styles.photoOverlay} />

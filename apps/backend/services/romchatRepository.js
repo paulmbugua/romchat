@@ -399,12 +399,24 @@ export async function getWallet() {
   }, () => ({ balance: 146, currency: 'KES', ledger: [] }));
 }
 
+export async function getLikesSummary(memberId = null) {
+  return withDb(async () => {
+    if (!memberId) return { receivedCount: 0 };
+    const result = await queryWithRetry(
+      "SELECT COUNT(DISTINCT actor_id)::int AS received_count FROM romchat_swipes WHERE profile_id = $1 AND action IN ('like', 'super_like')",
+      [memberId]
+    );
+    return { receivedCount: Number(result.rows[0]?.received_count || 0) };
+  }, () => ({ receivedCount: 0 }));
+}
+
 export async function getBootstrap({ catalogueAccess = 1, viewerId = null, verifiedOnly = false } = {}) {
-  const [profiles, messages, privacy, wallet] = await Promise.all([
+  const [profiles, messages, privacy, wallet, likes] = await Promise.all([
     getProfiles({ verifiedOnly, catalogueAccess, viewerId }),
     getMessages('match_elena'),
     getPrivacy(),
     getWallet(),
+    getLikesSummary(viewerId),
   ]);
   return {
     app: { name: 'RomChat', tagline: 'Kenyan singles. Real vibes. Safer chats.', mode: process.env.ROMCHAT_MODE || 'demo' },
@@ -412,6 +424,7 @@ export async function getBootstrap({ catalogueAccess = 1, viewerId = null, verif
     profiles,
     messages,
     wallet,
+    likes,
     safety: {
       verifiedOnlyDefault: true,
       screenshotWarnings: privacy.screenshotsBlocked,
@@ -437,7 +450,7 @@ function shouldCreateMutualMatch(profileId, action, profile) {
   return deterministicPercent(String(profileId) + ':' + action + ':romchat-mutual') < baseChance + scoreBoost;
 }
 
-export async function createSwipe({ profileId, action }) {
+export async function createSwipe({ profileId, action, actorId = 'me' }) {
   if (!profileId || !['pass', 'like', 'super_like'].includes(action)) {
     const error = new Error('profileId and a valid action are required.');
     error.status = 400;
@@ -450,13 +463,13 @@ export async function createSwipe({ profileId, action }) {
   const matchId = matched ? `match_${profileId}` : null;
 
   return withDb(async () => {
-    await queryWithRetry('INSERT INTO romchat_swipes (id, actor_id, profile_id, action, matched) VALUES ($1,$2,$3,$4,$5)', [swipeId, 'me', profileId, action, matched]);
+    await queryWithRetry('INSERT INTO romchat_swipes (id, actor_id, profile_id, action, matched) VALUES ($1,$2,$3,$4,$5)', [swipeId, actorId || 'me', profileId, action, matched]);
     if (matched) {
       await queryWithRetry(
         `INSERT INTO romchat_matches (id, actor_id, profile_id, expires_at)
-         VALUES ($1, 'me', $2, now() + interval '24 hours')
+         VALUES ($1, $2, $3, now() + interval '24 hours')
          ON CONFLICT (actor_id, profile_id) DO UPDATE SET status = 'active'`,
-        [matchId, profileId]
+        [matchId, actorId || 'me', profileId]
       );
       await queryWithRetry(
         `INSERT INTO romchat_video_requests (id, match_id, sender_profile_id, title, teaser, unlock_cost_tokens, status)

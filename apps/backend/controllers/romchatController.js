@@ -147,7 +147,8 @@ export function createRomchatController(io) {
     },
     async swipe(req, res) {
       try {
-        const result = await createSwipe(req.body || {});
+        const state = await authStateFor(req);
+        const result = await createSwipe({ ...(req.body || {}), actorId: state?.user?.id || 'me' });
         io?.emit('romchat:swipe', { ...req.body, ...result, createdAt: new Date().toISOString() });
         res.status(201).json(result);
       } catch (error) {
