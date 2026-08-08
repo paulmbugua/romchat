@@ -186,6 +186,18 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
+  const createPayment = useCallback(async (payload: { provider: 'mpesa' | 'paystack'; purpose?: 'tokens' | 'subscription'; packageId?: string; planId?: string; phone?: string }) => {
+    setLastAction(payload.provider === 'mpesa' ? 'Starting M-Pesa payment' : 'Starting card payment');
+    try {
+      const result = await romchatApi.createPayment(payload);
+      setLastAction(result.payment.instructions || 'Payment started');
+      return result.payment;
+    } catch {
+      setLastAction('Payment could not start');
+      return null;
+    }
+  }, []);
+
   const updatePrivacy = useCallback(async (payload: { incognito: boolean; screenshotsBlocked: boolean; visibleToLikedOnly: boolean }) => {
     setLastAction('Updating privacy');
     try {
@@ -216,5 +228,5 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, updatePrivacy, report, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, report, verify };
 }

@@ -21,6 +21,7 @@ import {
   unlockPaidMessage,
   unlockVideoRequest,
   topUpWallet,
+  createPaymentIntent,
   updatePrivacy,
 } from '../services/romchatRepository.js';
 import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
@@ -252,12 +253,20 @@ export function createRomchatController(io) {
       }
     },
     async premium(_req, res) {
-      res.json({ plans: premiumPlans, addOns, activeTier: 'gold' });
+      res.json({ plans: premiumPlans, addOns, activeTier: 'free' });
     },
     async subscribe(req, res) {
       const plan = premiumPlans.find((item) => item.id === req.body?.planId);
       if (!plan || plan.id === 'free') return res.status(400).json({ message: 'A paid planId is required.' });
-      res.status(201).json({ subscription: { id: `sub_${Date.now()}`, planId: plan.id, status: 'active', startedAt: new Date().toISOString() }, plan });
+      res.status(201).json({ subscription: { id: `sub_${Date.now()}`, planId: plan.id, status: 'active', startedAt: new Date().toISOString(), currency: 'KES', amountKes: plan.priceKes }, plan });
+    },
+    async createPayment(req, res) {
+      try {
+        const state = await authStateFor(req);
+        res.status(201).json({ payment: await createPaymentIntent({ ...(req.body || {}), memberId: state?.user?.id || 'me', email: state?.user?.email || '' }) });
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async boost(req, res) {
       const result = await activateBoost(req.body || {});

@@ -3,6 +3,7 @@ import type { GestureResponderHandlers, ImageSourcePropType, LayoutChangeEvent }
 import {
   Image,
   ImageBackground,
+  Alert,
   Animated,
   KeyboardAvoidingView,
   PanResponder,
@@ -22,6 +23,7 @@ import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ResizeMode, Video } from 'expo-av';
 import Slider from '@react-native-community/slider';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,6 +38,7 @@ type MessageMode = 'standard' | 'timed' | 'viewOnce';
 type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
 type SessionState = RomChatSessionPayload & { onboarding: RomChatOnboardingState };
 type RomChatPromptAnswer = { prompt: string; answer: string };
+type PlanName = 'Free' | 'Gold' | 'Platinum';
 
 const ROMCHAT_TOKEN_KEY = 'romchat:auth:token';
 const ROMCHAT_SESSION_KEY = 'romchat:auth:session';
@@ -138,9 +141,9 @@ const shortcuts: Array<{ id: Section; label: string; title: string }> = [
   { id: 'profile', label: 'Me', title: 'Profile' },
 ];
 
-const plans = [
-  { name: 'Gold', price: 'KES 499', perks: ['Unlimited likes', 'See admirers', 'Undo swipes', 'Read receipts'] },
-  { name: 'Platinum', price: 'KES 999', perks: ['Priority likes', 'Passport mode', 'Weekly boost', 'Incognito included'] },
+const plans: Array<{ id: 'gold' | 'platinum'; name: PlanName; price: string; amountKes: number; perks: string[] }> = [
+  { id: 'gold', name: 'Gold', price: 'KES 1,000/mo', amountKes: 1000, perks: ['Unlimited likes', 'Likes Sent', 'Top Picks', 'Undo swipes', 'Read receipts'] },
+  { id: 'platinum', name: 'Platinum', price: 'KES 2,400/mo', amountKes: 2400, perks: ['Unlimited likes', 'Unlimited 2-minute videos', 'Likes Sent', 'Top Picks', 'Priority likes'] },
 ];
 
 const gifts = [
@@ -208,6 +211,8 @@ export default function App() {
   const [chatBadgeCount, setChatBadgeCount] = useState(0);
   const [tokens, setTokens] = useState(146);
   const [boosted, setBoosted] = useState(false);
+  const [subscriptionTier, setSubscriptionTier] = useState<PlanName>('Free');
+  const [paymentNotice, setPaymentNotice] = useState('');
   const [showMatch, setShowMatch] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
@@ -232,8 +237,11 @@ export default function App() {
   const profile = profiles.length ? profiles[index % profiles.length]! : null;
   const firstUploadedImageUrl = resolveMediaUrl([...(session?.profile?.media || [])].sort((a, b) => (a.position || 0) - (b.position || 0)).find((item) => item.mediaType === 'image')?.url);
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
-  const activePlan = boosted ? 'Platinum' : 'Gold';
-  const likesReceivedCount = Math.max(0, Number(romchat.bootstrap?.likes?.receivedCount || 0));
+  const activePlan: PlanName = boosted ? 'Platinum' : subscriptionTier;
+  const likesSummary = romchat.bootstrap?.likes || { receivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] };
+  const likesReceivedCount = Math.max(0, Number(likesSummary.receivedCount || 0));
+  const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
+  const hasPlatinumAccess = activePlan === 'Platinum';
 
   function normalizeSession(payload: RomChatSessionPayload | (Omit<RomChatSessionPayload, 'token'> & { token?: string }), tokenFallback?: string | null): SessionState {
     const raw = (payload || {}) as Partial<RomChatSessionPayload> & { token?: string; message?: string; routes?: unknown };
@@ -345,6 +353,24 @@ export default function App() {
     setActiveSection('premium');
   }
 
+  async function startTokenPurchase(packageId = 'tokens_100', provider: 'mpesa' | 'paystack' = 'mpesa') {
+    try {
+      const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId });
+      if (!payment) throw new Error('Payment could not start.');
+      setPaymentNotice(provider === 'mpesa' ? `M-Pesa STK initiated for KES ${payment.amountKes}. Complete it on your phone to receive tokens.` : `Paystack card checkout prepared for KES ${payment.amountKes}.`);
+    } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start token payment.'); }
+  }
+
+  async function startPlanPurchase(planId: 'gold' | 'platinum', provider: 'mpesa' | 'paystack' = 'mpesa') {
+    try {
+      const payment = await romchat.createPayment({ provider, purpose: 'subscription', planId });
+      if (!payment) throw new Error('Payment could not start.');
+      const plan = plans.find((item) => item.id === planId);
+      if (plan) { setSubscriptionTier(plan.name); if (plan.name === 'Platinum') setBoosted(true); }
+      setPaymentNotice(provider === 'mpesa' ? `M-Pesa STK initiated for ${plan?.price || `KES ${payment.amountKes}`}. Premium access is ready while payment confirms.` : `Paystack card checkout prepared for ${plan?.price || `KES ${payment.amountKes}`}.`);
+    } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start subscription payment.'); }
+  }
+
   function openMatchedChatSoon() {
     clearMatchTimer();
     setShowMatch(true);
@@ -367,12 +393,14 @@ export default function App() {
   }
 
   function previous() {
-    if (tokens < UNDO_SWIPE_COST) {
-      openTokenStore();
+    if (!hasGoldAccess) {
+      Alert.alert('Rewind is premium', 'Free members cannot swipe back. Buy 100 tokens for KES 250 or upgrade to Gold to rewind.', [
+        { text: 'Later', style: 'cancel' },
+        { text: 'OK', onPress: () => { void startTokenPurchase('tokens_100', 'mpesa'); openTokenStore(); } },
+      ]);
       return;
     }
     clearMatchTimer();
-    setTokens((value) => Math.max(0, value - UNDO_SWIPE_COST));
     setIndex((value) => (value - 1 + profiles.length) % profiles.length);
     setShowMatch(false);
   }
@@ -664,7 +692,7 @@ export default function App() {
       return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} openPremium={openTokenStore} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
+      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
     }
     if (section === 'chat') {
       return (
@@ -677,7 +705,8 @@ export default function App() {
           tokens={tokens}
           setTokens={setTokens}
           openTokenStore={openTokenStore}
-          onChatNotification={() => setChatBadgeCount((value) => Math.min(99, value + 1))}
+          onChatNotification={() => undefined}
+          hasPlatinumAccess={hasPlatinumAccess}
           sendMessage={romchat.sendMessage}
           sendGift={romchat.sendGift}
           createVideoRequest={romchat.createVideoRequest}
@@ -688,7 +717,7 @@ export default function App() {
       );
     }
     if (section === 'premium') {
-      return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} activateBoost={() => { setBoosted(true); void romchat.boost(); }} />;
+      return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} startTokenPurchase={startTokenPurchase} startPlanPurchase={startPlanPurchase} />;
     }
     if (section === 'safety') {
       return (
@@ -1275,14 +1304,31 @@ function ExploreScreen({ openLikes }: { openLikes: () => void }) {
   );
 }
 
-function LikesScreen({ profiles, likesReceivedCount, openPremium, likeProfile, passProfile }: { profiles: ProfileSeed[]; likesReceivedCount: number; openPremium: () => void; likeProfile: () => void; passProfile: () => void }) {
-  const featured = profiles[0] || localProfiles[0]!;
+function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, likeProfile, passProfile }: {
+  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; likeProfile: () => void; passProfile: () => void }) {
+  const [tab, setTab] = useState<'received' | 'sent' | 'top'>('received');
+  const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
+  const sentIds = new Set(likesSummary.sentProfileIds || []);
+  const topIds = new Set(likesSummary.topPickProfileIds || []);
+  const sentProfiles = profiles.filter((profile) => sentIds.has(profile.id));
+  const topPicks = profiles.filter((profile) => topIds.has(profile.id));
+  const fallbackTopPicks = profiles.filter((profile) => profile.match >= 88).slice(0, 6);
+  const activeList = tab === 'sent' ? sentProfiles : tab === 'top' ? (topPicks.length ? topPicks : fallbackTopPicks) : profiles;
+  const featured = activeList[0] || profiles[0] || localProfiles[0]!;
   const photo = featured.photos?.[0] ? { uri: resolveMediaUrl(featured.photos[0]) } : featured.photo;
   const likesLabel = likesReceivedCount > 99 ? '99+' : String(likesReceivedCount);
+  const sentLabel = (likesSummary.sentCount || sentProfiles.length).toString();
+  const topLabel = String((topPicks.length || fallbackTopPicks.length || 0));
+  const title = tab === 'sent' ? 'Profiles you liked' : tab === 'top' ? 'Top Picks in your Explore vibe' : 'Matches your vibe';
+  function selectTab(next: 'received' | 'sent' | 'top') { if (next !== 'received' && !hasGoldAccess) { openPremium(); return; } setTab(next); }
   return (
     <View>
-      <View style={styles.likesTabs}><Text style={styles.likesTabActive}>{likesLabel} Likes</Text><Text style={styles.likesTab}>Likes Sent</Text><Text style={styles.likesTab}>Top Picks</Text></View>
-      <Text style={styles.exploreTitle}>Matches your vibe</Text>
+      <View style={styles.likesTabs}>
+        <TouchableOpacity onPress={() => selectTab('received')} style={styles.likesTabButton}><Text style={tab === 'received' ? styles.likesTabActive : styles.likesTab}>{likesLabel} Likes</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => selectTab('sent')} style={styles.likesTabButton}><Text style={tab === 'sent' ? styles.likesTabActive : styles.likesTab}>Likes Sent {hasGoldAccess ? sentLabel : 'Gold'}</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => selectTab('top')} style={styles.likesTabButton}><Text style={tab === 'top' ? styles.likesTabActive : styles.likesTab}>Top Picks {hasGoldAccess ? topLabel : 'Gold'}</Text></TouchableOpacity>
+      </View>
+      <Text style={styles.exploreTitle}>{title}</Text>
       <ImageBackground source={photo} resizeMode="cover" style={styles.likePreviewCard} imageStyle={styles.likePreviewImage}>
         <LinearGradient colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.62)', 'rgba(0,0,0,0.92)']} style={styles.photoOverlay} />
         <View style={styles.likePreviewCopy}>
@@ -1295,7 +1341,7 @@ function LikesScreen({ profiles, likesReceivedCount, openPremium, likeProfile, p
           </View>
         </View>
       </ImageBackground>
-      <TouchableOpacity onPress={openPremium} style={styles.likesUnlockButton}><Text style={styles.likesUnlockText}>See all your likes now</Text></TouchableOpacity>
+      <TouchableOpacity onPress={openPremium} style={styles.likesUnlockButton}><Text style={styles.likesUnlockText}>{hasGoldAccess ? 'Manage Gold features' : 'Unlock Likes Sent and Top Picks with Gold'}</Text></TouchableOpacity>
     </View>
   );
 }
@@ -1323,7 +1369,7 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, openTokenStore, onChatNotification, sendMessage, sendGift, createVideoRequest, unlockVideoRequest, videoRequests, status }: {
+function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, openTokenStore, onChatNotification: _onChatNotification, hasPlatinumAccess, sendMessage, sendGift, createVideoRequest, unlockVideoRequest, videoRequests, status }: {
   profiles: ProfileSeed[];
   readReceipts: boolean;
   setReadReceipts: (value: boolean) => void;
@@ -1333,6 +1379,7 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
   setTokens: React.Dispatch<React.SetStateAction<number>>;
   openTokenStore: () => void;
   onChatNotification: () => void;
+  hasPlatinumAccess: boolean;
   sendMessage: (text: string, matchId?: string, options?: { mode?: MessageMode; readReceiptRequested?: boolean }) => Promise<unknown>;
   sendGift: (giftId: string, matchId?: string) => Promise<void>;
   createVideoRequest: (matchId: string, senderProfileId: string) => Promise<{ id: string; matchId?: string; senderProfileId?: string; title: string; teaser: string; unlockCostTokens: number; status: string } | null>;
@@ -1348,6 +1395,7 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
   const [threadMessages, setThreadMessages] = useState<Record<string, Array<{ id: string; from: 'You'; text: string; status: string }>>>({});
   const [threadAlerts, setThreadAlerts] = useState<Record<string, number>>({});
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [openVideoRoomId, setOpenVideoRoomId] = useState<string | null>(null);
   const selectedMatch = orderedMatches.find((profile) => profile.id === selectedMatchId) || null;
   const visibleThreads = orderedMatches.filter((profile) => `${profile.name} ${profile.city} ${profile.intent} ${profile.tags.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
   const modeLabel = messageMode === 'standard' ? 'Standard' : messageMode === 'timed' ? 'Vanishes in 24h' : 'View once';
@@ -1362,8 +1410,6 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
       ...current,
       [profileId]: [...(current[profileId] || []), { id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, from: 'You', text, status: readReceipts ? `${statusText} - read receipt on` : statusText }],
     }));
-    setThreadAlerts((current) => ({ ...current, [profileId]: Math.min(99, (current[profileId] || 0) + 1) }));
-    onChatNotification();
   }
   function sendChatText(text: string) {
     if (!text || !selectedMatch) return;
@@ -1381,8 +1427,9 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
     const matchId = `match_${selectedMatch.id}`;
     const request = requestOverride || selectedVideoRequests[0] || await createVideoRequest(matchId, selectedMatch.id);
     if (!request) return;
-    if (request.status === 'unlocked') {
-      appendLocalMessage(selectedMatch.id, '2-minute video vibe is already open.', 'Video room ready');
+    if (request.status === 'unlocked' || hasPlatinumAccess) {
+      setOpenVideoRoomId(request.id);
+      appendLocalMessage(selectedMatch.id, hasPlatinumAccess ? 'Platinum video vibe opened.' : '2-minute video vibe is already open.', 'Video room ready');
       return;
     }
     if (tokens < request.unlockCostTokens) {
@@ -1390,6 +1437,7 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
       return;
     }
     setTokens((value) => Math.max(0, value - request.unlockCostTokens));
+    setOpenVideoRoomId(request.id);
     appendLocalMessage(selectedMatch.id, '2-minute video vibe unlocked. Your match earns 20 tokens and RomChat keeps 5.', 'Video unlocked - recipient notified');
     void unlockVideoRequest(request.id);
   }
@@ -1431,6 +1479,16 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
             </View>
           )}
         </View>
+
+        {openVideoRoomId && (
+          <View style={styles.videoPlayerCard}>
+            <Video source={{ uri: 'https://videos.romchat.co.ke/romchat-demo-vibe.mp4' }} style={styles.videoPlayer} resizeMode={ResizeMode.COVER} shouldPlay isLooping isMuted />
+            <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.74)']} style={styles.videoPlayerOverlay}>
+              <Text style={styles.videoTitle}>2-minute vibe with {selectedMatch.name}</Text>
+              <Text style={styles.videoTeaser}>{hasPlatinumAccess ? 'Included with Platinum.' : 'Unlocked with 25 tokens.'}</Text>
+            </LinearGradient>
+          </View>
+        )}
 
         {selectedVideoRequests.map((request) => (
           <View key={request.id} style={styles.videoInvite}>
@@ -1533,42 +1591,23 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
   );
 }
 
-function Premium({ tokens, boosted, activePlan, activateBoost }: { tokens: number; boosted: boolean; activePlan: string; activateBoost: () => void }) {
+function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, startTokenPurchase, startPlanPurchase }: {
+  tokens: number; boosted: boolean; activePlan: PlanName; paymentNotice: string; activateBoost: () => void;
+  startTokenPurchase: (packageId?: string, provider?: 'mpesa' | 'paystack') => Promise<void>;
+  startPlanPurchase: (planId: 'gold' | 'platinum', provider?: 'mpesa' | 'paystack') => Promise<void>;
+}) {
   return (
     <View>
       <LinearGradient colors={['#FFD700', '#FFA500']} style={styles.walletHero}>
-        <Text style={styles.kickerDark}>Token Wallet</Text>
-        <Text style={styles.balance}>{tokens} tokens</Text>
-        <Text style={styles.heroCopyDark}>Transparent token pricing before every purchase.</Text>
+        <Text style={styles.kickerDark}>Token Wallet</Text><Text style={styles.balance}>{tokens} tokens</Text><Text style={styles.heroCopyDark}>Transparent KES token pricing before every purchase.</Text>
       </LinearGradient>
-      <View style={styles.packageGrid}>
-        {tokenPackages.map((pack) => (
-          <TouchableOpacity key={pack.id} style={[styles.packageCard, pack.badge && styles.packageFeatured]}>
-            {!!pack.badge && <Text style={styles.packageBadge}>{pack.badge}</Text>}
-            <Text style={styles.packageAmount}>{pack.amount}</Text>
-            <Text style={styles.packagePrice}>{pack.price}</Text>
-            <Text style={styles.packageUnit}>{pack.unit}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <View style={styles.catalogCard}>
-        <Text style={styles.sectionLabel}>Token feature catalog</Text>
-        {tokenCatalog.map(([label, cost]) => <View key={label} style={styles.catalogRow}><Text style={styles.catalogLabel}>{label}</Text><Text style={styles.catalogCost}>{cost}</Text></View>)}
-      </View>
+      <View style={styles.packageGrid}>{tokenPackages.map((pack) => (<TouchableOpacity key={pack.id} onPress={() => void startTokenPurchase(pack.id, 'mpesa')} onLongPress={() => void startTokenPurchase(pack.id, 'paystack')} style={[styles.packageCard, pack.badge && styles.packageFeatured]}>{!!pack.badge && <Text style={styles.packageBadge}>{pack.badge}</Text>}<Text style={styles.packageAmount}>{pack.amount}</Text><Text style={styles.packagePrice}>{pack.price}</Text><Text style={styles.packageUnit}>{pack.unit}</Text></TouchableOpacity>))}</View>
+      {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
+      <View style={styles.catalogCard}><Text style={styles.sectionLabel}>Token feature catalog</Text>{tokenCatalog.map(([label, cost]) => <View key={label} style={styles.catalogRow}><Text style={styles.catalogLabel}>{label}</Text><Text style={styles.catalogCost}>{cost}</Text></View>)}</View>
       <Text style={styles.sectionLabel}>Plus tiers</Text>
-      {plans.map((plan) => (
-        <LinearGradient key={plan.name} colors={plan.name === 'Gold' ? ['#FF6F61', '#FF1493'] : ['#1E1222', '#120914']} style={styles.planCard}>
-          <View style={styles.planHeader}>
-            <Text style={styles.planName}>{plan.name}</Text>
-            <Text style={styles.planPrice}>{plan.name === 'Gold' ? '$19.99/mo' : '$34.99/mo'}</Text>
-          </View>
-          {['Unlimited Rewinds', 'See Who Liked You', '20 Free Monthly Tokens', 'Priority Likes', 'Incognito Browsing'].map((perk) => <Text key={perk} style={styles.planPerk}>{perk}</Text>)}
-        </LinearGradient>
-      ))}
-      <TouchableOpacity onPress={activateBoost} style={[styles.boostButton, boosted && styles.boostButtonActive]}>
-        <Text style={styles.boostText}>{boosted ? 'Spotlight active for 30 minutes' : 'Boost profile for peak hour'}</Text>
-      </TouchableOpacity>
-      <Text style={styles.complianceText}>Purchases use Google Play Billing or StoreKit. Subscriptions renew automatically unless cancelled in your store account before renewal.</Text>
+      {plans.map((plan) => (<TouchableOpacity key={plan.name} onPress={() => void startPlanPurchase(plan.id, 'mpesa')} onLongPress={() => void startPlanPurchase(plan.id, 'paystack')} activeOpacity={0.9}><LinearGradient colors={plan.name === 'Gold' ? ['#FF6F61', '#FF1493'] : ['#1E1222', '#120914']} style={[styles.planCard, activePlan === plan.name && styles.planCardActive]}><View style={styles.planHeader}><Text style={styles.planName}>{plan.name}</Text><Text style={styles.planPrice}>{plan.price}</Text></View>{plan.perks.map((perk) => <Text key={perk} style={styles.planPerk}>{perk}</Text>)}</LinearGradient></TouchableOpacity>))}
+      <TouchableOpacity onPress={activateBoost} style={[styles.boostButton, boosted && styles.boostButtonActive]}><Text style={styles.boostText}>{boosted ? 'Spotlight active for 30 minutes' : 'Boost profile for peak hour'}</Text></TouchableOpacity>
+      <Text style={styles.complianceText}>Currency: KES. Tap a package for M-Pesa STK or long-press for Paystack card checkout. Store billing can remain enabled for app-store distributions.</Text>
     </View>
   );
 }
@@ -1917,6 +1956,7 @@ const styles = StyleSheet.create({
   exploreTileTitle: { color: '#FFFFFF', fontSize: 18, lineHeight: 22, fontWeight: '900' },
   exploreTileCount: { color: 'rgba(255,255,255,0.62)', fontSize: 16, fontWeight: '900' },
   likesTabs: { flexDirection: 'row', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.10)', marginBottom: 20 },
+  likesTabButton: { flex: 1, alignItems: 'center' },
   likesTab: { flex: 1, textAlign: 'center', color: 'rgba(255,255,255,0.58)', paddingBottom: 14, fontWeight: '900' },
   likesTabActive: { flex: 1, textAlign: 'center', color: '#FFFFFF', paddingBottom: 14, borderBottomWidth: 2, borderBottomColor: '#FF1200', fontWeight: '900' },
   likePreviewCard: { minHeight: 520, borderRadius: 28, overflow: 'hidden', justifyContent: 'flex-end', backgroundColor: '#211B1F', marginBottom: 16 },
@@ -1983,6 +2023,9 @@ const styles = StyleSheet.create({
   signal: { backgroundColor: '#2A1A30', color: '#FFFFFF', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, overflow: 'hidden', fontWeight: '900', fontSize: 12 },
   promptRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   promptChip: { backgroundColor: '#FFD700', color: '#120914', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 8, fontWeight: '900', fontSize: 12 },
+  videoPlayerCard: { height: 260, borderRadius: 24, overflow: 'hidden', backgroundColor: '#120914', marginTop: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.28)' },
+  videoPlayer: { ...StyleSheet.absoluteFillObject },
+  videoPlayerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', padding: 16 },
   videoInvite: { backgroundColor: '#1E1222', borderRadius: 18, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#FF1493', alignItems: 'center' },
   videoTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 22, textAlign: 'center' },
   videoTeaser: { color: 'rgba(255,255,255,0.68)', fontWeight: '800', lineHeight: 21, marginTop: 6, textAlign: 'center' },
@@ -2025,11 +2068,13 @@ const styles = StyleSheet.create({
   packageAmount: { color: '#FFFFFF', fontSize: 28, fontWeight: '900' },
   packagePrice: { color: '#FF1493', fontWeight: '900', fontSize: 18, marginTop: 3 },
   packageUnit: { color: 'rgba(255,255,255,0.62)', fontWeight: '800', marginTop: 3 },
+  paymentNotice: { color: '#FFD700', fontWeight: '800', marginTop: 8, marginBottom: 12, textAlign: 'center' },
   catalogCard: { backgroundColor: '#1E1222', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,215,0,0.22)', padding: 16, marginBottom: 16 },
   catalogRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
   catalogLabel: { color: '#FFFFFF', fontWeight: '800' },
   catalogCost: { color: '#FFD700', fontWeight: '900' },
   planCard: { borderRadius: 22, padding: 18, borderWidth: 1, borderColor: 'rgba(255,215,0,0.28)', marginBottom: 12 },
+  planCardActive: { borderColor: '#FFD700', borderWidth: 2 },
   planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   planName: { color: '#FFFFFF', fontSize: 24, fontWeight: '900' },
   planPrice: { color: '#FFD700', fontWeight: '900', fontSize: 16 },

@@ -43,6 +43,7 @@ export default function romchatRoutes(io) {
   router.post('/gifts', controller.gift);
   router.get('/wallet', controller.wallet);
   router.post('/wallet/topups', controller.topUp);
+  router.post('/payments', controller.createPayment);
   router.post('/ai/icebreakers', controller.icebreakers);
   router.post('/ai/bio', controller.bio);
   router.post('/vibe-polls/:pollId/votes', controller.votePoll);

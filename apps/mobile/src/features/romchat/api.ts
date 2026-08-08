@@ -60,7 +60,7 @@ export type RomChatBootstrap = {
   profiles: RomChatProfile[];
   messages: RomChatMessage[];
   wallet?: { balance: number; currency: string };
-  likes?: { receivedCount: number };
+  likes?: { receivedCount: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] };
   privacy?: {
     incognito: boolean;
     screenshotsBlocked: boolean;
@@ -110,6 +110,11 @@ export const romchatApi = {
     apiFetch('/api/romchat/boosts', {
       method: 'POST',
       body: JSON.stringify({ boostId: 'local_peak_30', profileId: 'me' }),
+    }),
+  createPayment: (payload: { provider: 'mpesa' | 'paystack'; purpose?: 'tokens' | 'subscription'; packageId?: string; planId?: string; phone?: string }) =>
+    apiFetch<{ payment: { id: string; provider: string; amountKes: number; tokens: number; checkoutUrl?: string | null; instructions: string; status: string; currency: string } }>('/api/romchat/payments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
   updatePrivacy: (payload: { incognito: boolean; screenshotsBlocked: boolean; visibleToLikedOnly: boolean }) =>
     apiFetch('/api/romchat/privacy', {
