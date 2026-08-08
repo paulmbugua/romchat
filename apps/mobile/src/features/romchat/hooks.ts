@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ApiRequestError } from '../../lib/api';
 import { romchatApi, type RomChatBootstrap, type RomChatMessage, type RomChatProfile, type RomChatVideoRequest } from './api';
 
 type LocalProfile = RomChatProfile & {
@@ -103,15 +104,20 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
   const swipe = useCallback(async (profileId: string, action: 'pass' | 'like' | 'super_like') => {
     setLastAction(action === 'pass' ? 'Passed' : action === 'super_like' ? 'Priority like sent' : 'Like sent');
     try {
-      const result = await romchatApi.swipe(profileId, action);
+      const result = await romchatApi.swipe(profileId, action, options.token);
       setApiOnline(true);
       setLastAction(result.message);
       return result;
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.code === 'DAILY_LIKE_LIMIT_REACHED') {
+        setApiOnline(true);
+        setLastAction(error.message);
+        throw error;
+      }
       setApiOnline(false);
       return { id: 'local_swipe', matched: action !== 'pass', matchId: action === 'pass' ? null : `match_${profileId}`, message: action === 'pass' ? 'Preference saved.' : 'It is a match.' };
     }
-  }, []);
+  }, [options.token]);
 
   const sendMessage = useCallback(async (text: string, matchId?: string, options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean } = {}) => {
     setLastAction('Sending message');

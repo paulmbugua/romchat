@@ -3,6 +3,7 @@ import { queryWithRetry } from '../config/db.js';
 
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
+const FREE_DAILY_LIKE_LIMIT = 30;
 
 export const premiumPlans = [
   { id: 'free', name: 'Free', priceKes: 0, billing: 'monthly', perks: ['Verified browsing', 'Limited daily likes', 'Safety hub'], features: { canRewind: false, canSeeLikesSent: false, canSeeTopPicks: false, unlimitedLikes: false } },
@@ -463,6 +464,38 @@ function shouldCreateMutualMatch(profileId, action, profile) {
   return deterministicPercent(String(profileId) + ':' + action + ':romchat-mutual') < baseChance + scoreBoost;
 }
 
+async function hasUnlimitedLikes(memberId) {
+  const active = await queryWithRetry(
+    `SELECT plan_id FROM romchat_subscriptions
+     WHERE member_id = $1 AND status = 'active' AND (renews_at IS NULL OR renews_at > now())
+     ORDER BY started_at DESC LIMIT 1`,
+    [memberId || 'me']
+  );
+  const plan = premiumPlans.find((item) => item.id === active.rows?.[0]?.plan_id);
+  return Boolean(plan?.features?.unlimitedLikes);
+}
+
+async function enforceDailyLikeLimit(memberId, action) {
+  if (action !== 'like') return;
+  if (await hasUnlimitedLikes(memberId)) return;
+  const usage = await queryWithRetry(
+    `SELECT COUNT(*)::int AS used,
+            (date_trunc('day', now()) + interval '1 day') AS retry_at
+     FROM romchat_swipes
+     WHERE actor_id = $1 AND action = 'like' AND created_at >= date_trunc('day', now())`,
+    [memberId || 'me']
+  );
+  const used = Number(usage.rows?.[0]?.used || 0);
+  if (used < FREE_DAILY_LIKE_LIMIT) return;
+  const error = new Error("You're out of Likes for today. Check back tomorrow to keep swiping, or upgrade for unlimited Likes.");
+  error.status = 429;
+  error.code = 'DAILY_LIKE_LIMIT_REACHED';
+  error.limit = FREE_DAILY_LIKE_LIMIT;
+  error.remaining = 0;
+  error.retryAt = usage.rows?.[0]?.retry_at || null;
+  throw error;
+}
+
 export async function createSwipe({ profileId, action, actorId = 'me' }) {
   if (!profileId || !['pass', 'like', 'super_like'].includes(action)) {
     const error = new Error('profileId and a valid action are required.');
@@ -476,6 +509,7 @@ export async function createSwipe({ profileId, action, actorId = 'me' }) {
   const matchId = matched ? `match_${profileId}` : null;
 
   return withDb(async () => {
+    await enforceDailyLikeLimit(actorId || 'me', action);
     await queryWithRetry('INSERT INTO romchat_swipes (id, actor_id, profile_id, action, matched) VALUES ($1,$2,$3,$4,$5)', [swipeId, actorId || 'me', profileId, action, matched]);
     if (matched) {
       await queryWithRetry(
@@ -483,12 +517,6 @@ export async function createSwipe({ profileId, action, actorId = 'me' }) {
          VALUES ($1, $2, $3, now() + interval '24 hours')
          ON CONFLICT (actor_id, profile_id) DO UPDATE SET status = 'active'`,
         [matchId, actorId || 'me', profileId]
-      );
-      await queryWithRetry(
-        `INSERT INTO romchat_video_requests (id, match_id, sender_profile_id, title, teaser, unlock_cost_tokens, status)
-         VALUES ($1,$2,$3,$4,$5,25,'locked')
-         ON CONFLICT (id) DO NOTHING`,
-        ['vr_' + matchId, matchId, profileId, '2-minute video vibe request', 'Unlock only if you want a quick live vibe check. Text chat stays free.', profileId]
       );
     }
     return { id: swipeId, matched, matchId, message: matched ? 'Ni match. Say hi.' : 'Like sent. If they like you back, it becomes a match.' };

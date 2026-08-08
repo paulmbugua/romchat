@@ -1,6 +1,20 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+export class ApiRequestError extends Error {
+  status?: number;
+  code?: string | null;
+  payload?: unknown;
+
+  constructor(message: string, options: { status?: number; code?: string | null; payload?: unknown } = {}) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = options.status;
+    this.code = options.code;
+    this.payload = options.payload;
+  }
+}
+
 export type SaccoSummary = {
   totals: { members: number; savings: number; loans: number; dividends: number };
   members: any[];
@@ -214,7 +228,7 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
       if (isHtmlBlock && response.status === 403) {
         throw new Error(`RomChat backend is blocked at ${apiBaseUrl}. In development, start the backend on your PC and set EXPO_PUBLIC_DEVICE_BACKEND_URL to your PC LAN IP, for example http://10.42.11.111:4009, then restart Expo with -c.`);
       }
-      throw new Error(`Request failed: ${response.status}. ${detail}`);
+      throw new ApiRequestError(`Request failed: ${response.status}. ${detail}`, { status: response.status, code: payload.code || null, payload });
     }
     return payload as T;
   } catch (error) {

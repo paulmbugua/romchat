@@ -33,7 +33,7 @@ function sendError(res, error) {
     message: error.message || 'RomChat request failed.',
     code: error.code || null,
   });
-  res.status(error.status || 500).json({ message: error.message || 'RomChat request failed.' });
+  res.status(error.status || 500).json({ message: error.message || 'RomChat request failed.', code: error.code || null, limit: error.limit || null, remaining: error.remaining ?? null, retryAt: error.retryAt || null });
 }
 
 export function createRomchatController(io) {

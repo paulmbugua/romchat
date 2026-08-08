@@ -30,6 +30,7 @@ import { storage } from '../utils/storage';
 import { romchatAccountApi, romchatBackendHealth, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
 import { apiBaseUrl } from './lib/api';
 import { checkForAppUpdate } from './lib/appUpdates';
+import { ApiRequestError } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 
 type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
@@ -428,11 +429,23 @@ export default function App() {
   async function likeProfile(action: 'like' | 'super_like' = 'like') {
     if (!profile) return;
     clearMatchTimer();
-    const result = await romchat.swipe(profile.id, action);
-    if (result?.matched) openMatchedChatSoon();
-    else {
-      setShowMatch(false);
-      advanceProfile();
+    try {
+      const result = await romchat.swipe(profile.id, action);
+      if (result?.matched) openMatchedChatSoon();
+      else {
+        setShowMatch(false);
+        advanceProfile();
+      }
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.code === 'DAILY_LIKE_LIMIT_REACHED') {
+        setShowMatch(false);
+        Alert.alert('You are out of Likes', "You've used your 30 free Likes for today. Check back tomorrow to keep swiping, or upgrade for unlimited Likes.", [
+          { text: 'Maybe later', style: 'cancel' },
+          { text: 'See upgrades', onPress: openTokenStore },
+        ]);
+        return;
+      }
+      throw error;
     }
   }
 
