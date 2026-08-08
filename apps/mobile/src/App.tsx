@@ -5,6 +5,7 @@ import {
   ImageBackground,
   Alert,
   Animated,
+  Modal,
   KeyboardAvoidingView,
   PanResponder,
   Platform,
@@ -1404,6 +1405,7 @@ function Chat({ profiles, sendMessage, status }: {
   const [query, setQuery] = useState('');
   const [threadMessages, setThreadMessages] = useState<Record<string, Array<{ id: string; from: 'You'; text: string; status: string }>>>({});
   const [contactWarnings, setContactWarnings] = useState<Record<string, boolean>>({});
+  const [pendingContactText, setPendingContactText] = useState('');
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const selectedMatch = orderedMatches.find((profile) => profile.id === selectedMatchId) || null;
   const visibleThreads = orderedMatches.filter((profile) => `${profile.name} ${profile.city} ${profile.intent} ${profile.tags.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
@@ -1432,17 +1434,22 @@ function Chat({ profiles, sendMessage, status }: {
     const clean = textValue.trim();
     if (!clean || !selectedMatch) return;
     if (looksLikeContactShare(clean) && !contactWarnings[selectedMatch.id]) {
-      Alert.alert(
-        'Stay safe before sharing contacts',
-        'Only share phone numbers, emails, or social handles when you trust the match. Keep early conversations on RomChat and report pressure or suspicious requests.',
-        [
-          { text: 'Review', style: 'cancel' },
-          { text: 'Send anyway', onPress: () => { setContactWarnings((current) => ({ ...current, [selectedMatch.id]: true })); deliverMessage(clean); } },
-        ],
-      );
+      setPendingContactText(clean);
       return;
     }
     deliverMessage(clean);
+  }
+
+  function cancelContactShare() {
+    setPendingContactText('');
+  }
+
+  function confirmContactShare() {
+    if (!selectedMatch || !pendingContactText) return;
+    const textToSend = pendingContactText;
+    setPendingContactText('');
+    setContactWarnings((current) => ({ ...current, [selectedMatch.id]: true }));
+    deliverMessage(textToSend);
   }
 
   function submit() {
@@ -1455,6 +1462,7 @@ function Chat({ profiles, sendMessage, status }: {
   if (selectedMatch) {
     return (
       <View style={styles.chatScreen}>
+        <ContactSafetySheet visible={Boolean(pendingContactText)} matchName={selectedMatch.name} onReview={cancelContactShare} onSend={confirmContactShare} />
         <View style={styles.threadTopBar}>
           <TouchableOpacity onPress={() => setSelectedMatchId(null)} style={styles.chatBackButton}><Icon name="chevron-back" size={20} color="#FFFFFF" /></TouchableOpacity>
           <View style={styles.chatIdentity}>
@@ -1618,6 +1626,33 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
         </View>
       </View>
     </View>
+  );
+}
+
+function ContactSafetySheet({ visible, matchName, onReview, onSend }: { visible: boolean; matchName: string; onReview: () => void; onSend: () => void }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onReview}>
+      <View style={styles.contactSheetBackdrop}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onReview} />
+        <View style={styles.contactSheetCard}>
+          <LinearGradient colors={["#FF1493", "#FF6F61"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.contactSheetIcon}>
+            <Icon name="shield-checkmark" size={28} color="#FFFFFF" />
+          </LinearGradient>
+          <Text style={styles.contactSheetEyebrow}>RomChat safety check</Text>
+          <Text style={styles.contactSheetTitle}>Share contacts only when trust feels real</Text>
+          <Text style={styles.contactSheetBody}>You are about to send contact details to {matchName}. Keep early conversations here until you feel comfortable, and never send money or private documents.</Text>
+          <View style={styles.contactSafetyList}>
+            <View style={styles.contactSafetyItem}><Icon name="chatbubble-ellipses" size={16} color="#FFD700" /><Text style={styles.contactSafetyText}>Use RomChat messages first so reports and blocks still protect you.</Text></View>
+            <View style={styles.contactSafetyItem}><Icon name="cash" size={16} color="#FFD700" /><Text style={styles.contactSafetyText}>Be cautious with money requests, transport fees, gifts, or urgent pressure.</Text></View>
+            <View style={styles.contactSafetyItem}><Icon name="location" size={16} color="#FFD700" /><Text style={styles.contactSafetyText}>Meet in public and tell someone where you are going.</Text></View>
+          </View>
+          <View style={styles.contactSheetActions}>
+            <TouchableOpacity onPress={onReview} style={styles.contactReviewButton}><Text style={styles.contactReviewText}>Review</Text></TouchableOpacity>
+            <TouchableOpacity onPress={onSend} style={styles.contactSendButton}><Text style={styles.contactSendText}>Send anyway</Text></TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -2015,6 +2050,20 @@ const styles = StyleSheet.create({
   chatTokenPill: { color: '#120914', backgroundColor: '#FFD700', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 11, paddingVertical: 7, fontWeight: '900' },
   safetyReminder: { flexDirection: 'row', gap: 9, alignItems: 'flex-start', backgroundColor: 'rgba(255,215,0,0.10)', borderWidth: 1, borderColor: 'rgba(255,215,0,0.22)', borderRadius: 18, padding: 12, marginBottom: 12 },
   safetyReminderText: { flex: 1, color: 'rgba(255,255,255,0.82)', fontWeight: '800', lineHeight: 19, fontSize: 12 },
+  contactSheetBackdrop: { flex: 1, backgroundColor: 'rgba(6,2,8,0.72)', justifyContent: 'flex-end', paddingHorizontal: 16, paddingBottom: 18 },
+  contactSheetCard: { backgroundColor: '#1E1222', borderRadius: 28, padding: 20, borderWidth: 1, borderColor: 'rgba(255,20,147,0.32)', shadowColor: '#FF1493', shadowOpacity: 0.32, shadowRadius: 24, shadowOffset: { width: 0, height: -8 }, elevation: 18 },
+  contactSheetIcon: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  contactSheetEyebrow: { color: '#FFD700', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', marginBottom: 6 },
+  contactSheetTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', lineHeight: 29, marginBottom: 10 },
+  contactSheetBody: { color: 'rgba(255,255,255,0.76)', fontSize: 14, fontWeight: '800', lineHeight: 21, marginBottom: 14 },
+  contactSafetyList: { gap: 10, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 18, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  contactSafetyItem: { flexDirection: 'row', gap: 9, alignItems: 'flex-start' },
+  contactSafetyText: { flex: 1, color: 'rgba(255,255,255,0.78)', fontSize: 12, fontWeight: '800', lineHeight: 18 },
+  contactSheetActions: { flexDirection: 'row', gap: 10 },
+  contactReviewButton: { flex: 1, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+  contactReviewText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textTransform: 'uppercase' },
+  contactSendButton: { flex: 1.25, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF1493' },
+  contactSendText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textTransform: 'uppercase' },
   conversationPanel: { backgroundColor: '#1E1222', borderRadius: 22, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)' },
   chatIconButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#2A1A30', borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', alignItems: 'center', justifyContent: 'center' },
   chatTools: { backgroundColor: '#1E1222', borderRadius: 20, padding: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
