@@ -5,9 +5,9 @@ const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
 
 export const premiumPlans = [
-  { id: 'free', name: 'Free', priceKes: 0, billing: 'monthly', perks: ['Verified browsing', 'Limited daily likes', 'Safety hub'], features: { canRewind: false, canSeeLikesSent: false, canSeeTopPicks: false, unlimitedLikes: false, unlimitedVideoVibes: false } },
-  { id: 'gold', name: 'Gold', priceKes: 1000, billing: 'monthly', perks: ['Unlimited likes', 'See admirers', 'Undo swipes', 'Read receipts', 'Likes Sent', 'Top Picks'], features: { canRewind: true, canSeeLikesSent: true, canSeeTopPicks: true, unlimitedLikes: true, unlimitedVideoVibes: false }, priorityLikes: 5 },
-  { id: 'platinum', name: 'Platinum', priceKes: 2400, billing: 'monthly', perks: ['Unlimited likes', 'Unlimited 2-minute videos', 'See Likes Sent', 'Top Picks', 'Priority Likes', 'Passport mode', 'Weekly boost'], features: { canRewind: true, canSeeLikesSent: true, canSeeTopPicks: true, unlimitedLikes: true, unlimitedVideoVibes: true }, spotlightMinutes: 30, priorityLikes: 20 },
+  { id: 'free', name: 'Free', priceKes: 0, billing: 'monthly', perks: ['Verified browsing', 'Limited daily likes', 'Safety hub'], features: { canRewind: false, canSeeLikesSent: false, canSeeTopPicks: false, unlimitedLikes: false } },
+  { id: 'gold', name: 'Gold', priceKes: 1000, billing: 'monthly', perks: ['Unlimited likes', 'See admirers', 'Undo swipes', 'Read receipts', 'Likes Sent', 'Top Picks'], features: { canRewind: true, canSeeLikesSent: true, canSeeTopPicks: true, unlimitedLikes: true }, priorityLikes: 5 },
+  { id: 'platinum', name: 'Platinum', priceKes: 2400, billing: 'monthly', perks: ['Unlimited likes', 'See Likes Sent', 'Top Picks', 'Priority Likes', 'Passport mode', 'Weekly boost'], features: { canRewind: true, canSeeLikesSent: true, canSeeTopPicks: true, unlimitedLikes: true }, spotlightMinutes: 30, priorityLikes: 20 },
 ];
 
 export const gifts = [
@@ -776,7 +776,6 @@ export async function unlockVideoRequest(requestId) {
 export async function getRevenueCatalog() {
   return {
     lockedMedia: { costTokens: 10, title: 'Unlock private media', description: 'Basic text stays free; only optional voice notes, HD photos, and premium media previews use tokens.' },
-    videoRequest: { costTokens: 25, title: 'Accept video invite', description: 'Paid pop-up video requests create urgency after a Kenyan match.' },
     admirerReveal: { costTokens: 22, title: 'Reveal admirer', description: 'Show one blurred person who already liked you.' },
     priorityReply: { costTokens: 15, title: 'Priority message', description: 'Push one message to the top of her inbox.' },
     datePass: { costTokens: 40, title: 'Date pass', description: 'Unlock a guided date planner after mutual interest.' },

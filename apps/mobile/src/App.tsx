@@ -23,7 +23,6 @@ import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ResizeMode, Video } from 'expo-av';
 import Slider from '@react-native-community/slider';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,8 +32,7 @@ import { apiBaseUrl } from './lib/api';
 import { checkForAppUpdate } from './lib/appUpdates';
 import { useRomChatData } from './features/romchat/hooks';
 
-type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'safety' | 'profile';
-type MessageMode = 'standard' | 'timed' | 'viewOnce';
+type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
 type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
 type SessionState = RomChatSessionPayload & { onboarding: RomChatOnboardingState };
 type RomChatPromptAnswer = { prompt: string; answer: string };
@@ -143,7 +141,7 @@ const shortcuts: Array<{ id: Section; label: string; title: string }> = [
 
 const plans: Array<{ id: 'gold' | 'platinum'; name: PlanName; price: string; amountKes: number; perks: string[] }> = [
   { id: 'gold', name: 'Gold', price: 'KES 1,000/mo', amountKes: 1000, perks: ['Unlimited likes', 'Likes Sent', 'Top Picks', 'Undo swipes', 'Read receipts'] },
-  { id: 'platinum', name: 'Platinum', price: 'KES 2,400/mo', amountKes: 2400, perks: ['Unlimited likes', 'Unlimited 2-minute videos', 'Likes Sent', 'Top Picks', 'Priority likes'] },
+  { id: 'platinum', name: 'Platinum', price: 'KES 2,400/mo', amountKes: 2400, perks: ['Unlimited likes', 'Priority likes', 'Likes Sent', 'Top Picks', 'Weekly Boost'] },
 ];
 
 const gifts = [
@@ -174,7 +172,7 @@ const profilePromptTemplates = [
 
 const tokenCatalog = [
   ['Unlock voice/photo media', '10'],
-  ['Accept video request', '25'],
+  ['Undo previous swipe', String(UNDO_SWIPE_COST)],
   ['Send rose', '5'],
   ['Priority message', String(SUPER_LIKE_COST)],
   ['Reveal admirer', '22'],
@@ -194,6 +192,9 @@ const screenTitles: Record<Section, string> = {
   premium: 'RomChat Plus',
   safety: 'Kenya Safety',
   profile: 'My Kenyan Profile',
+  privacy: 'Privacy Policy',
+  terms: 'Terms of Use',
+  community: 'Community Guidelines',
 };
 
 export default function App() {
@@ -206,8 +207,6 @@ export default function App() {
   const [verifiedOnly, setVerifiedOnly] = useState(true);
   const [incognito, setIncognito] = useState(true);
   const [antiGrab, setAntiGrab] = useState(true);
-  const [readReceipts, setReadReceipts] = useState(true);
-  const [messageMode, setMessageMode] = useState<MessageMode>('timed');
   const [chatBadgeCount, setChatBadgeCount] = useState(0);
   const [tokens, setTokens] = useState(146);
   const [boosted, setBoosted] = useState(false);
@@ -719,26 +718,16 @@ export default function App() {
       return (
         <Chat
           profiles={profiles}
-          readReceipts={readReceipts}
-          setReadReceipts={setReadReceipts}
-          messageMode={messageMode}
-          setMessageMode={setMessageMode}
-          tokens={tokens}
-          setTokens={setTokens}
-          openTokenStore={openTokenStore}
-          onChatNotification={() => undefined}
-          hasPlatinumAccess={hasPlatinumAccess}
           sendMessage={romchat.sendMessage}
-          sendGift={romchat.sendGift}
-          createVideoRequest={romchat.createVideoRequest}
-          unlockVideoRequest={romchat.unlockVideoRequest}
-          videoRequests={romchat.videoRequests}
           status={romchat.lastAction}
         />
       );
     }
     if (section === 'premium') {
       return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} startTokenPurchase={startTokenPurchase} startPlanPurchase={startPlanPurchase} />;
+    }
+    if (section === 'privacy' || section === 'terms' || section === 'community') {
+      return <PolicyScreen section={section} />;
     }
     if (section === 'safety') {
       return (
@@ -756,7 +745,7 @@ export default function App() {
         />
       );
     }
-    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} openPolicy={(section) => setActiveSection(section)} />;
   }
 
   if (!authBooted) {
@@ -1390,22 +1379,9 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessageMode, tokens, setTokens, openTokenStore, onChatNotification: _onChatNotification, hasPlatinumAccess, sendMessage, sendGift, createVideoRequest, unlockVideoRequest, videoRequests, status }: {
+function Chat({ profiles, sendMessage, status }: {
   profiles: ProfileSeed[];
-  readReceipts: boolean;
-  setReadReceipts: (value: boolean) => void;
-  messageMode: MessageMode;
-  setMessageMode: (value: MessageMode) => void;
-  tokens: number;
-  setTokens: React.Dispatch<React.SetStateAction<number>>;
-  openTokenStore: () => void;
-  onChatNotification: () => void;
-  hasPlatinumAccess: boolean;
-  sendMessage: (text: string, matchId?: string, options?: { mode?: MessageMode; readReceiptRequested?: boolean }) => Promise<unknown>;
-  sendGift: (giftId: string, matchId?: string) => Promise<void>;
-  createVideoRequest: (matchId: string, senderProfileId: string) => Promise<{ id: string; matchId?: string; senderProfileId?: string; title: string; teaser: string; unlockCostTokens: number; status: string } | null>;
-  unlockVideoRequest: (requestId: string) => Promise<unknown>;
-  videoRequests: Array<{ id: string; matchId?: string; senderProfileId?: string; title: string; teaser: string; unlockCostTokens: number; status: string }>;
+  sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean }) => Promise<unknown>;
   status: string;
 }) {
   const matchPool = profiles;
@@ -1414,53 +1390,53 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
   const [threadMessages, setThreadMessages] = useState<Record<string, Array<{ id: string; from: 'You'; text: string; status: string }>>>({});
-  const [threadAlerts, setThreadAlerts] = useState<Record<string, number>>({});
+  const [contactWarnings, setContactWarnings] = useState<Record<string, boolean>>({});
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
-  const [openVideoRoomId, setOpenVideoRoomId] = useState<string | null>(null);
   const selectedMatch = orderedMatches.find((profile) => profile.id === selectedMatchId) || null;
   const visibleThreads = orderedMatches.filter((profile) => `${profile.name} ${profile.city} ${profile.intent} ${profile.tags.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
-  const modeLabel = messageMode === 'standard' ? 'Standard' : messageMode === 'timed' ? 'Vanishes in 24h' : 'View once';
-  const promptChips = selectedMatch ? [`Ask ${selectedMatch.name} about ${selectedMatch.tags[0] || 'her vibe'}`, 'Send a rose', 'Suggest Saturday coffee'] : ['Open a match', 'Start soft', 'Keep it respectful'];
+  const promptChips = selectedMatch ? [`Ask ${selectedMatch.name} about ${selectedMatch.tags[0] || 'her vibe'}`, 'Coffee this weekend?', 'How has your day been?'] : [];
   const activePhoto = selectedMatch?.photos?.[0] ? { uri: resolveMediaUrl(selectedMatch.photos[0]) } : selectedMatch?.photo || require('../assets/icon.png');
-  const selectedVideoRequests = selectedMatch ? videoRequests.filter((request) => request.matchId === `match_${selectedMatch.id}` || request.senderProfileId === selectedMatch.id) : [];
   const selectedMessages = selectedMatch ? threadMessages[selectedMatch.id] || [] : [];
 
-  const modeStatus = messageMode === 'timed' ? '24h timed' : messageMode === 'viewOnce' ? 'view once' : 'standard';
-  function appendLocalMessage(profileId: string, text: string, statusText = `Delivered - notified - ${modeStatus}`) {
+  function looksLikeContactShare(textValue: string) {
+    return /(\+?\d[\d\s().-]{6,}\d)|([\w.%+-]+@[\w.-]+\.[A-Za-z]{2,})|(whats\s*app|telegram|snapchat|instagram|ig\b|@\w{3,})/i.test(textValue);
+  }
+
+  function appendLocalMessage(profileId: string, textValue: string) {
     setThreadMessages((current) => ({
       ...current,
-      [profileId]: [...(current[profileId] || []), { id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, from: 'You', text, status: readReceipts ? `${statusText} - read receipt on` : statusText }],
+      [profileId]: [...(current[profileId] || []), { id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, from: 'You', text: textValue, status: 'Delivered' }],
     }));
   }
-  function sendChatText(text: string) {
-    if (!text || !selectedMatch) return;
-    appendLocalMessage(selectedMatch.id, text);
-    void sendMessage(text, `match_${selectedMatch.id}`, { mode: messageMode, readReceiptRequested: readReceipts });
-  }
-  function submit() {
-    const text = draft.trim();
-    if (!text || !selectedMatch) return;
-    setDraft('');
-    sendChatText(text);
-  }
-  async function openVideoVibe(requestOverride?: { id: string; unlockCostTokens: number; status: string }) {
+
+  function deliverMessage(textValue: string) {
     if (!selectedMatch) return;
-    const matchId = `match_${selectedMatch.id}`;
-    const request = requestOverride || selectedVideoRequests[0] || await createVideoRequest(matchId, selectedMatch.id);
-    if (!request) return;
-    if (request.status === 'unlocked' || hasPlatinumAccess) {
-      setOpenVideoRoomId(request.id);
-      appendLocalMessage(selectedMatch.id, hasPlatinumAccess ? 'Platinum video vibe opened.' : '2-minute video vibe is already open.', 'Video room ready');
+    appendLocalMessage(selectedMatch.id, textValue);
+    void sendMessage(textValue, `match_${selectedMatch.id}`, { mode: 'standard', readReceiptRequested: false });
+  }
+
+  function sendChatText(textValue: string) {
+    const clean = textValue.trim();
+    if (!clean || !selectedMatch) return;
+    if (looksLikeContactShare(clean) && !contactWarnings[selectedMatch.id]) {
+      Alert.alert(
+        'Stay safe before sharing contacts',
+        'Only share phone numbers, emails, or social handles when you trust the match. Keep early conversations on RomChat and report pressure or suspicious requests.',
+        [
+          { text: 'Review', style: 'cancel' },
+          { text: 'Send anyway', onPress: () => { setContactWarnings((current) => ({ ...current, [selectedMatch.id]: true })); deliverMessage(clean); } },
+        ],
+      );
       return;
     }
-    if (tokens < request.unlockCostTokens) {
-      openTokenStore();
-      return;
-    }
-    setTokens((value) => Math.max(0, value - request.unlockCostTokens));
-    setOpenVideoRoomId(request.id);
-    appendLocalMessage(selectedMatch.id, '2-minute video vibe unlocked. Your match earns 20 tokens and RomChat keeps 5.', 'Video unlocked - recipient notified');
-    void unlockVideoRequest(request.id);
+    deliverMessage(clean);
+  }
+
+  function submit() {
+    const textValue = draft.trim();
+    if (!textValue || !selectedMatch) return;
+    setDraft('');
+    sendChatText(textValue);
   }
 
   if (selectedMatch) {
@@ -1472,21 +1448,18 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
             <Image source={activePhoto} style={styles.chatHeaderAvatar} />
             <View>
               <Text style={styles.chatName}>{selectedMatch.name}</Text>
-              <Text style={styles.chatStatus}>{selectedMatch.online === true ? 'Online now - ready to talk' : 'Matched recently'}</Text>
+              <Text style={styles.chatStatus}>{selectedMatch.online === true ? 'Online now' : 'Matched on RomChat'}</Text>
             </View>
           </View>
-          <View style={styles.headerIcons}>
-            <TouchableOpacity onPress={() => void openVideoVibe()} style={styles.chatIconButton}><Icon name="videocam-outline" size={19} color="#FF1493" /></TouchableOpacity>
-            <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={19} color="#FFFFFF" /></TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={19} color="#FFFFFF" /></TouchableOpacity>
+        </View>
+
+        <View style={styles.safetyReminder}>
+          <Icon name="shield-checkmark" size={17} color="#FFD700" />
+          <Text style={styles.safetyReminderText}>Keep early chats on RomChat. Be careful with contacts, money requests, and pressure to move off app.</Text>
         </View>
 
         <View style={styles.conversationPanel}>
-          <View style={styles.signalRow}>
-            <Text style={styles.signal}>Read {readReceipts ? 'on' : 'off'}</Text>
-            <Text style={styles.signal}>{modeLabel}</Text>
-            <Text style={styles.signal}>{tokens} tokens</Text>
-          </View>
           <Text style={styles.matchContext}>{selectedMatch.intent} - {selectedMatch.city}{typeof selectedMatch.distanceKm === 'number' && selectedMatch.distanceKm > 0 ? ` - ${selectedMatch.distanceKm} km` : ''}</Text>
           {selectedMessages.length ? selectedMessages.map((message) => (
             <View key={message.id} style={[styles.bubble, styles.sent]}>
@@ -1495,57 +1468,16 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
             </View>
           )) : (
             <View style={styles.emptyThreadCard}>
-              <Text style={styles.emptyThreadTitle}>Start the chat freely</Text>
-              <Text style={styles.emptyThreadText}>Text messages are open after a match. Tokens only unlock optional 2-minute video vibe requests.</Text>
+              <Text style={styles.emptyThreadTitle}>Start with a simple message</Text>
+              <Text style={styles.emptyThreadText}>Matched chats are free. Say hello, ask about a profile detail, and keep it respectful.</Text>
             </View>
           )}
         </View>
 
-        {openVideoRoomId && (
-          <View style={styles.videoPlayerCard}>
-            <Video source={{ uri: 'https://videos.romchat.co.ke/romchat-demo-vibe.mp4' }} style={styles.videoPlayer} resizeMode={ResizeMode.COVER} shouldPlay isLooping isMuted />
-            <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.74)']} style={styles.videoPlayerOverlay}>
-              <Text style={styles.videoTitle}>2-minute vibe with {selectedMatch.name}</Text>
-              <Text style={styles.videoTeaser}>{hasPlatinumAccess ? 'Included with Platinum.' : 'Unlocked with 25 tokens.'}</Text>
-            </LinearGradient>
-          </View>
-        )}
-
-        {selectedVideoRequests.map((request) => (
-          <View key={request.id} style={styles.videoInvite}>
-            <Text style={styles.videoTitle}>{request.title || '2-minute video vibe request'}</Text>
-            <Text style={styles.videoTeaser}>{request.status === 'unlocked' ? 'Video room unlocked. Tap to join when ready.' : request.teaser}</Text>
-            <TouchableOpacity onPress={() => void openVideoVibe(request)} style={[styles.unlockButton, request.status === 'unlocked' && styles.unlockButtonDone]}>
-              <Text style={styles.unlockButtonText}>{request.status === 'unlocked' ? 'Join video' : tokens < request.unlockCostTokens ? `Buy tokens for video (${request.unlockCostTokens})` : `Unlock 2-min vibe (${request.unlockCostTokens} tokens)`}</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
-
-        <View style={styles.chatTools}>
+        <View style={styles.chatToolsSimple}>
           <View style={styles.promptRow}>
-            {promptChips.map((prompt) => <TouchableOpacity key={prompt} onPress={() => {
-              if (prompt === 'Send a rose') {
-                if (tokens < 5) {
-                  openTokenStore();
-                  return;
-                }
-                setTokens((value) => Math.max(0, value - 5));
-                appendLocalMessage(selectedMatch.id, 'Rose gift sent.', 'Gift delivered - recipient notified');
-                void sendGift('rose', `match_${selectedMatch.id}`);
-                return;
-              }
-              sendChatText(prompt);
-            }}><Text style={styles.promptChip}>{prompt}</Text></TouchableOpacity>)}
+            {promptChips.map((prompt) => <TouchableOpacity key={prompt} onPress={() => sendChatText(prompt)}><Text style={styles.promptChip}>{prompt}</Text></TouchableOpacity>)}
           </View>
-          <View style={styles.segment}>
-            {(['standard', 'timed', 'viewOnce'] as MessageMode[]).map((mode) => (
-              <TouchableOpacity key={mode} onPress={() => setMessageMode(mode)} style={[styles.segmentItem, messageMode === mode && styles.segmentActive]}>
-                <Text style={[styles.segmentText, messageMode === mode && styles.segmentTextActive]}>{mode === 'viewOnce' ? 'Once' : mode}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={styles.modeHint}>{messageMode === 'standard' ? 'Standard sends a normal free chat.' : messageMode === 'timed' ? 'Timed messages expire after 24 hours.' : 'Once marks this message as view-once.'}</Text>
-          <ToggleRow title="Read receipt add-on" value={readReceipts} onPress={() => setReadReceipts(!readReceipts)} />
         </View>
         <View style={styles.composer}>
           <TextInput value={draft} onChangeText={setDraft} placeholder={`Message ${selectedMatch.name}`} style={styles.input} placeholderTextColor="#a45a72" />
@@ -1562,10 +1494,7 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
           <Text style={styles.chatHeroTitle}>Chat</Text>
           <Text style={styles.chatHeroMeta}>{onlineMatches.length} ready now - {orderedMatches.length} matches</Text>
         </View>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={20} color="#FFFFFF" /></TouchableOpacity>
-          <TouchableOpacity style={styles.chatIconButton}><Icon name="chatbubbles-outline" size={20} color="#FF1493" /></TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={20} color="#FFFFFF" /></TouchableOpacity>
       </View>
       <View style={styles.searchBox}>
         <Icon name="search" size={20} color="rgba(255,255,255,0.62)" />
@@ -1586,12 +1515,10 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
       </ScrollView>
       <View style={styles.messagesPanel}>
         <Text style={styles.messagesTitle}>Messages</Text>
-        {visibleThreads.map((profile, index) => {
+        {visibleThreads.map((profile) => {
           const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
           const messages = threadMessages[profile.id] || [];
-          const alertCount = threadAlerts[profile.id] || 0;
           const preview = messages.length ? messages[messages.length - 1]!.text : profile.prompt;
-          const yourTurn = !messages.length;
           return (
             <TouchableOpacity key={profile.id} onPress={() => setSelectedMatchId(profile.id)} style={styles.threadRow}>
               <View>
@@ -1602,11 +1529,11 @@ function Chat({ profiles, readReceipts, setReadReceipts, messageMode, setMessage
                 <Text numberOfLines={1} style={styles.threadName}>{profile.name}{profile.verified ? ' verified' : ''}</Text>
                 <Text numberOfLines={1} style={styles.threadPreview}>{preview}</Text>
               </View>
-              {alertCount ? <Text style={styles.threadBadge}>{alertCount > 9 ? '9+' : alertCount}</Text> : yourTurn ? <Text style={styles.yourTurnPill}>Your Turn</Text> : <Icon name="heart" size={21} color="#FFD700" />}
+              <Text style={styles.yourTurnPill}>{messages.length ? 'Open' : 'Say hi'}</Text>
             </TouchableOpacity>
           );
         })}
-        {!visibleThreads.length && <Text style={styles.emptyThreadText}>No matched conversations found. New matches will appear here when they are ready to talk.</Text>}
+        {!visibleThreads.length && <Text style={styles.emptyThreadText}>No matched conversations found. New matches will appear here.</Text>}
       </View>
     </View>
   );
@@ -1681,13 +1608,57 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
   );
 }
 
+function PolicyScreen({ section }: { section: 'privacy' | 'terms' | 'community' }) {
+  const content = {
+    privacy: {
+      title: 'Privacy Policy',
+      items: [
+        ['Profile data', 'We use your profile details, photos, preferences, interests, and location settings to show relevant Kenyan matches and improve safety.'],
+        ['Chats', 'Messages are used to deliver conversations, support moderation, detect abuse, and help with reports. Keep sensitive details on-app until trust is earned.'],
+        ['Media', 'Photos and verification selfies are used for profile display, gallery access, moderation, and authenticity checks.'],
+        ['Controls', 'You can update profile details, manage privacy settings, block/report accounts, and sign out from your profile.'],
+      ],
+    },
+    terms: {
+      title: 'Terms of Use',
+      items: [
+        ['Eligibility', 'RomChat is for adults 18+ who provide accurate account and profile information.'],
+        ['Respectful use', 'Do not harass, impersonate, scam, solicit money, post illegal content, or pressure matches to move off app.'],
+        ['Premium and tokens', 'Subscriptions and tokens unlock optional discovery features. Matched text chat remains simple and accessible.'],
+        ['Enforcement', 'RomChat may remove content, limit features, suspend accounts, or cooperate with lawful safety requests.'],
+      ],
+    },
+    community: {
+      title: 'Community Guidelines',
+      items: [
+        ['Be real', 'Use your own photos, be honest about your intentions, and keep your profile respectful.'],
+        ['Stay safe', 'Be careful sharing phone numbers, emails, social handles, money details, home address, or workplace details.'],
+        ['Meet smart', 'Choose public places, tell someone you trust, arrange your own transport, and leave if anything feels wrong.'],
+        ['Report quickly', 'Report suspicious profiles, pressure, abuse, scams, explicit threats, or requests for money.'],
+      ],
+    },
+  }[section];
+  return (
+    <View style={styles.policyScreen}>
+      <Text style={styles.title}>{content.title}</Text>
+      {content.items.map(([title, body]) => (
+        <View key={title} style={styles.policyItem}>
+          <Text style={styles.policyTitle}>{title}</Text>
+          <Text style={styles.policyBody}>{body}</Text>
+        </View>
+      ))}
+      <Text style={styles.complianceText}>Last updated for RomChat Kenya. This in-app summary should be reviewed by counsel before production store submission.</Text>
+    </View>
+  );
+}
+
 function resolveMediaUrl(url?: string) {
   if (!url) return '';
   if (/^https?:\/\//i.test(url)) return url;
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void> }) {
+function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community') => void }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
@@ -1805,6 +1776,12 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
         ))}
         <View style={styles.profileActionGrid}><TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} style={styles.profileAction}><Icon name="images" size={18} color="#FFD700" /><Text style={styles.profileActionText}>Add photo</Text></TouchableOpacity><TouchableOpacity disabled={busy || !imageCount} onPress={() => void onVerifySelfie()} style={[styles.profileAction, !imageCount && styles.profileActionDisabled]}><Icon name="shield-checkmark" size={18} color="#FFD700" /><Text style={styles.profileActionText}>{profile?.selfieVerified ? 'Verified' : 'Verify selfie'}</Text></TouchableOpacity></View>{!!error && <Text style={styles.authError}>{error}</Text>}
         <TouchableOpacity onPress={() => void onSignOut()} style={styles.textButton}><Text style={styles.textButtonLabel}>Sign out</Text></TouchableOpacity>
+      </View>
+      <View style={styles.legalPanel}>
+        <Text style={styles.sectionLabel}>Legal and privacy</Text>
+        <TouchableOpacity onPress={() => openPolicy('privacy')} style={styles.legalLink}><Text style={styles.legalTitle}>Privacy Policy</Text><Text style={styles.caption}>How RomChat handles profile, chat, photo, location, and safety data.</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => openPolicy('terms')} style={styles.legalLink}><Text style={styles.legalTitle}>Terms of Use</Text><Text style={styles.caption}>Account rules, subscriptions, tokens, acceptable use, and service limits.</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => openPolicy('community')} style={styles.legalLink}><Text style={styles.legalTitle}>Community Guidelines</Text><Text style={styles.caption}>Dating safety, respectful messaging, reporting, blocking, and contact-sharing guidance.</Text></TouchableOpacity>
       </View>
       <View style={styles.panel}>
         <Text style={styles.kicker}>Bio assistant</Text>
@@ -2023,9 +2000,12 @@ const styles = StyleSheet.create({
   chatInboxStrip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1E1222', borderRadius: 20, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)' },
   chatScreenTitle: { color: '#FFFFFF', fontSize: 21, fontWeight: '900' },
   chatTokenPill: { color: '#120914', backgroundColor: '#FFD700', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 11, paddingVertical: 7, fontWeight: '900' },
+  safetyReminder: { flexDirection: 'row', gap: 9, alignItems: 'flex-start', backgroundColor: 'rgba(255,215,0,0.10)', borderWidth: 1, borderColor: 'rgba(255,215,0,0.22)', borderRadius: 18, padding: 12, marginBottom: 12 },
+  safetyReminderText: { flex: 1, color: 'rgba(255,255,255,0.82)', fontWeight: '800', lineHeight: 19, fontSize: 12 },
   conversationPanel: { backgroundColor: '#1E1222', borderRadius: 22, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)' },
   chatIconButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#2A1A30', borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', alignItems: 'center', justifyContent: 'center' },
   chatTools: { backgroundColor: '#1E1222', borderRadius: 20, padding: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
+  chatToolsSimple: { backgroundColor: '#1E1222', borderRadius: 18, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
   chatHeaderAvatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: '#FF1493' },
   chatName: { color: '#FFFFFF', fontWeight: '900', fontSize: 17 },
   chatStatus: { color: '#16A34A', fontWeight: '800', fontSize: 12 },
@@ -2044,12 +2024,6 @@ const styles = StyleSheet.create({
   signal: { backgroundColor: '#2A1A30', color: '#FFFFFF', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, overflow: 'hidden', fontWeight: '900', fontSize: 12 },
   promptRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   promptChip: { backgroundColor: '#FFD700', color: '#120914', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 8, fontWeight: '900', fontSize: 12 },
-  videoPlayerCard: { height: 260, borderRadius: 24, overflow: 'hidden', backgroundColor: '#120914', marginTop: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.28)' },
-  videoPlayer: { ...StyleSheet.absoluteFillObject },
-  videoPlayerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', padding: 16 },
-  videoInvite: { backgroundColor: '#1E1222', borderRadius: 18, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#FF1493', alignItems: 'center' },
-  videoTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, lineHeight: 22, textAlign: 'center' },
-  videoTeaser: { color: 'rgba(255,255,255,0.68)', fontWeight: '800', lineHeight: 21, marginTop: 6, textAlign: 'center' },
   lockedReply: { backgroundColor: '#1E1222', borderWidth: 1, borderColor: '#FFD700', borderRadius: 20, padding: 16, marginVertical: 10, gap: 8 },
   lockedHeader: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   lockedTitle: { color: '#FFD700', fontWeight: '900', fontSize: 13 },
@@ -2105,6 +2079,13 @@ const styles = StyleSheet.create({
   boostText: { color: '#120914', fontWeight: '900' },
   textButton: { alignItems: 'center', paddingVertical: 12 },
   textButtonLabel: { color: '#FFD700', fontWeight: '900' },
+  legalPanel: { backgroundColor: '#1E1222', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,215,0,0.18)', padding: 16, marginBottom: 14 },
+  legalLink: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  legalTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginBottom: 4 },
+  policyScreen: { gap: 12 },
+  policyItem: { backgroundColor: '#1E1222', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)', padding: 16 },
+  policyTitle: { color: '#FFD700', fontWeight: '900', fontSize: 17, marginBottom: 6 },
+  policyBody: { color: 'rgba(255,255,255,0.78)', fontWeight: '800', lineHeight: 21 },
   complianceText: { color: 'rgba(255,255,255,0.62)', fontSize: 12, lineHeight: 18, fontWeight: '700', marginBottom: 18 },
   listItem: { backgroundColor: '#2A1A30', borderRadius: 18, padding: 15, marginTop: 10, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
   listTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
