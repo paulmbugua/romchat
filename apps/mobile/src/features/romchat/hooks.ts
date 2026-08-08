@@ -101,10 +101,10 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     setLastAction('Distance preferences applied');
     setPaidMessages((payload.messages || []).filter((message) => message.locked));
   }, [localProfiles, options.enabled, options.token]);
-  const swipe = useCallback(async (profileId: string, action: 'pass' | 'like' | 'super_like') => {
-    setLastAction(action === 'pass' ? 'Passed' : action === 'super_like' ? 'Priority like sent' : 'Like sent');
+  const swipe = useCallback(async (profileId: string, action: 'pass' | 'like' | 'super_like', swipeOptions: { forceMatch?: boolean } = {}) => {
+    setLastAction(action === 'pass' ? 'Passed' : action === 'super_like' ? 'Priority like sent' : swipeOptions.forceMatch ? 'Match accepted' : 'Like sent');
     try {
-      const result = await romchatApi.swipe(profileId, action, options.token);
+      const result = await romchatApi.swipe(profileId, action, options.token, swipeOptions);
       setApiOnline(true);
       setLastAction(result.message);
       return result;

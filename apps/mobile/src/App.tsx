@@ -217,6 +217,7 @@ export default function App() {
   const [subscriptionTier, setSubscriptionTier] = useState<PlanName>('Free');
   const [paymentNotice, setPaymentNotice] = useState('');
   const [showMatch, setShowMatch] = useState(false);
+  const [pendingChatProfileId, setPendingChatProfileId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
   const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
@@ -450,6 +451,20 @@ export default function App() {
       }
       throw error;
     }
+  }
+
+  async function acceptLikeAndOpenChat(profileId: string) {
+    clearMatchTimer();
+    setShowMatch(false);
+    const result = await romchat.swipe(profileId, 'like', { forceMatch: true });
+    setPendingChatProfileId(profileId);
+    await romchat.refresh();
+    setActiveSection('chat');
+    if (!result?.matched) console.warn('[romchat-likes] accepted like did not return matched result', { profileId, result });
+  }
+
+  function passLikeProfile(profileId: string) {
+    void romchat.swipe(profileId, 'pass');
   }
 
   function superLikeProfile() {
@@ -728,7 +743,7 @@ export default function App() {
       return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openChat={() => setActiveSection('chat')} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
+      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
     }
     if (section === 'chat') {
       return (
@@ -737,6 +752,8 @@ export default function App() {
           sendMessage={romchat.sendMessage}
           getMessages={romchat.getMessages}
           currentUserId={session?.user?.id || 'me'}
+          initialProfileId={pendingChatProfileId}
+          onInitialProfileHandled={() => setPendingChatProfileId(null)}
           status={romchat.lastAction}
         />
       );
@@ -1332,8 +1349,8 @@ function ExploreScreen({ openLikes }: { openLikes: () => void }) {
   );
 }
 
-function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, openChat, likeProfile, passProfile }: {
-  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openChat: () => void; likeProfile: () => void; passProfile: () => void }) {
+function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, openChat, acceptLikeAndOpenChat, passLikeProfile, likeProfile, passProfile }: {
+  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; passLikeProfile: (profileId: string) => void; likeProfile: () => void; passProfile: () => void }) {
   const [tab, setTab] = useState<'received' | 'sent' | 'top'>('received');
   const [revealedLikeId, setRevealedLikeId] = useState<string | null>(null);
   const [nextDropCountdown, setNextDropCountdown] = useState(() => formatNextLikeDropCountdown());
@@ -1360,9 +1377,13 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
     setRevealedLikeId(dailyGoldMatch.id);
   }
   function acceptDailyLike() {
-    likeProfile();
     setRevealedLikeId(null);
-    openChat();
+    acceptLikeAndOpenChat(dailyGoldMatch.id);
+  }
+
+  function passDailyLike() {
+    setRevealedLikeId(null);
+    passLikeProfile(dailyGoldMatch.id);
   }
   function superLikeUpsell() {
     Alert.alert('Get Super Likes', "Stand out with a Super Like. You are pushed higher and matched faster with profiles you already like.", [
@@ -1389,7 +1410,7 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
             <Text style={styles.freeLikeCopy}>One Like is free to review each day. Accept to match and message, or pass to keep browsing.</Text>
           </LinearGradient>
           <Text style={styles.likesSectionTitle}>Gold Match</Text>
-          <GoldMatchCard profile={dailyGoldMatch} revealed={revealedLikeId === dailyGoldMatch.id || hasGoldAccess} onReveal={revealDailyLike} onAccept={acceptDailyLike} onPass={passProfile} />
+          <GoldMatchCard profile={dailyGoldMatch} revealed={revealedLikeId === dailyGoldMatch.id || hasGoldAccess} onReveal={revealDailyLike} onAccept={acceptDailyLike} onPass={passDailyLike} />
           <Text style={styles.likesSectionTitle}>Everyone else who's into you</Text>
           <View style={styles.likesGrid}>
             {admirerProfiles.slice(1, 7).map((profile, index) => <BlurredLikeCard key={profile.id} profile={profile} onPress={openPremium} index={index} />)}
@@ -1522,11 +1543,13 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-function Chat({ profiles, sendMessage, getMessages, currentUserId, status }: {
+function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfileId, onInitialProfileHandled, status }: {
   profiles: ProfileSeed[];
   sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean }) => Promise<unknown>;
   getMessages: (matchId: string) => Promise<Array<{ id: string; senderId?: string; from?: string; text: string; createdAt?: string }>>;
   currentUserId: string;
+  initialProfileId?: string | null;
+  onInitialProfileHandled?: () => void;
   status: string;
 }) {
   const matchPool = profiles.filter((profile) => Boolean(profile.matchId));
@@ -1543,6 +1566,14 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, status }: {
   const promptChips = selectedMatch ? [`Ask ${selectedMatch.name} about ${selectedMatch.tags[0] || 'her vibe'}`, 'Coffee this weekend?', 'How has your day been?'] : [];
   const activePhoto = selectedMatch?.photos?.[0] ? { uri: resolveMediaUrl(selectedMatch.photos[0]) } : selectedMatch?.photo || require('../assets/icon.png');
   const selectedMessages = selectedMatch ? threadMessages[selectedMatch.id] || [] : [];
+
+  useEffect(() => {
+    if (!initialProfileId) return;
+    const target = orderedMatches.find((profile) => profile.id === initialProfileId);
+    if (!target) return;
+    setSelectedMatchId(target.id);
+    onInitialProfileHandled?.();
+  }, [initialProfileId, orderedMatches, onInitialProfileHandled]);
 
   function looksLikeContactShare(textValue: string) {
     return /(\+?\d[\d\s().-]{6,}\d)|([\w.%+-]+@[\w.-]+\.[A-Za-z]{2,})|(whats\s*app|telegram|snapchat|instagram|ig\b|@\w{3,})/i.test(textValue);

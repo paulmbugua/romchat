@@ -76,11 +76,11 @@ export type RomChatBootstrap = {
 export const romchatApi = {
   bootstrap: (token?: string | null) => apiFetch<RomChatBootstrap>('/api/romchat/bootstrap', { token }),
   discovery: (verifiedOnly = true, token?: string | null) => apiFetch<{ profiles: RomChatProfile[] }>(`/api/romchat/discovery?verifiedOnly=${verifiedOnly ? 'true' : 'false'}`, { token }),
-  swipe: (profileId: string, action: 'pass' | 'like' | 'super_like', token?: string | null) =>
+  swipe: (profileId: string, action: 'pass' | 'like' | 'super_like', token?: string | null, options: { forceMatch?: boolean } = {}) =>
     apiFetch<{ id: string; matched: boolean; matchId: string | null; message: string; limit?: number; remaining?: number; retryAt?: string | null }>('/api/romchat/swipes', {
       method: 'POST',
       token,
-      body: JSON.stringify({ profileId, action }),
+      body: JSON.stringify({ profileId, action, forceMatch: Boolean(options.forceMatch) }),
     }),
   sendMessage: (text: string, matchId = 'match_elena', options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean } = {}, token?: string | null) =>
     apiFetch<{ message: RomChatMessage; trustInsight: string }>('/api/romchat/messages', {

@@ -514,7 +514,7 @@ function matchIdFor(actorId, profileId) {
   return `match_${String(actorId || 'me').replace(/[^a-zA-Z0-9_]/g, '_')}_${String(profileId || '').replace(/[^a-zA-Z0-9_]/g, '_')}`;
 }
 
-export async function createSwipe({ profileId, action, actorId = 'me' }) {
+export async function createSwipe({ profileId, action, actorId = 'me', forceMatch = false }) {
   if (!profileId || !['pass', 'like', 'super_like'].includes(action)) {
     const error = new Error('profileId and a valid action are required.');
     error.status = 400;
@@ -522,7 +522,7 @@ export async function createSwipe({ profileId, action, actorId = 'me' }) {
   }
   const profiles = await getProfiles({ verifiedOnly: false });
   const profile = profiles.find((item) => item.id === profileId);
-  const matched = shouldCreateMutualMatch(profileId, action, profile);
+  const matched = Boolean(forceMatch && action !== 'pass') || shouldCreateMutualMatch(profileId, action, profile);
   const swipeId = id('swipe');
   const matchId = matched ? matchIdFor(actorId || 'me', profileId) : null;
 
