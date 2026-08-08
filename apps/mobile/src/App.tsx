@@ -175,12 +175,12 @@ const profilePromptTemplates = [
 ];
 
 const tokenCatalog = [
-  ['Unlock voice/photo media', '10'],
-  ['Undo previous swipe', String(UNDO_SWIPE_COST)],
-  ['Send rose', '5'],
-  ['Priority message', String(SUPER_LIKE_COST)],
-  ['Reveal admirer', '22'],
-  ['Undo previous swipe', String(UNDO_SWIPE_COST)],
+  { id: 'media_unlock', label: 'Unlock voice/photo media', cost: '10' },
+  { id: 'undo_swipe_token', label: 'Undo previous swipe', cost: String(UNDO_SWIPE_COST) },
+  { id: 'send_rose', label: 'Send rose', cost: '5' },
+  { id: 'priority_message', label: 'Priority message', cost: String(SUPER_LIKE_COST) },
+  { id: 'reveal_admirer', label: 'Reveal admirer', cost: '22' },
+  { id: 'rewind_after_pass', label: 'Undo previous swipe', cost: String(UNDO_SWIPE_COST) },
 ];
 
 const starterMessages: Array<[string, string, string]> = [
@@ -1598,7 +1598,7 @@ function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, st
       </LinearGradient>
       <View style={styles.packageGrid}>{tokenPackages.map((pack) => (<TouchableOpacity key={pack.id} onPress={() => void startTokenPurchase(pack.id, 'mpesa')} onLongPress={() => void startTokenPurchase(pack.id, 'paystack')} style={[styles.packageCard, pack.badge && styles.packageFeatured]}>{!!pack.badge && <Text style={styles.packageBadge}>{pack.badge}</Text>}<Text style={styles.packageAmount}>{pack.amount}</Text><Text style={styles.packagePrice}>{pack.price}</Text><Text style={styles.packageUnit}>{pack.unit}</Text></TouchableOpacity>))}</View>
       {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
-      <View style={styles.catalogCard}><Text style={styles.sectionLabel}>Token feature catalog</Text>{tokenCatalog.map(([label, cost]) => <View key={label} style={styles.catalogRow}><Text style={styles.catalogLabel}>{label}</Text><Text style={styles.catalogCost}>{cost}</Text></View>)}</View>
+      <View style={styles.catalogCard}><Text style={styles.sectionLabel}>Token feature catalog</Text>{tokenCatalog.map((item) => <View key={item.id} style={styles.catalogRow}><Text style={styles.catalogLabel}>{item.label}</Text><Text style={styles.catalogCost}>{item.cost}</Text></View>)}</View>
       <Text style={styles.sectionLabel}>Plus tiers</Text>
       {plans.map((plan) => (<TouchableOpacity key={plan.name} onPress={() => void startPlanPurchase(plan.id, 'mpesa')} onLongPress={() => void startPlanPurchase(plan.id, 'paystack')} activeOpacity={0.9}><LinearGradient colors={plan.name === 'Gold' ? ['#FF6F61', '#FF1493'] : ['#1E1222', '#120914']} style={[styles.planCard, activePlan === plan.name && styles.planCardActive]}><View style={styles.planHeader}><Text style={styles.planName}>{plan.name}</Text><Text style={styles.planPrice}>{plan.price}</Text></View>{plan.perks.map((perk) => <Text key={perk} style={styles.planPerk}>{perk}</Text>)}</LinearGradient></TouchableOpacity>))}
       <TouchableOpacity onPress={activateBoost} style={[styles.boostButton, boosted && styles.boostButtonActive]}><Text style={styles.boostText}>{boosted ? 'Spotlight active for 30 minutes' : 'Boost profile for peak hour'}</Text></TouchableOpacity>
