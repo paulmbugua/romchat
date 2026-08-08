@@ -119,17 +119,23 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, [options.token]);
 
+  const optionsToken = options.token;
   const sendMessage = useCallback(async (text: string, matchId?: string, options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean } = {}) => {
     setLastAction('Sending message');
     try {
-      const result = await romchatApi.sendMessage(text, matchId, options);
+      const result = await romchatApi.sendMessage(text, matchId, options, optionsToken);
       setLastAction(result.trustInsight || 'Message sent');
       return result;
     } catch {
       setLastAction('Message saved locally');
       return null;
     }
-  }, []);
+  }, [optionsToken]);
+
+  const getMessages = useCallback(async (matchId: string) => {
+    const result = await romchatApi.messages(matchId, optionsToken);
+    return result.messages || [];
+  }, [optionsToken]);
 
   const unlockMessage = useCallback(async (messageId: string) => {
     setLastAction('Unlocking private media');
@@ -234,5 +240,5 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, report, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, report, verify };
 }

@@ -193,6 +193,7 @@ function fromMemberProfileRow(row, catalogueAccess = 1) {
   const answers = promptAnswers.map((item) => item?.answer).filter(Boolean).slice(0, 3);
   return {
     id: row.member_id,
+    matchId: row.match_id || null,
     name: row.display_name,
     age: Number(row.age),
     city: row.city,
@@ -222,10 +223,10 @@ function fromMemberProfileRow(row, catalogueAccess = 1) {
 }
 
 
-async function getActiveMatch(matchId) {
+async function getActiveMatch(matchId, actorId = 'me') {
   const result = await queryWithRetry("SELECT * FROM romchat_matches WHERE id = $1 AND status = 'active'", [matchId]);
   const match = result.rows[0];
-  if (!match) {
+  if (!match || ![match.actor_id, match.profile_id].includes(actorId || 'me')) {
     const error = new Error('Only matched profiles can chat each other.');
     error.status = 403;
     error.code = 'MATCH_REQUIRED';
@@ -324,6 +325,7 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
     let result = await queryWithRetry(
       `SELECT
          p.*,
+         active_match.id AS match_id,
          COALESCE(
            array_agg(m.url ORDER BY m.position ASC, m.created_at ASC)
              FILTER (WHERE m.media_type = 'image'),
@@ -331,10 +333,15 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
          ) AS photos
        FROM romchat_member_profiles p
        JOIN romchat_profile_media m ON m.member_id = p.member_id AND m.media_type = 'image'
+       LEFT JOIN romchat_matches active_match
+         ON active_match.status = 'active'
+        AND $1::text IS NOT NULL
+        AND ((active_match.actor_id = $1 AND active_match.profile_id = p.member_id)
+          OR (active_match.profile_id = $1 AND active_match.actor_id = p.member_id))
        WHERE ($1::text IS NULL OR p.member_id <> $1)
          AND ($2::boolean = false OR p.selfie_verified = true)
          AND ($3::text IS NULL OR lower(p.gender) = $3)
-       GROUP BY p.member_id
+       GROUP BY p.member_id, active_match.id
        ORDER BY p.selfie_verified DESC, p.profile_strength DESC, p.updated_at DESC`,
       [viewerId, Boolean(verifiedOnly), desiredGender]
     );
@@ -342,6 +349,7 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
       result = await queryWithRetry(
         `SELECT
            p.*,
+           active_match.id AS match_id,
            COALESCE(
              array_agg(m.url ORDER BY m.position ASC, m.created_at ASC)
                FILTER (WHERE m.media_type = 'image'),
@@ -349,9 +357,14 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
            ) AS photos
          FROM romchat_member_profiles p
          JOIN romchat_profile_media m ON m.member_id = p.member_id AND m.media_type = 'image'
+         LEFT JOIN romchat_matches active_match
+           ON active_match.status = 'active'
+          AND $1::text IS NOT NULL
+          AND ((active_match.actor_id = $1 AND active_match.profile_id = p.member_id)
+            OR (active_match.profile_id = $1 AND active_match.actor_id = p.member_id))
          WHERE ($1::text IS NULL OR p.member_id <> $1)
            AND ($2::text IS NULL OR lower(p.gender) = $2)
-         GROUP BY p.member_id
+         GROUP BY p.member_id, active_match.id
          ORDER BY p.selfie_verified DESC, p.profile_strength DESC, p.updated_at DESC`,
         [viewerId, desiredGender]
       );
@@ -365,8 +378,9 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
   }, () => []);
 }
 
-export async function getMessages(matchId = 'match_elena') {
+export async function getMessages(matchId = 'match_elena', actorId = null) {
   return withDb(async () => {
+    if (actorId) await getActiveMatch(matchId, actorId);
     const result = await queryWithRetry(
       `SELECT * FROM romchat_messages WHERE match_id = $1 ORDER BY created_at ASC`,
       [matchId]
@@ -496,6 +510,10 @@ async function enforceDailyLikeLimit(memberId, action) {
   throw error;
 }
 
+function matchIdFor(actorId, profileId) {
+  return `match_${String(actorId || 'me').replace(/[^a-zA-Z0-9_]/g, '_')}_${String(profileId || '').replace(/[^a-zA-Z0-9_]/g, '_')}`;
+}
+
 export async function createSwipe({ profileId, action, actorId = 'me' }) {
   if (!profileId || !['pass', 'like', 'super_like'].includes(action)) {
     const error = new Error('profileId and a valid action are required.');
@@ -506,7 +524,7 @@ export async function createSwipe({ profileId, action, actorId = 'me' }) {
   const profile = profiles.find((item) => item.id === profileId);
   const matched = shouldCreateMutualMatch(profileId, action, profile);
   const swipeId = id('swipe');
-  const matchId = matched ? `match_${profileId}` : null;
+  const matchId = matched ? matchIdFor(actorId || 'me', profileId) : null;
 
   return withDb(async () => {
     await enforceDailyLikeLimit(actorId || 'me', action);
@@ -523,7 +541,7 @@ export async function createSwipe({ profileId, action, actorId = 'me' }) {
   }, () => ({ id: swipeId, matched, matchId, message: matched ? 'Ni match. Say hi.' : 'Like sent. If they like you back, it becomes a match.' }));
 }
 
-export async function sendMessage({ matchId = 'match_elena', text, expiresInSeconds = null, viewOnce = false, mediaUrl = null, mediaType = null, giftId = null, priority = false, readReceiptRequested = false, riskOverride = null }) {
+export async function sendMessage({ matchId = 'match_elena', text, actorId = 'me', expiresInSeconds = null, viewOnce = false, mediaUrl = null, mediaType = null, giftId = null, priority = false, readReceiptRequested = false, riskOverride = null }) {
   if (!String(text || '').trim() && !mediaUrl) {
     const error = new Error('Message text or mediaUrl is required.');
     error.status = 400;
@@ -532,8 +550,8 @@ export async function sendMessage({ matchId = 'match_elena', text, expiresInSeco
   const message = {
     id: id('msg'),
     matchId,
-    senderId: 'me',
-    from: 'me',
+    senderId: actorId || 'me',
+    from: actorId || 'me',
     text: String(text || '').trim(),
     mediaUrl,
     mediaType,
@@ -546,21 +564,22 @@ export async function sendMessage({ matchId = 'match_elena', text, expiresInSeco
     createdAt: now(),
   };
   return withDb(async () => {
-    const match = await getActiveMatch(matchId);
+    const match = await getActiveMatch(matchId, actorId || 'me');
+    const recipientId = match.actor_id === (actorId || 'me') ? match.profile_id : match.actor_id;
     await queryWithRetry(
       `INSERT INTO romchat_messages (id, match_id, sender_id, text, media_url, media_type, gift_id, priority, view_once, expires_at, risk)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [message.id, message.matchId, message.senderId, message.text, message.mediaUrl, message.mediaType, message.giftId, message.priority, message.viewOnce, message.expiresAt, message.risk]
     );
     await createNotification({
-      memberId: match.profile_id,
+      memberId: recipientId,
       matchId,
       type: 'message',
       title: readReceiptRequested ? 'New RomChat message with read receipt' : 'New RomChat message',
       body: message.text.slice(0, 160),
       metadata: { messageId: message.id, viewOnce: message.viewOnce, expiresAt: message.expiresAt, readReceiptRequested: Boolean(readReceiptRequested) },
     });
-    return { ...message, recipientId: match.profile_id, notificationSent: true, readReceiptRequested: Boolean(readReceiptRequested) };
+    return { ...message, recipientId, notificationSent: true, readReceiptRequested: Boolean(readReceiptRequested) };
   }, () => message);
 }
 

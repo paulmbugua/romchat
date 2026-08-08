@@ -157,15 +157,21 @@ export function createRomchatController(io) {
       }
     },
     async messages(req, res) {
-      res.json({ messages: await getMessages(req.params.matchId), generatedAt: new Date().toISOString() });
+      try {
+        const state = await authStateFor(req);
+        res.json({ messages: await getMessages(req.params.matchId, state?.user?.id || 'me'), generatedAt: new Date().toISOString() });
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async sendMessage(req, res) {
       try {
         const moderation = moderateTextPayload(req.body?.text || '');
         const mediaModeration = req.body?.mediaUrl ? moderateMediaAsset(req.body || {}) : null;
         const riskOverride = moderation.status === 'review' || mediaModeration?.status === 'pending_provider_review' ? 'review' : null;
-        const message = await sendMessage({ ...(req.body || {}), priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
-        io?.to(message.matchId).emit('romchat:message', message);
+        const state = await authStateFor(req);
+        const message = await sendMessage({ ...(req.body || {}), actorId: state?.user?.id || 'me', priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
+        io?.to(message.matchId).to(`member:${message.recipientId}`).emit('romchat:message', message);
         res.status(201).json({ message, moderation, mediaModeration, trustInsight: riskOverride || message.risk === 'review' ? 'Message queued for trust review.' : 'Message delivered.' });
       } catch (error) {
         sendError(res, error);

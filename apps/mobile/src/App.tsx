@@ -67,6 +67,8 @@ type ProfileSeed = {
   color: string;
   gender?: 'female' | 'male' | string;
   photo: ImageSourcePropType;
+  matchId?: string | null;
+  lastSeenAt?: string | null;
   online?: boolean;
   verified?: boolean;
 };
@@ -733,6 +735,8 @@ export default function App() {
         <Chat
           profiles={profiles}
           sendMessage={romchat.sendMessage}
+          getMessages={romchat.getMessages}
+          currentUserId={session?.user?.id || 'me'}
           status={romchat.lastAction}
         />
       );
@@ -1393,17 +1397,19 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-function Chat({ profiles, sendMessage, status }: {
+function Chat({ profiles, sendMessage, getMessages, currentUserId, status }: {
   profiles: ProfileSeed[];
   sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean }) => Promise<unknown>;
+  getMessages: (matchId: string) => Promise<Array<{ id: string; senderId?: string; from?: string; text: string; createdAt?: string }>>;
+  currentUserId: string;
   status: string;
 }) {
-  const matchPool = profiles;
+  const matchPool = profiles.filter((profile) => Boolean(profile.matchId));
   const onlineMatches = matchPool.filter((profile) => profile.online === true);
   const orderedMatches = [...onlineMatches, ...matchPool.filter((profile) => profile.online !== true)];
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
-  const [threadMessages, setThreadMessages] = useState<Record<string, Array<{ id: string; from: 'You'; text: string; status: string }>>>({});
+  const [threadMessages, setThreadMessages] = useState<Record<string, Array<{ id: string; from: 'You' | 'Them'; text: string; status: string }>>>({});
   const [contactWarnings, setContactWarnings] = useState<Record<string, boolean>>({});
   const [pendingContactText, setPendingContactText] = useState('');
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
@@ -1427,7 +1433,7 @@ function Chat({ profiles, sendMessage, status }: {
   function deliverMessage(textValue: string) {
     if (!selectedMatch) return;
     appendLocalMessage(selectedMatch.id, textValue);
-    void sendMessage(textValue, `match_${selectedMatch.id}`, { mode: 'standard', readReceiptRequested: false });
+    void sendMessage(textValue, selectedMatch.matchId || `match_${selectedMatch.id}`, { mode: 'standard', readReceiptRequested: false });
   }
 
   function sendChatText(textValue: string) {
@@ -1459,6 +1465,26 @@ function Chat({ profiles, sendMessage, status }: {
     sendChatText(textValue);
   }
 
+  useEffect(() => {
+    if (!selectedMatch?.matchId) return;
+    let mounted = true;
+    void getMessages(selectedMatch.matchId)
+      .then((messages) => {
+        if (!mounted) return;
+        setThreadMessages((current) => ({
+          ...current,
+          [selectedMatch.id]: messages.map((message) => ({
+            id: message.id,
+            from: (message.senderId || message.from) === currentUserId ? 'You' : 'Them',
+            text: message.text,
+            status: (message.senderId || message.from) === currentUserId ? 'Delivered' : 'Received',
+          })),
+        }));
+      })
+      .catch(() => undefined);
+    return () => { mounted = false; };
+  }, [selectedMatch?.id, selectedMatch?.matchId, currentUserId, getMessages]);
+
   if (selectedMatch) {
     return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0} style={[styles.chatScreen, styles.chatKeyboardAvoider]}>
@@ -1483,9 +1509,9 @@ function Chat({ profiles, sendMessage, status }: {
         <View style={styles.conversationPanel}>
           <Text style={styles.matchContext}>{selectedMatch.intent} - {selectedMatch.city}{typeof selectedMatch.distanceKm === 'number' && selectedMatch.distanceKm > 0 ? ` - ${selectedMatch.distanceKm} km` : ''}</Text>
           {selectedMessages.length ? selectedMessages.map((message) => (
-            <View key={message.id} style={[styles.bubble, styles.sent]}>
-              <Text style={styles.sentText}>{message.text}</Text>
-              <Text style={styles.sentMeta}>{message.status}</Text>
+            <View key={message.id} style={[styles.bubble, message.from === 'You' ? styles.sent : styles.received]}>
+              <Text style={message.from === 'You' ? styles.sentText : styles.receivedText}>{message.text}</Text>
+              <Text style={message.from === 'You' ? styles.sentMeta : styles.receivedMeta}>{message.status}</Text>
             </View>
           )) : (
             <View style={styles.emptyThreadCard}>

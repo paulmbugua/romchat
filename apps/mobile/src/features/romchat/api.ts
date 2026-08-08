@@ -24,6 +24,8 @@ export type RomChatProfile = {
   gender?: string;
   verified?: boolean;
   online?: boolean;
+  matchId?: string | null;
+  lastSeenAt?: string | null;
   distanceKm?: number;
 };
 
@@ -80,11 +82,13 @@ export const romchatApi = {
       token,
       body: JSON.stringify({ profileId, action }),
     }),
-  sendMessage: (text: string, matchId = 'match_elena', options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean } = {}) =>
+  sendMessage: (text: string, matchId = 'match_elena', options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean } = {}, token?: string | null) =>
     apiFetch<{ message: RomChatMessage; trustInsight: string }>('/api/romchat/messages', {
       method: 'POST',
+      token,
       body: JSON.stringify({ matchId, text, viewOnce: options.mode === 'viewOnce', expiresInSeconds: options.mode === 'timed' ? 86400 : null, readReceiptRequested: Boolean(options.readReceiptRequested) }),
     }),
+  messages: (matchId: string, token?: string | null) => apiFetch<{ messages: RomChatMessage[]; generatedAt: string }>(`/api/romchat/messages/${encodeURIComponent(matchId)}`, { token }),
   videoRequests: (matchId = 'match_elena') => apiFetch<{ videoRequests: RomChatVideoRequest[] }>(`/api/romchat/video-requests?matchId=${matchId}`),
   createVideoRequest: (matchId: string, senderProfileId: string) =>
     apiFetch<{ videoRequest: RomChatVideoRequest }>('/api/romchat/video-requests', {
