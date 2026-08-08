@@ -392,6 +392,27 @@ export default function App() {
     setShowMatch(false);
   }
 
+  function animateCardDecision(direction: 'left' | 'right', complete: () => void) {
+    if (!profile) return;
+    clearMatchTimer();
+    Animated.timing(swipePosition, {
+      toValue: { x: direction === 'right' ? windowWidth * 1.18 : -windowWidth * 1.18, y: -28 },
+      duration: 235,
+      useNativeDriver: false,
+    }).start(() => {
+      swipePosition.setValue({ x: 0, y: 0 });
+      complete();
+    });
+  }
+
+  function animatedPassProfile() {
+    animateCardDecision('left', passProfile);
+  }
+
+  function animatedLikeProfile() {
+    animateCardDecision('right', () => void likeProfile('like'));
+  }
+
   function previous() {
     if (!hasGoldAccess) {
       Alert.alert('Rewind is premium', 'Free members cannot swipe back. Buy 100 tokens for KES 250 or upgrade to Gold to rewind.', [
@@ -805,8 +826,8 @@ export default function App() {
           <>
             <Discover
               profile={profile}
-              passProfile={passProfile}
-              likeProfile={() => likeProfile('like')}
+              passProfile={animatedPassProfile}
+              likeProfile={animatedLikeProfile}
               topProfile={superLikeProfile}
               previous={previous}
               swipeHandlers={swipeHandlers}
@@ -1168,7 +1189,7 @@ function Discover({
     <View style={styles.discovery}>
       <Animated.View style={[styles.deckShadow, swipeCardStyle]} {...swipeHandlers}>
         <ImageBackground source={photoSlots[photoIndex]} resizeMode="cover" style={[styles.profileCard, { height: cardHeight, minHeight: cardHeight }]} imageStyle={styles.profilePhoto}>
-          <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(18,9,20,0.2)', 'rgba(18,9,20,0.95)']} style={styles.photoOverlay} />
+          <LinearGradient colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)', 'rgba(18,9,20,0.74)']} locations={[0, 0.52, 1]} style={styles.photoOverlay} />
           <View style={styles.photoDots}>
             {photoSlots.map((_, itemIndex) => (
               <View key={itemIndex} style={[styles.photoDot, itemIndex === photoIndex && styles.photoDotActive]} />
@@ -1330,7 +1351,7 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
       </View>
       <Text style={styles.exploreTitle}>{title}</Text>
       <ImageBackground source={photo} resizeMode="cover" style={styles.likePreviewCard} imageStyle={styles.likePreviewImage}>
-        <LinearGradient colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.62)', 'rgba(0,0,0,0.92)']} style={styles.photoOverlay} />
+        <LinearGradient colors={['rgba(255,255,255,0.08)', 'rgba(0,0,0,0.26)', 'rgba(0,0,0,0.74)']} locations={[0, 0.55, 1]} style={styles.photoOverlay} />
         <View style={styles.likePreviewCopy}>
           <Text style={styles.cardTitle}>{featured.name} <Text style={styles.cardAge}>{featured.age}</Text></Text>
           <Text style={styles.cardPrompt}>{featured.intent || 'Long-term partner'} - {featured.city}</Text>
