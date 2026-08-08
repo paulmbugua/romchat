@@ -728,7 +728,7 @@ export default function App() {
       return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
+      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openChat={() => setActiveSection('chat')} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
     }
     if (section === 'chat') {
       return (
@@ -1332,45 +1332,153 @@ function ExploreScreen({ openLikes }: { openLikes: () => void }) {
   );
 }
 
-function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, likeProfile, passProfile }: {
-  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; likeProfile: () => void; passProfile: () => void }) {
+function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, openChat, likeProfile, passProfile }: {
+  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openChat: () => void; likeProfile: () => void; passProfile: () => void }) {
   const [tab, setTab] = useState<'received' | 'sent' | 'top'>('received');
+  const [revealedLikeId, setRevealedLikeId] = useState<string | null>(null);
   const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
   const sentIds = new Set(likesSummary.sentProfileIds || []);
   const topIds = new Set(likesSummary.topPickProfileIds || []);
   const sentProfiles = profiles.filter((profile) => sentIds.has(profile.id));
   const topPicks = profiles.filter((profile) => topIds.has(profile.id));
   const fallbackTopPicks = profiles.filter((profile) => profile.match >= 88).slice(0, 6);
-  const activeList = tab === 'sent' ? sentProfiles : tab === 'top' ? (topPicks.length ? topPicks : fallbackTopPicks) : profiles;
-  const featured = activeList[0] || profiles[0] || localProfiles[0]!;
-  const photo = featured.photos?.[0] ? { uri: resolveMediaUrl(featured.photos[0]) } : featured.photo;
-  const likesLabel = likesReceivedCount > 99 ? '99+' : String(likesReceivedCount);
-  const sentLabel = (likesSummary.sentCount || sentProfiles.length).toString();
-  const topLabel = String((topPicks.length || fallbackTopPicks.length || 0));
-  const title = tab === 'sent' ? 'Profiles you liked' : tab === 'top' ? 'Top Picks in your Explore vibe' : 'Matches your vibe';
-  function selectTab(next: 'received' | 'sent' | 'top') { if (next !== 'received' && !hasGoldAccess) { openPremium(); return; } setTab(next); }
+  const admirerProfiles = profiles.filter((profile) => !sentIds.has(profile.id)).slice(0, 8);
+  const dailyGoldMatch = admirerProfiles[0] || profiles[0] || localProfiles[0]!;
+  const topPickList = (topPicks.length ? topPicks : fallbackTopPicks).slice(0, 6);
+  const sentList = (sentProfiles.length ? sentProfiles : profiles.slice(0, 4)).slice(0, 8);
+  const likesLabel = likesReceivedCount > 99 ? '99+' : String(Math.max(likesReceivedCount, admirerProfiles.length));
+  const tabText = tab === 'received' ? `${likesLabel} Likes` : tab === 'sent' ? 'Likes Sent' : 'Top Picks';
+
+  function revealDailyLike() {
+    if (revealedLikeId || hasGoldAccess) return openPremium();
+    setRevealedLikeId(dailyGoldMatch.id);
+  }
+  function acceptDailyLike() {
+    likeProfile();
+    setRevealedLikeId(null);
+    openChat();
+  }
+  function superLikeUpsell() {
+    Alert.alert('Get Super Likes', "Stand out with a Super Like. You are pushed higher and matched faster with profiles you already like.", [
+      { text: 'Later', style: 'cancel' },
+      { text: 'Get Super Likes', onPress: openPremium },
+    ]);
+  }
+
   return (
     <View>
       <View style={styles.likesTabs}>
-        <TouchableOpacity onPress={() => selectTab('received')} style={styles.likesTabButton}><Text style={tab === 'received' ? styles.likesTabActive : styles.likesTab}>{likesLabel} Likes</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => selectTab('sent')} style={styles.likesTabButton}><Text style={tab === 'sent' ? styles.likesTabActive : styles.likesTab}>Likes Sent {hasGoldAccess ? sentLabel : 'Gold'}</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => selectTab('top')} style={styles.likesTabButton}><Text style={tab === 'top' ? styles.likesTabActive : styles.likesTab}>Top Picks {hasGoldAccess ? topLabel : 'Gold'}</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setTab('received')} style={styles.likesTabButton}><Text style={tab === 'received' ? styles.likesTabActive : styles.likesTab}>{likesLabel} Likes</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setTab('sent')} style={styles.likesTabButton}><View style={styles.likesTabWithDot}><Text style={tab === 'sent' ? styles.likesTabActive : styles.likesTab}>Likes Sent</Text><Icon name="star" size={12} color="#9BC6FF" /></View></TouchableOpacity>
+        <TouchableOpacity onPress={() => setTab('top')} style={styles.likesTabButton}><Text style={tab === 'top' ? styles.likesTabActive : styles.likesTab}>Top Picks</Text></TouchableOpacity>
       </View>
-      <Text style={styles.exploreTitle}>{title}</Text>
-      <ImageBackground source={photo} resizeMode="cover" style={styles.likePreviewCard} imageStyle={styles.likePreviewImage}>
-        <LinearGradient colors={['rgba(255,255,255,0.08)', 'rgba(0,0,0,0.26)', 'rgba(0,0,0,0.74)']} locations={[0, 0.55, 1]} style={styles.photoOverlay} />
-        <View style={styles.likePreviewCopy}>
-          <Text style={styles.cardTitle}>{featured.name} <Text style={styles.cardAge}>{featured.age}</Text></Text>
-          <Text style={styles.cardPrompt}>{featured.intent || 'Long-term partner'} - {featured.city}</Text>
-          <View style={styles.tagRow}>{featured.tags.slice(0, 3).map((tag) => <Text key={tag} style={styles.photoTag}>{tag}</Text>)}</View>
-          <View style={styles.likePreviewActions}>
-            <TouchableOpacity onPress={passProfile} style={styles.passAction}><Icon name="close" size={28} color="#FFFFFF" /></TouchableOpacity>
-            <TouchableOpacity onPress={likeProfile} style={styles.likeAction}><Icon name="heart" size={29} color="#FF1200" /></TouchableOpacity>
+      <Text style={styles.likesScreenTitle}>{tabText}</Text>
+
+      {tab === 'received' && (
+        <View>
+          <Text style={styles.likesSectionTitle}>Free Likes</Text>
+          <LinearGradient colors={["#5A0034", "#38001F"]} style={styles.freeLikeDrop}>
+            <Text style={styles.freeLikePill}>Next drop is in</Text>
+            <Text style={styles.freeLikeTimer}>23h 56m</Text>
+            <Text style={styles.freeLikeCopy}>One Like is free to review each day. Accept to match and message, or pass to keep browsing.</Text>
+          </LinearGradient>
+          <Text style={styles.likesSectionTitle}>Gold Match</Text>
+          <GoldMatchCard profile={dailyGoldMatch} revealed={revealedLikeId === dailyGoldMatch.id || hasGoldAccess} onReveal={revealDailyLike} onAccept={acceptDailyLike} onPass={passProfile} />
+          <Text style={styles.likesSectionTitle}>Everyone else who's into you</Text>
+          <View style={styles.likesGrid}>
+            {admirerProfiles.slice(1, 7).map((profile, index) => <BlurredLikeCard key={profile.id} profile={profile} onPress={openPremium} index={index} />)}
+          </View>
+          <TouchableOpacity onPress={openPremium} style={styles.likesUnlockButton}><Text style={styles.likesUnlockText}>See All Your Likes Now</Text></TouchableOpacity>
+        </View>
+      )}
+
+      {tab === 'sent' && (
+        <View>
+          <Text style={styles.likesSectionTitle}>Profiles you liked</Text>
+          <Text style={styles.likesSubcopy}>Tap a starred profile to Super Like and get pushed faster in their queue.</Text>
+          <View style={styles.likesGrid}>
+            {sentList.map((profile) => <SentLikeCard key={profile.id} profile={profile} onPress={superLikeUpsell} />)}
           </View>
         </View>
-      </ImageBackground>
-      <TouchableOpacity onPress={openPremium} style={styles.likesUnlockButton}><Text style={styles.likesUnlockText}>{hasGoldAccess ? 'Manage Gold features' : 'Unlock Likes Sent and Top Picks with Gold'}</Text></TouchableOpacity>
+      )}
+
+      {tab === 'top' && (
+        <View>
+          <Text style={styles.topPickHeadline}>{hasGoldAccess ? 'Your best Kenyan picks today' : 'Upgrade to RomChat Gold for more Top Picks!'}</Text>
+          <View style={styles.topPickGrid}>
+            {topPickList.slice(0, hasGoldAccess ? 6 : 2).map((profile, index) => <TopPickCard key={profile.id} profile={profile} locked={!hasGoldAccess && index === 0} onPress={hasGoldAccess ? likeProfile : openPremium} />)}
+          </View>
+          <TouchableOpacity onPress={openPremium} style={styles.topPickUnlockButton}><Text style={styles.topPickUnlockText}>{hasGoldAccess ? 'Refresh Top Picks' : 'Unlock all Top Picks'}</Text></TouchableOpacity>
+        </View>
+      )}
     </View>
+  );
+}
+
+function GoldMatchCard({ profile, revealed, onReveal, onAccept, onPass }: { profile: ProfileSeed; revealed: boolean; onReveal: () => void; onAccept: () => void; onPass: () => void }) {
+  const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
+  return (
+    <ImageBackground source={photo} resizeMode="cover" blurRadius={revealed ? 0 : 18} style={styles.goldMatchCard} imageStyle={styles.goldMatchImage}>
+      <LinearGradient colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.72)"]} style={styles.photoOverlay} />
+      <View style={styles.goldMatchBadge}><Icon name="star" size={15} color="#120914" /><Text style={styles.goldMatchBadgeText}>Today's free Like</Text></View>
+      <View style={styles.goldMatchFooter}>
+        <Text style={styles.goldMatchName}>{revealed ? profile.name : 'Someone'} <Text style={styles.cardAge}>{profile.age}</Text></Text>
+        <Text style={styles.goldMatchMeta}>{profile.online ? 'Recently Active' : `${profile.city} vibe`}</Text>
+        {revealed ? (
+          <View style={styles.goldMatchActions}>
+            <TouchableOpacity onPress={onPass} style={styles.goldPassButton}><Icon name="close" size={27} color="#FFFFFF" /></TouchableOpacity>
+            <TouchableOpacity onPress={onAccept} style={styles.goldAcceptButton}><Text style={styles.goldAcceptText}>Message...</Text></TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={onReveal} style={styles.goldRevealButton}><Text style={styles.goldRevealText}>Reveal free Like</Text></TouchableOpacity>
+        )}
+      </View>
+    </ImageBackground>
+  );
+}
+
+function BlurredLikeCard({ profile, onPress, index }: { profile: ProfileSeed; onPress: () => void; index: number }) {
+  const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={styles.blurredLikeCard}>
+      <ImageBackground source={photo} resizeMode="cover" blurRadius={18} style={styles.blurredLikeImage} imageStyle={styles.blurredLikeImageRadius}>
+        <LinearGradient colors={["rgba(255,255,255,0.10)", "rgba(0,0,0,0.70)"]} style={styles.photoOverlay} />
+        <View style={styles.blurredNamePill} />
+        <Text style={styles.blurredAge}>{profile.age + index % 3}</Text>
+        <Text style={styles.blurredMeta}>{profile.online ? 'Recently Active' : `${Math.max(3, Math.round(profile.distanceKm || 9))} miles away`}</Text>
+      </ImageBackground>
+    </TouchableOpacity>
+  );
+}
+
+function SentLikeCard({ profile, onPress }: { profile: ProfileSeed; onPress: () => void }) {
+  const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={styles.sentLikeCard}>
+      <ImageBackground source={photo} resizeMode="cover" style={styles.sentLikeImage} imageStyle={styles.blurredLikeImageRadius}>
+        <LinearGradient colors={["rgba(0,0,0,0.06)", "rgba(0,0,0,0.78)"]} style={styles.photoOverlay} />
+        <View style={styles.sentStar}><Icon name="star" size={20} color="#9BC6FF" /></View>
+        <Text style={styles.sentLikeName}>{profile.name}, {profile.age}</Text>
+        <Text style={styles.sentLikeMeta}>Boost this Like</Text>
+      </ImageBackground>
+    </TouchableOpacity>
+  );
+}
+
+function TopPickCard({ profile, locked, onPress }: { profile: ProfileSeed; locked: boolean; onPress: () => void }) {
+  const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={styles.topPickCard}>
+      <ImageBackground source={photo} resizeMode="cover" blurRadius={locked ? 14 : 0} style={styles.topPickImage} imageStyle={styles.topPickImageRadius}>
+        <LinearGradient colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.72)"]} style={styles.photoOverlay} />
+        {locked && <View style={styles.topPickSilhouette}><Icon name="person" size={66} color="#FFFFFF" /></View>}
+        <View style={styles.topPickFooter}>
+          <Text style={styles.topPickName}>{locked ? 'Mystery Pick' : profile.name}, {profile.age}</Text>
+          <Text style={styles.topPickTime}>24h left</Text>
+        </View>
+        <View style={styles.topPickStar}><Icon name="star" size={20} color="#9BC6FF" /></View>
+      </ImageBackground>
+    </TouchableOpacity>
   );
 }
 
@@ -2037,6 +2145,51 @@ const styles = StyleSheet.create({
   likePreviewActions: { flexDirection: 'row', justifyContent: 'center', gap: 22, marginTop: 18 },
   likesUnlockButton: { backgroundColor: '#FFFFFF', borderRadius: 999, alignItems: 'center', paddingVertical: 16, marginBottom: 14 },
   likesUnlockText: { color: '#120914', fontSize: 18, fontWeight: '900' },
+  likesTabWithDot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  likesScreenTitle: { color: '#FFFFFF', fontSize: 32, fontWeight: '900', marginBottom: 16 },
+  likesSectionTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', marginTop: 12, marginBottom: 12 },
+  likesSubcopy: { color: 'rgba(255,255,255,0.68)', fontWeight: '800', lineHeight: 20, marginBottom: 14 },
+  freeLikeDrop: { borderRadius: 24, padding: 22, alignItems: 'center', marginBottom: 16 },
+  freeLikePill: { color: '#FFFFFF', backgroundColor: 'rgba(255,255,255,0.24)', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 18, paddingVertical: 9, fontWeight: '900', marginBottom: 12 },
+  freeLikeTimer: { color: '#FFE9F1', fontSize: 40, fontWeight: '900', marginBottom: 10 },
+  freeLikeCopy: { color: '#FFE9F1', fontSize: 15, fontWeight: '800', textAlign: 'center', lineHeight: 22 },
+  goldMatchCard: { height: 390, borderRadius: 28, overflow: 'hidden', marginBottom: 18, backgroundColor: '#1E1222' },
+  goldMatchImage: { borderRadius: 28 },
+  goldMatchBadge: { position: 'absolute', top: 16, left: 16, flexDirection: 'row', gap: 6, alignItems: 'center', backgroundColor: '#FFD700', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
+  goldMatchBadgeText: { color: '#120914', fontWeight: '900', fontSize: 12 },
+  goldMatchFooter: { position: 'absolute', left: 16, right: 16, bottom: 16 },
+  goldMatchName: { color: '#FFFFFF', fontSize: 31, fontWeight: '900' },
+  goldMatchMeta: { color: '#FFFFFF', fontWeight: '900', marginTop: 4, marginBottom: 12 },
+  goldMatchActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  goldPassButton: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+  goldAcceptButton: { flex: 1, height: 56, borderRadius: 28, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  goldAcceptText: { color: '#120914', fontSize: 18, fontWeight: '900' },
+  goldRevealButton: { height: 54, borderRadius: 27, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  goldRevealText: { color: '#120914', fontSize: 17, fontWeight: '900' },
+  likesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  blurredLikeCard: { width: '48%', aspectRatio: 0.78, borderRadius: 22, overflow: 'hidden', backgroundColor: '#1E1222' },
+  blurredLikeImage: { flex: 1, padding: 12, justifyContent: 'flex-end' },
+  blurredLikeImageRadius: { borderRadius: 22 },
+  blurredNamePill: { width: 72, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.48)', marginBottom: -27 },
+  blurredAge: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', marginLeft: 84 },
+  blurredMeta: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', marginTop: 6 },
+  sentLikeCard: { width: '48%', aspectRatio: 0.78, borderRadius: 22, overflow: 'hidden', backgroundColor: '#1E1222' },
+  sentLikeImage: { flex: 1, padding: 12, justifyContent: 'flex-end' },
+  sentStar: { position: 'absolute', right: 12, top: 12, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(0,0,0,0.48)', alignItems: 'center', justifyContent: 'center' },
+  sentLikeName: { color: '#FFFFFF', fontWeight: '900', fontSize: 19 },
+  sentLikeMeta: { color: '#9BC6FF', fontWeight: '900', marginTop: 4 },
+  topPickHeadline: { color: '#FFFFFF', fontSize: 22, fontWeight: '900', lineHeight: 29, textAlign: 'center', marginVertical: 18 },
+  topPickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  topPickCard: { width: '48%', aspectRatio: 0.78, borderRadius: 22, overflow: 'hidden', backgroundColor: '#1E1222' },
+  topPickImage: { flex: 1 },
+  topPickImageRadius: { borderRadius: 22 },
+  topPickSilhouette: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(155,198,255,0.24)' },
+  topPickFooter: { position: 'absolute', left: 12, right: 54, bottom: 12 },
+  topPickName: { color: '#FFFFFF', fontWeight: '900', fontSize: 19 },
+  topPickTime: { color: '#FFD700', fontWeight: '900', fontSize: 16, marginTop: 3 },
+  topPickStar: { position: 'absolute', right: 12, bottom: 12, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(0,0,0,0.54)', alignItems: 'center', justifyContent: 'center' },
+  topPickUnlockButton: { height: 56, borderRadius: 28, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 22, marginBottom: 10 },
+  topPickUnlockText: { color: '#120914', fontSize: 17, fontWeight: '900' },
   nudgeTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginTop: 3 },
   nudgeAction: { color: '#FFD700', fontWeight: '900' },
   panel: { backgroundColor: '#1E1222', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', padding: 18, marginBottom: 14 },
