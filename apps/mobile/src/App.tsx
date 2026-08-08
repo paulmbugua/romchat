@@ -1461,7 +1461,7 @@ function Chat({ profiles, sendMessage, status }: {
 
   if (selectedMatch) {
     return (
-      <View style={styles.chatScreen}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0} style={[styles.chatScreen, styles.chatKeyboardAvoider]}>
         <ContactSafetySheet visible={Boolean(pendingContactText)} matchName={selectedMatch.name} onReview={cancelContactShare} onSend={confirmContactShare} />
         <View style={styles.threadTopBar}>
           <TouchableOpacity onPress={() => setSelectedMatchId(null)} style={styles.chatBackButton}><Icon name="chevron-back" size={20} color="#FFFFFF" /></TouchableOpacity>
@@ -1501,10 +1501,10 @@ function Chat({ profiles, sendMessage, status }: {
           </View>
         </View>
         <View style={styles.composer}>
-          <TextInput value={draft} onChangeText={setDraft} placeholder={`Message ${selectedMatch.name}`} style={styles.input} placeholderTextColor="#a45a72" />
+          <TextInput value={draft} onChangeText={setDraft} placeholder={`Message ${selectedMatch.name}`} style={styles.input} placeholderTextColor="#a45a72" multiline maxLength={800} returnKeyType="default" textAlignVertical="center" />
           <TouchableOpacity onPress={submit} style={styles.send}><Icon name="send" size={18} color="#FFFFFF" /></TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -2043,6 +2043,7 @@ const styles = StyleSheet.create({
   chatBackButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#1E1222', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,20,147,0.20)' },
   matchContext: { color: '#FFD700', fontWeight: '900', marginBottom: 10, lineHeight: 18 },
   chatScreen: { backgroundColor: '#120914', paddingBottom: 24 },
+  chatKeyboardAvoider: { flex: 1, justifyContent: 'flex-end' },
   chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   chatIdentity: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   chatInboxStrip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1E1222', borderRadius: 20, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)' },
@@ -2064,7 +2065,7 @@ const styles = StyleSheet.create({
   contactReviewText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textTransform: 'uppercase' },
   contactSendButton: { flex: 1.25, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF1493' },
   contactSendText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textTransform: 'uppercase' },
-  conversationPanel: { backgroundColor: '#1E1222', borderRadius: 22, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)' },
+  conversationPanel: { backgroundColor: '#1E1222', borderRadius: 22, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)', flexShrink: 1 },
   chatIconButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#2A1A30', borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', alignItems: 'center', justifyContent: 'center' },
   chatTools: { backgroundColor: '#1E1222', borderRadius: 20, padding: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
   chatToolsSimple: { backgroundColor: '#1E1222', borderRadius: 18, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
@@ -2110,8 +2111,8 @@ const styles = StyleSheet.create({
   giftButton: { flex: 1, backgroundColor: '#1E1222', borderRadius: 18, padding: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)' },
   giftName: { color: '#FFFFFF', fontWeight: '900' },
   giftMeta: { color: '#FFD700', fontWeight: '900', marginTop: 4, fontSize: 12 },
-  composer: { flexDirection: 'row', gap: 8, marginTop: 14, backgroundColor: '#1E1222', borderRadius: 999, padding: 5, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)' },
-  input: { flex: 1, minHeight: 42, paddingHorizontal: 14, color: '#FFFFFF' },
+  composer: { flexDirection: 'row', gap: 8, marginTop: 10, backgroundColor: '#1E1222', borderRadius: 26, padding: 6, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', alignItems: 'flex-end' },
+  input: { flex: 1, minHeight: 42, maxHeight: 104, paddingHorizontal: 14, paddingVertical: 10, color: '#FFFFFF', fontWeight: '800', lineHeight: 20 },
   send: { width: 42, height: 42, backgroundColor: '#FF1493', borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   sendText: { color: '#FFFFFF', fontWeight: '900' },
   walletHero: { borderRadius: 28, padding: 20, marginBottom: 14 },
