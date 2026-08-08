@@ -1336,6 +1336,7 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
   profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openChat: () => void; likeProfile: () => void; passProfile: () => void }) {
   const [tab, setTab] = useState<'received' | 'sent' | 'top'>('received');
   const [revealedLikeId, setRevealedLikeId] = useState<string | null>(null);
+  const [nextDropCountdown, setNextDropCountdown] = useState(() => formatNextLikeDropCountdown());
   const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
   const sentIds = new Set(likesSummary.sentProfileIds || []);
   const topIds = new Set(likesSummary.topPickProfileIds || []);
@@ -1348,6 +1349,11 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
   const sentList = (sentProfiles.length ? sentProfiles : profiles.slice(0, 4)).slice(0, 8);
   const likesLabel = likesReceivedCount > 99 ? '99+' : String(Math.max(likesReceivedCount, admirerProfiles.length));
   const tabText = tab === 'received' ? `${likesLabel} Likes` : tab === 'sent' ? 'Likes Sent' : 'Top Picks';
+
+  useEffect(() => {
+    const timer = setInterval(() => setNextDropCountdown(formatNextLikeDropCountdown()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   function revealDailyLike() {
     if (revealedLikeId || hasGoldAccess) return openPremium();
@@ -1379,7 +1385,7 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
           <Text style={styles.likesSectionTitle}>Free Likes</Text>
           <LinearGradient colors={["#5A0034", "#38001F"]} style={styles.freeLikeDrop}>
             <Text style={styles.freeLikePill}>Next drop is in</Text>
-            <Text style={styles.freeLikeTimer}>23h 56m</Text>
+            <Text style={styles.freeLikeTimer}>{nextDropCountdown}</Text>
             <Text style={styles.freeLikeCopy}>One Like is free to review each day. Accept to match and message, or pass to keep browsing.</Text>
           </LinearGradient>
           <Text style={styles.likesSectionTitle}>Gold Match</Text>
@@ -1413,6 +1419,17 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
       )}
     </View>
   );
+}
+
+function formatNextLikeDropCountdown() {
+  const nowDate = new Date();
+  const nextDrop = new Date(nowDate);
+  nextDrop.setHours(24, 0, 0, 0);
+  const totalSeconds = Math.max(0, Math.floor((nextDrop.getTime() - nowDate.getTime()) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
 }
 
 function GoldMatchCard({ profile, revealed, onReveal, onAccept, onPass }: { profile: ProfileSeed; revealed: boolean; onReveal: () => void; onAccept: () => void; onPass: () => void }) {
