@@ -552,12 +552,14 @@ export default function App() {
   }
 
   function superLikeProfile() {
-    if (tokens < SUPER_LIKE_COST) {
-      openTokenStore();
-      return;
-    }
-    setTokens((value) => Math.max(0, value - SUPER_LIKE_COST));
-    likeProfile('super_like');
+    openPaymentPage({
+      kind: 'plan',
+      title: 'RomChat Platinum',
+      subtitle: 'Priority likes, weekly boost, Top Picks, unlimited likes, and faster discovery.',
+      amountKes: 2400,
+      planId: 'platinum',
+      accent: 'platinum',
+    });
   }
 
   const swipeHandlers = useMemo(
@@ -1362,7 +1364,7 @@ function Discover({
               <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><Icon name="close" size={30} color="#FFFFFF" /></TouchableOpacity>
             </View>
             <View style={styles.actionItem}>
-              <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Super like"><Icon name="star" size={22} color="#9BC6FF" /></TouchableOpacity>
+              <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Open Platinum"><Icon name="diamond" size={21} color="#9BC6FF" /></TouchableOpacity>
             </View>
             <View style={styles.actionItem}>
               <TouchableOpacity onPress={likeProfile} style={styles.likeAction} accessibilityLabel="Like profile"><Icon name="heart" size={30} color="#FF1200" /></TouchableOpacity>
@@ -1913,8 +1915,8 @@ function GoldPlansScreen({ paymentNotice, openPaymentPage }: {
   const plan = goldPlanOptions.find((item) => item.id === selected) ?? goldPlanOptions[0]!;
   const benefits = ['Unlimited Likes', 'See Who Likes You', 'Unlimited Rewinds', '1 Free Boost per month', '2 Free Super Likes per week', 'Top Picks', 'Control Who Sees You', 'Hide Ads'];
   return (
-    <View style={styles.purchaseScreen}>
-      <View style={styles.goldHeaderRow}><Icon name="close" size={34} color="#FFFFFF" /><View style={styles.goldBrand}><Text style={styles.goldBrandText}>ROMCHAT</Text><Text style={styles.goldBadge}>GOLD</Text></View></View>
+    <AnimatedSalesPanel style={styles.purchaseScreen}>
+      <View style={styles.goldHeaderRow}><Icon name="close" size={28} color="#FFFFFF" /><View style={styles.goldBrand}><Text style={styles.goldBrandText}>ROMCHAT</Text><Text style={styles.goldBadge}>GOLD</Text></View></View>
       <Text style={styles.goldHeroText}>3x more likely to get a match with Super Like.</Text>
       <Text style={styles.goldPlanLabel}>Select a Plan</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.goldPlanScroller}>
@@ -1938,7 +1940,7 @@ function GoldPlansScreen({ paymentNotice, openPaymentPage }: {
         <Text style={styles.purchaseContinueText}>Select plan</Text>
       </TouchableOpacity>
       {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
-    </View>
+    </AnimatedSalesPanel>
   );
 }
 
@@ -1946,7 +1948,7 @@ function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, op
   tokens: number; boosted: boolean; activePlan: PlanName; paymentNotice: string; activateBoost: () => void; openPaymentPage: (purchase: PendingPurchase) => void;
 }) {
   return (
-    <View>
+    <AnimatedSalesPanel>
       <LinearGradient colors={['#FFD700', '#FFA500']} style={styles.walletHero}>
         <Text style={styles.kickerDark}>Token Wallet</Text><Text style={styles.balance}>{tokens} tokens</Text><Text style={styles.heroCopyDark}>Transparent KES token pricing before every purchase.</Text>
       </LinearGradient>
@@ -1977,7 +1979,7 @@ function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, op
       ))}
       <TouchableOpacity onPress={activateBoost} style={[styles.boostButton, boosted && styles.boostButtonActive]}><Text style={styles.boostText}>{boosted ? 'Spotlight active for 30 minutes' : 'Boost profile for peak hour'}</Text></TouchableOpacity>
       <Text style={styles.complianceText}>Currency: KES. Select a package, then choose M-Pesa or card on the secure payment page. Store billing can remain enabled for app-store distributions.</Text>
-    </View>
+    </AnimatedSalesPanel>
   );
 }
 
@@ -2032,6 +2034,25 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
 
 
 
+function AnimatedSalesPanel({ children, style, delay = 0 }: { children: React.ReactNode; style?: object; delay?: number }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(18)).current;
+  const scale = useRef(new Animated.Value(0.98)).current;
+
+  useEffect(() => {
+    opacity.setValue(0);
+    translateY.setValue(18);
+    scale.setValue(0.98);
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 260, delay, useNativeDriver: true }),
+      Animated.spring(translateY, { toValue: 0, friction: 8, tension: 85, delay, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1, friction: 8, tension: 85, delay, useNativeDriver: true }),
+    ]).start();
+  }, [delay, opacity, scale, translateY]);
+
+  return <Animated.View style={[style, { opacity, transform: [{ translateY }, { scale }] }]}>{children}</Animated.View>;
+}
+
 function PaymentPage({ purchase, mpesaPhone, setMpesaPhone, paymentNotice, onBack, onMpesa, onCard }: {
   purchase: PendingPurchase | null;
   mpesaPhone: string;
@@ -2053,7 +2074,7 @@ function PaymentPage({ purchase, mpesaPhone, setMpesaPhone, paymentNotice, onBac
   const colors = purchase.accent === 'platinum' ? ['#0F172A', '#3B2D68', '#111111'] : purchase.accent === 'gold' ? ['#FFD700', '#FF9F1C'] : purchase.accent === 'blue' ? ['#9BC6FF', '#60A5FA'] : ['#FF1493', '#FF6F61'];
   const darkText = purchase.accent === 'gold' || purchase.accent === 'blue';
   return (
-    <View style={styles.paymentPage}>
+    <AnimatedSalesPanel style={styles.paymentPage}>
       <LinearGradient colors={colors as [string, string, ...string[]]} style={styles.paymentPageHero}>
         <Text style={[styles.paymentPageEyebrow, darkText && styles.paymentPageEyebrowDark]}>RomChat checkout</Text>
         <Text style={[styles.paymentPageTitle, darkText && styles.paymentPageTitleDark]}>{purchase.title}</Text>
@@ -2079,7 +2100,7 @@ function PaymentPage({ purchase, mpesaPhone, setMpesaPhone, paymentNotice, onBac
         <TouchableOpacity onPress={onCard} style={styles.paymentCardButton}><Icon name="card" size={18} color="#FFFFFF" /><Text style={styles.paymentMethodButtonText}>Pay with Credit/Debit Card</Text></TouchableOpacity>
         {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
       </View>
-    </View>
+    </AnimatedSalesPanel>
   );
 }
 
@@ -2090,7 +2111,7 @@ function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: Pa
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.paymentSheetBackdrop}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
-        <View style={styles.paymentSheetCard}>
+        <AnimatedSalesPanel style={styles.paymentSheetCard}>
           <View style={styles.paymentSheetHandle} />
           <View style={styles.paymentSheetTop}>
             <LinearGradient colors={isMpesa ? ['#00C853', '#13A538'] : ['#00B8FF', '#0066FF']} style={styles.paymentProviderIcon}>
@@ -2114,7 +2135,7 @@ function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: Pa
             <TouchableOpacity onPress={onRefresh} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Refresh status</Text></TouchableOpacity>
             <TouchableOpacity onPress={onClose} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Done</Text></TouchableOpacity>
           </View>
-        </View>
+        </AnimatedSalesPanel>
       </View>
     </Modal>
   );
@@ -2447,7 +2468,7 @@ const styles = StyleSheet.create({
   actionLabel: { color: 'rgba(255,255,255,0.68)', fontWeight: '900', fontSize: 10, marginTop: 5 },
   passAction: { width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(20,20,22,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 7 }, elevation: 7 },
   passGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
-  topAction: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(20,20,22,0.88)', borderWidth: 1, borderColor: 'rgba(155,198,255,0.35)', justifyContent: 'center', alignItems: 'center' },
+  topAction: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(20,20,22,0.88)', borderWidth: 1, borderColor: 'rgba(155,198,255,0.48)', justifyContent: 'center', alignItems: 'center', shadowColor: '#9BC6FF', shadowOpacity: 0.22, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } },
   likeAction: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(20,20,22,0.88)', borderWidth: 1, borderColor: 'rgba(255,18,0,0.26)', alignItems: 'center', justifyContent: 'center' },
   likeGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
   rewindAction: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(20,20,22,0.76)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', justifyContent: 'center', alignItems: 'center' },
@@ -2670,14 +2691,14 @@ const styles = StyleSheet.create({
   paymentPageHero: { borderRadius: 30, padding: 22, minHeight: 230, justifyContent: 'space-between' },
   paymentPageEyebrow: { color: '#FFD700', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
   paymentPageEyebrowDark: { color: '#3E2400' },
-  paymentPageTitle: { color: '#FFFFFF', fontSize: 34, lineHeight: 40, fontWeight: '900', marginTop: 8 },
+  paymentPageTitle: { color: '#FFFFFF', fontSize: 29, lineHeight: 35, fontWeight: '900', marginTop: 8 },
   paymentPageTitleDark: { color: '#120914' },
   paymentPageSubtitle: { color: 'rgba(255,255,255,0.76)', fontWeight: '800', lineHeight: 22, marginTop: 8 },
   paymentPageSubtitleDark: { color: 'rgba(18,9,20,0.76)' },
   paymentPageAmountRow: { backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 22, padding: 16, marginTop: 20 },
   paymentPageAmountLabel: { color: 'rgba(255,255,255,0.72)', fontWeight: '900', marginBottom: 4 },
   paymentPageAmountLabelDark: { color: 'rgba(18,9,20,0.66)' },
-  paymentPageAmount: { color: '#FFFFFF', fontSize: 32, fontWeight: '900' },
+  paymentPageAmount: { color: '#FFFFFF', fontSize: 28, fontWeight: '900' },
   paymentPageAmountDark: { color: '#120914' },
   paymentMethodPanel: { backgroundColor: '#111823', borderRadius: 28, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', padding: 18 },
   paymentMethodTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '900', marginBottom: 14 },
@@ -2742,34 +2763,34 @@ const styles = StyleSheet.create({
   goldBrand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   goldBrandText: { color: '#FFFFFF', fontSize: 26, fontWeight: '900' },
   goldBadge: { color: '#120914', backgroundColor: '#FFD700', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 6, fontWeight: '900' },
-  goldHeroText: { color: '#FFFFFF', fontSize: 36, lineHeight: 45, fontWeight: '900', marginBottom: 28 },
+  goldHeroText: { color: '#FFFFFF', fontSize: 29, lineHeight: 36, fontWeight: '900', marginBottom: 22 },
   goldPlanLabel: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', marginBottom: 14 },
   goldPlanScroller: { gap: 14, paddingRight: 20, paddingBottom: 18 },
-  goldPlanOption: { width: 245, minHeight: 170, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', padding: 18, justifyContent: 'space-between', backgroundColor: '#111111' },
+  goldPlanOption: { width: 218, minHeight: 146, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', padding: 16, justifyContent: 'space-between', backgroundColor: '#111111' },
   goldPlanOptionActive: { borderColor: '#FFD700', borderWidth: 2 },
   goldOptionTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   goldOptionBadge: { color: '#FFD700', fontWeight: '900', fontSize: 16 },
-  goldOptionLabel: { color: '#FFFFFF', fontSize: 35, fontWeight: '900' },
-  goldOptionPrice: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
+  goldOptionLabel: { color: '#FFFFFF', fontSize: 28, fontWeight: '900' },
+  goldOptionPrice: { color: '#FFFFFF', fontSize: 17, fontWeight: '900' },
   goldIncludedCard: { borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', padding: 18, marginTop: 10 },
   goldIncludedPill: { alignSelf: 'center', color: 'rgba(255,255,255,0.62)', backgroundColor: '#111111', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 5, marginTop: -34, marginBottom: 14, fontWeight: '800' },
   goldBenefitRow: { flexDirection: 'row', alignItems: 'center', gap: 18, paddingVertical: 10 },
-  goldBenefitText: { color: '#FFFFFF', fontSize: 21, fontWeight: '900', flex: 1 },
+  goldBenefitText: { color: '#FFFFFF', fontSize: 17, fontWeight: '900', flex: 1, lineHeight: 22 },
   goldTerms: { color: 'rgba(255,255,255,0.82)', lineHeight: 21, fontWeight: '700', marginTop: 18 },
   catalogCard: { backgroundColor: '#1E1222', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,215,0,0.22)', padding: 16, marginBottom: 16 },
   catalogRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
   catalogLabel: { color: '#FFFFFF', fontWeight: '800' },
   catalogCost: { color: '#FFD700', fontWeight: '900' },
-  planCard: { borderRadius: 24, padding: 18, borderWidth: 1, borderColor: 'rgba(255,215,0,0.28)', marginBottom: 12, overflow: 'hidden' },
-  platinumPlanCard: { borderColor: 'rgba(155,198,255,0.42)' },
+  planCard: { borderRadius: 24, padding: 16, borderWidth: 1, borderColor: 'rgba(255,215,0,0.28)', marginBottom: 12, overflow: 'hidden' },
+  platinumPlanCard: { borderColor: 'rgba(155,198,255,0.46)', shadowColor: '#9BC6FF', shadowOpacity: 0.22, shadowRadius: 14, shadowOffset: { width: 0, height: 8 } },
   planCardActive: { borderColor: '#FFD700', borderWidth: 2 },
   planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  planName: { color: '#FFFFFF', fontSize: 24, fontWeight: '900' },
-  planPrice: { color: '#FFD700', fontWeight: '900', fontSize: 16 },
-  planSubline: { color: 'rgba(255,255,255,0.68)', fontWeight: '800', fontSize: 12, marginTop: 3, maxWidth: 190 },
+  planName: { color: '#FFFFFF', fontSize: 21, fontWeight: '900' },
+  planPrice: { color: '#FFD700', fontWeight: '900', fontSize: 14 },
+  planSubline: { color: 'rgba(255,255,255,0.68)', fontWeight: '800', fontSize: 11, marginTop: 3, maxWidth: 190 },
   planPerkGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   planPerkPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.88)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
-  planPerkPillText: { color: '#120914', fontWeight: '900', fontSize: 11 },
+  planPerkPillText: { color: '#120914', fontWeight: '900', fontSize: 10 },
   planSelectButton: { minHeight: 50, borderRadius: 25, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 16 },
   platinumSelectButton: { backgroundColor: '#9BC6FF' },
   planSelectText: { color: '#120914', fontWeight: '900', fontSize: 16 },
