@@ -35,13 +35,17 @@ import { checkForAppUpdate } from './lib/appUpdates';
 import { ApiRequestError } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 
-type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
+type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'payment' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
 type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
 type SessionState = RomChatSessionPayload & { onboarding: RomChatOnboardingState };
 type RomChatPromptAnswer = { prompt: string; answer: string };
 type PlanName = 'Free' | 'Gold' | 'Platinum';
 type RomChatPayment = { id: string; provider: string; amountKes: number; tokens: number; checkoutUrl?: string | null; instructions: string; status: string; currency: string; reference?: string; packageKind?: string; superLikeCount?: number | null };
 type PaymentSheetState = { provider: 'mpesa' | 'paystack'; title: string; subtitle: string; amountKes: number; paymentId: string; checkoutUrl?: string | null; instructions: string };
+type PendingPurchase =
+  | { kind: 'tokens'; title: string; subtitle: string; amountKes: number; packageId: string; accent: 'gold' | 'pink' | 'blue' }
+  | { kind: 'superlikes'; title: string; subtitle: string; amountKes: number; packageId: 'superlikes_15' | 'superlikes_30'; accent: 'blue' }
+  | { kind: 'plan'; title: string; subtitle: string; amountKes: number; planId: 'gold' | 'platinum'; accent: 'gold' | 'platinum' };
 
 const ROMCHAT_TOKEN_KEY = 'romchat:auth:token';
 const ROMCHAT_SESSION_KEY = 'romchat:auth:session';
@@ -199,6 +203,7 @@ const screenTitles: Record<Section, string> = {
   premium: 'RomChat Plus',
   superlikes: 'Super Likes',
   goldPlans: 'RomChat Gold',
+  payment: 'Secure Payment',
   safety: 'Kenya Safety',
   profile: 'My Kenyan Profile',
   privacy: 'Privacy Policy',
@@ -222,6 +227,7 @@ export default function App() {
   const [subscriptionTier, setSubscriptionTier] = useState<PlanName>('Free');
   const [paymentNotice, setPaymentNotice] = useState('');
   const [mpesaPhone, setMpesaPhone] = useState('');
+  const [pendingPurchase, setPendingPurchase] = useState<PendingPurchase | null>(null);
   const [paymentSheet, setPaymentSheet] = useState<PaymentSheetState | null>(null);
   const [showMatch, setShowMatch] = useState(false);
   const [pendingChatProfileId, setPendingChatProfileId] = useState<string | null>(null);
@@ -410,6 +416,12 @@ export default function App() {
     } catch (error) {
       setPaymentNotice(error instanceof Error ? error.message : 'Unable to open card checkout.');
     }
+  }
+
+  function openPaymentPage(next: PendingPurchase) {
+    setPaymentNotice('');
+    setPendingPurchase(next);
+    setActiveSection('payment');
   }
 
   async function startTokenPurchase(packageId = 'tokens_100', provider: 'mpesa' | 'paystack' = 'mpesa') {
@@ -831,13 +843,36 @@ export default function App() {
       );
     }
     if (section === 'premium') {
-      return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} startTokenPurchase={startTokenPurchase} startPlanPurchase={startPlanPurchase} />;
+      return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} openPaymentPage={openPaymentPage} />;
     }
     if (section === 'superlikes') {
-      return <SuperLikesScreen paymentNotice={paymentNotice} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} openGoldPlans={() => setActiveSection('goldPlans')} startSuperLikePurchase={startSuperLikePurchase} />;
+      return <SuperLikesScreen paymentNotice={paymentNotice} openGoldPlans={() => setActiveSection('goldPlans')} openPaymentPage={openPaymentPage} />;
     }
     if (section === 'goldPlans') {
-      return <GoldPlansScreen paymentNotice={paymentNotice} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} startPlanPurchase={startPlanPurchase} />;
+      return <GoldPlansScreen paymentNotice={paymentNotice} openPaymentPage={openPaymentPage} />;
+    }
+    if (section === 'payment') {
+      return (
+        <PaymentPage
+          purchase={pendingPurchase}
+          mpesaPhone={mpesaPhone}
+          setMpesaPhone={setMpesaPhone}
+          paymentNotice={paymentNotice}
+          onBack={() => setActiveSection('premium')}
+          onMpesa={() => {
+            if (!pendingPurchase) return;
+            if (pendingPurchase.kind === 'plan') void startPlanPurchase(pendingPurchase.planId, 'mpesa');
+            else if (pendingPurchase.kind === 'superlikes') void startSuperLikePurchase(pendingPurchase.packageId, 'mpesa');
+            else void startTokenPurchase(pendingPurchase.packageId, 'mpesa');
+          }}
+          onCard={() => {
+            if (!pendingPurchase) return;
+            if (pendingPurchase.kind === 'plan') void startPlanPurchase(pendingPurchase.planId, 'paystack');
+            else if (pendingPurchase.kind === 'superlikes') void startSuperLikePurchase(pendingPurchase.packageId, 'paystack');
+            else void startTokenPurchase(pendingPurchase.packageId, 'paystack');
+          }}
+        />
+      );
     }
     if (section === 'privacy' || section === 'terms' || section === 'community') {
       return <PolicyScreen section={section} />;
@@ -1830,12 +1865,10 @@ const goldPlanOptions = [
   { id: 'six', label: '6 Months', unit: 100, total: 2400, badge: 'Best Value' },
 ];
 
-function SuperLikesScreen({ paymentNotice, mpesaPhone, setMpesaPhone, openGoldPlans, startSuperLikePurchase }: {
+function SuperLikesScreen({ paymentNotice, openGoldPlans, openPaymentPage }: {
   paymentNotice: string;
-  mpesaPhone: string;
-  setMpesaPhone: (value: string) => void;
   openGoldPlans: () => void;
-  startSuperLikePurchase: (packageId: 'superlikes_15' | 'superlikes_30', provider?: 'mpesa' | 'paystack') => Promise<void>;
+  openPaymentPage: (purchase: PendingPurchase) => void;
 }) {
   const [selected, setSelected] = useState<'superlikes_15' | 'superlikes_30'>('superlikes_15');
   const selectedOffer = superLikeOffers.find((item) => item.id === selected) ?? superLikeOffers[0]!;
@@ -1861,17 +1894,20 @@ function SuperLikesScreen({ paymentNotice, mpesaPhone, setMpesaPhone, openGoldPl
         <View><Text style={styles.goldInlineTitle}>Get RomChat Gold</Text><Text style={styles.goldInlineCopy}>Includes 2 Free Super Likes Every Week</Text></View>
         <TouchableOpacity onPress={openGoldPlans} style={styles.goldSelectButton}><Text style={styles.goldSelectText}>Select</Text></TouchableOpacity>
       </View>
-      <PaymentChoice amountKes={selectedOffer.total} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} onMpesa={() => void startSuperLikePurchase(selected, 'mpesa')} onCard={() => void startSuperLikePurchase(selected, 'paystack')} />
+      <TouchableOpacity
+        onPress={() => openPaymentPage({ kind: 'superlikes', title: `${selectedOffer.count} Super Likes`, subtitle: 'Priority likes that move you higher in matching.', amountKes: selectedOffer.total, packageId: selectedOffer.id, accent: 'blue' })}
+        style={styles.purchaseContinue}
+      >
+        <Text style={styles.purchaseContinueText}>Select</Text>
+      </TouchableOpacity>
       {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
     </View>
   );
 }
 
-function GoldPlansScreen({ paymentNotice, mpesaPhone, setMpesaPhone, startPlanPurchase }: {
+function GoldPlansScreen({ paymentNotice, openPaymentPage }: {
   paymentNotice: string;
-  mpesaPhone: string;
-  setMpesaPhone: (value: string) => void;
-  startPlanPurchase: (planId: 'gold' | 'platinum', provider?: 'mpesa' | 'paystack') => Promise<void>;
+  openPaymentPage: (purchase: PendingPurchase) => void;
 }) {
   const [selected, setSelected] = useState('week');
   const plan = goldPlanOptions.find((item) => item.id === selected) ?? goldPlanOptions[0]!;
@@ -1895,29 +1931,52 @@ function GoldPlansScreen({ paymentNotice, mpesaPhone, setMpesaPhone, startPlanPu
         {benefits.map((benefit) => <View key={benefit} style={styles.goldBenefitRow}><Icon name="checkmark" size={28} color="#FFFFFF" /><Text style={styles.goldBenefitText}>{benefit}</Text></View>)}
       </View>
       <Text style={styles.goldTerms}>By tapping Continue, your subscription renews until cancelled. You agree to our Terms.</Text>
-      <PaymentChoice amountKes={plan.total} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} onMpesa={() => void startPlanPurchase('gold', 'mpesa')} onCard={() => void startPlanPurchase('gold', 'paystack')} />
+      <TouchableOpacity
+        onPress={() => openPaymentPage({ kind: 'plan', title: `RomChat Gold - ${plan.label}`, subtitle: 'Unlimited likes, Top Picks, weekly Super Likes, and stronger discovery.', amountKes: plan.total, planId: 'gold', accent: 'gold' })}
+        style={styles.purchaseContinue}
+      >
+        <Text style={styles.purchaseContinueText}>Select plan</Text>
+      </TouchableOpacity>
       {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
     </View>
   );
 }
 
-function Premium({ tokens, boosted, activePlan, paymentNotice, mpesaPhone, setMpesaPhone, activateBoost, startTokenPurchase, startPlanPurchase }: {
-  tokens: number; boosted: boolean; activePlan: PlanName; paymentNotice: string; mpesaPhone: string; setMpesaPhone: (value: string) => void; activateBoost: () => void;
-  startTokenPurchase: (packageId?: string, provider?: 'mpesa' | 'paystack') => Promise<void>;
-  startPlanPurchase: (planId: 'gold' | 'platinum', provider?: 'mpesa' | 'paystack') => Promise<void>;
+function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, openPaymentPage }: {
+  tokens: number; boosted: boolean; activePlan: PlanName; paymentNotice: string; activateBoost: () => void; openPaymentPage: (purchase: PendingPurchase) => void;
 }) {
   return (
     <View>
       <LinearGradient colors={['#FFD700', '#FFA500']} style={styles.walletHero}>
         <Text style={styles.kickerDark}>Token Wallet</Text><Text style={styles.balance}>{tokens} tokens</Text><Text style={styles.heroCopyDark}>Transparent KES token pricing before every purchase.</Text>
       </LinearGradient>
-      <View style={styles.packageGrid}>{tokenPackages.map((pack) => (<View key={pack.id} style={[styles.packageCard, pack.badge && styles.packageFeatured]}>{!!pack.badge && <Text style={styles.packageBadge}>{pack.badge}</Text>}<Text style={styles.packageAmount}>{pack.amount}</Text><Text style={styles.packagePrice}>{pack.price}</Text><Text style={styles.packageUnit}>{pack.unit}</Text><PaymentChoice compact amountKes={Number(String(pack.price).replace(/[^0-9]/g, '') || 0)} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} onMpesa={() => void startTokenPurchase(pack.id, 'mpesa')} onCard={() => void startTokenPurchase(pack.id, 'paystack')} /></View>))}</View>
+      <View style={styles.packageGrid}>{tokenPackages.map((pack) => {
+        const amountKes = Number(String(pack.price).replace(/[^0-9]/g, '') || 0);
+        return (
+          <View key={pack.id} style={[styles.packageCard, pack.badge && styles.packageFeatured]}>
+            {!!pack.badge && <Text style={styles.packageBadge}>{pack.badge}</Text>}
+            <View style={styles.packageTopRow}><Text style={styles.packageAmount}>{pack.amount}</Text><Text style={styles.packagePrice}>{pack.price}</Text></View>
+            <Text style={styles.packageUnit}>{pack.unit}</Text>
+            <TouchableOpacity onPress={() => openPaymentPage({ kind: 'tokens', title: `${pack.amount} tokens`, subtitle: `${pack.unit} for roses, rewinds, unlocks, and Super Likes.`, amountKes, packageId: pack.id, accent: pack.badge ? 'gold' : 'pink' })} style={styles.packageSelectButton}>
+              <Text style={styles.packageSelectText}>Select</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      })}</View>
       {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
       <View style={styles.catalogCard}><Text style={styles.sectionLabel}>Token feature catalog</Text>{tokenCatalog.map((item) => <View key={item.id} style={styles.catalogRow}><Text style={styles.catalogLabel}>{item.label}</Text><Text style={styles.catalogCost}>{item.cost}</Text></View>)}</View>
       <Text style={styles.sectionLabel}>Plus tiers</Text>
-      {plans.map((plan) => (<TouchableOpacity key={plan.name} onPress={() => void startPlanPurchase(plan.id, 'mpesa')} onLongPress={() => void startPlanPurchase(plan.id, 'paystack')} activeOpacity={0.9}><LinearGradient colors={plan.name === 'Gold' ? ['#FF6F61', '#FF1493'] : ['#1E1222', '#120914']} style={[styles.planCard, activePlan === plan.name && styles.planCardActive]}><View style={styles.planHeader}><Text style={styles.planName}>{plan.name}</Text><Text style={styles.planPrice}>{plan.price}</Text></View>{plan.perks.map((perk) => <Text key={perk} style={styles.planPerk}>{perk}</Text>)}</LinearGradient></TouchableOpacity>))}
+      {plans.map((plan) => (
+        <LinearGradient key={plan.name} colors={plan.name === 'Gold' ? ['#FF6F61', '#FF1493'] : ['#111823', '#2B2350', '#111111']} style={[styles.planCard, plan.name === 'Platinum' && styles.platinumPlanCard, activePlan === plan.name && styles.planCardActive]}>
+          <View style={styles.planHeader}><View><Text style={styles.planName}>{plan.name}</Text><Text style={styles.planSubline}>{plan.name === 'Platinum' ? 'Priority discovery for serious matches' : 'Premium essentials for more control'}</Text></View><Text style={styles.planPrice}>{plan.price}</Text></View>
+          <View style={styles.planPerkGrid}>{plan.perks.map((perk) => <View key={perk} style={styles.planPerkPill}><Icon name="checkmark" size={14} color="#120914" /><Text style={styles.planPerkPillText}>{perk}</Text></View>)}</View>
+          <TouchableOpacity onPress={() => openPaymentPage({ kind: 'plan', title: `RomChat ${plan.name}`, subtitle: plan.name === 'Platinum' ? 'Priority likes, weekly boost, Top Picks, and unlimited likes.' : 'Unlimited likes, Likes Sent, Top Picks, and rewinds.', amountKes: plan.amountKes, planId: plan.id, accent: plan.name === 'Platinum' ? 'platinum' : 'gold' })} style={[styles.planSelectButton, plan.name === 'Platinum' && styles.platinumSelectButton]}>
+            <Text style={styles.planSelectText}>Select</Text>
+          </TouchableOpacity>
+        </LinearGradient>
+      ))}
       <TouchableOpacity onPress={activateBoost} style={[styles.boostButton, boosted && styles.boostButtonActive]}><Text style={styles.boostText}>{boosted ? 'Spotlight active for 30 minutes' : 'Boost profile for peak hour'}</Text></TouchableOpacity>
-      <Text style={styles.complianceText}>Currency: KES. Tap a package for M-Pesa STK or long-press for Paystack card checkout. Store billing can remain enabled for app-store distributions.</Text>
+      <Text style={styles.complianceText}>Currency: KES. Select a package, then choose M-Pesa or card on the secure payment page. Store billing can remain enabled for app-store distributions.</Text>
     </View>
   );
 }
@@ -1972,28 +2031,54 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
 
 
 
-function PaymentChoice({ amountKes, mpesaPhone, setMpesaPhone, onMpesa, onCard, compact = false }: { amountKes: number; mpesaPhone: string; setMpesaPhone: (value: string) => void; onMpesa: () => void; onCard: () => void; compact?: boolean }) {
-  return (
-    <View style={[styles.paymentChoice, compact && styles.paymentChoiceCompact]}>
-      <TextInput
-        value={mpesaPhone}
-        onChangeText={setMpesaPhone}
-        keyboardType="phone-pad"
-        placeholder="M-Pesa phone e.g. 0712345678"
-        placeholderTextColor="rgba(255,255,255,0.45)"
-        style={styles.mpesaInput}
-      />
-      <View style={styles.paymentChoiceRow}>
-        <TouchableOpacity onPress={onMpesa} style={[styles.paymentOptionButton, styles.mpesaOptionButton]}>
-          <Icon name="phone-portrait" size={17} color="#FFFFFF" />
-          <Text style={styles.paymentOptionText}>Pay M-Pesa</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onCard} style={[styles.paymentOptionButton, styles.cardOptionButton]}>
-          <Icon name="card" size={17} color="#FFFFFF" />
-          <Text style={styles.paymentOptionText}>Card</Text>
-        </TouchableOpacity>
+
+function PaymentPage({ purchase, mpesaPhone, setMpesaPhone, paymentNotice, onBack, onMpesa, onCard }: {
+  purchase: PendingPurchase | null;
+  mpesaPhone: string;
+  setMpesaPhone: (value: string) => void;
+  paymentNotice: string;
+  onBack: () => void;
+  onMpesa: () => void;
+  onCard: () => void;
+}) {
+  if (!purchase) {
+    return (
+      <View style={styles.paymentPageEmpty}>
+        <Icon name="bag-handle" size={34} color="#FFD700" />
+        <Text style={styles.paymentPageTitle}>Choose a package first</Text>
+        <TouchableOpacity onPress={onBack} style={styles.purchaseContinue}><Text style={styles.purchaseContinueText}>Back to packages</Text></TouchableOpacity>
       </View>
-      <Text style={styles.paymentChoiceHint}>KES {amountKes.toLocaleString()} total. Choose how you want to pay.</Text>
+    );
+  }
+  const colors = purchase.accent === 'platinum' ? ['#0F172A', '#3B2D68', '#111111'] : purchase.accent === 'gold' ? ['#FFD700', '#FF9F1C'] : purchase.accent === 'blue' ? ['#9BC6FF', '#60A5FA'] : ['#FF1493', '#FF6F61'];
+  const darkText = purchase.accent === 'gold' || purchase.accent === 'blue';
+  return (
+    <View style={styles.paymentPage}>
+      <LinearGradient colors={colors as [string, string, ...string[]]} style={styles.paymentPageHero}>
+        <Text style={[styles.paymentPageEyebrow, darkText && styles.paymentPageEyebrowDark]}>RomChat checkout</Text>
+        <Text style={[styles.paymentPageTitle, darkText && styles.paymentPageTitleDark]}>{purchase.title}</Text>
+        <Text style={[styles.paymentPageSubtitle, darkText && styles.paymentPageSubtitleDark]}>{purchase.subtitle}</Text>
+        <View style={styles.paymentPageAmountRow}><Text style={[styles.paymentPageAmountLabel, darkText && styles.paymentPageAmountLabelDark]}>Total</Text><Text style={[styles.paymentPageAmount, darkText && styles.paymentPageAmountDark]}>KES {purchase.amountKes.toLocaleString()}</Text></View>
+      </LinearGradient>
+      <View style={styles.paymentMethodPanel}>
+        <Text style={styles.paymentMethodTitle}>Select payment method</Text>
+        <View style={styles.methodCard}>
+          <View style={styles.methodIconWrap}><Icon name="phone-portrait" size={22} color="#FFFFFF" /></View>
+          <View style={styles.methodCopy}><Text style={styles.methodTitle}>M-Pesa STK Push</Text><Text style={styles.methodCaption}>Enter your Safaricom number and approve the PIN prompt.</Text></View>
+        </View>
+        <TextInput
+          value={mpesaPhone}
+          onChangeText={setMpesaPhone}
+          keyboardType="phone-pad"
+          placeholder="0712345678"
+          placeholderTextColor="rgba(255,255,255,0.45)"
+          style={styles.paymentPageInput}
+        />
+        <TouchableOpacity onPress={onMpesa} style={styles.paymentMpesaButton}><Icon name="phone-portrait" size={18} color="#FFFFFF" /><Text style={styles.paymentMethodButtonText}>Pay with M-Pesa</Text></TouchableOpacity>
+        <View style={styles.cardDivider}><View style={styles.cardDividerLine} /><Text style={styles.cardDividerText}>or</Text><View style={styles.cardDividerLine} /></View>
+        <TouchableOpacity onPress={onCard} style={styles.paymentCardButton}><Icon name="card" size={18} color="#FFFFFF" /><Text style={styles.paymentMethodButtonText}>Pay with Credit/Debit Card</Text></TouchableOpacity>
+        {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
+      </View>
     </View>
   );
 }
@@ -2577,15 +2662,37 @@ const styles = StyleSheet.create({
   packageAmount: { color: '#FFFFFF', fontSize: 28, fontWeight: '900' },
   packagePrice: { color: '#FF1493', fontWeight: '900', fontSize: 18, marginTop: 3 },
   packageUnit: { color: 'rgba(255,255,255,0.62)', fontWeight: '800', marginTop: 3 },
-  paymentChoice: { gap: 10, marginTop: 16 },
-  paymentChoiceCompact: { marginTop: 12 },
-  mpesaInput: { minHeight: 48, borderRadius: 18, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', color: '#FFFFFF', paddingHorizontal: 14, fontWeight: '900' },
-  paymentChoiceRow: { flexDirection: 'row', gap: 10 },
-  paymentOptionButton: { flex: 1, minHeight: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
-  mpesaOptionButton: { backgroundColor: '#00A846' },
-  cardOptionButton: { backgroundColor: '#2563EB' },
-  paymentOptionText: { color: '#FFFFFF', fontWeight: '900', fontSize: 13 },
-  paymentChoiceHint: { color: 'rgba(255,255,255,0.58)', fontWeight: '800', fontSize: 11, textAlign: 'center' },
+  packageTopRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
+  packageSelectButton: { minHeight: 48, borderRadius: 24, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  packageSelectText: { color: '#120914', fontWeight: '900', fontSize: 16 },
+  paymentPage: { gap: 16 },
+  paymentPageEmpty: { backgroundColor: '#111823', borderRadius: 26, padding: 24, alignItems: 'center', gap: 14 },
+  paymentPageHero: { borderRadius: 30, padding: 22, minHeight: 230, justifyContent: 'space-between' },
+  paymentPageEyebrow: { color: '#FFD700', fontWeight: '900', textTransform: 'uppercase', fontSize: 12 },
+  paymentPageEyebrowDark: { color: '#3E2400' },
+  paymentPageTitle: { color: '#FFFFFF', fontSize: 34, lineHeight: 40, fontWeight: '900', marginTop: 8 },
+  paymentPageTitleDark: { color: '#120914' },
+  paymentPageSubtitle: { color: 'rgba(255,255,255,0.76)', fontWeight: '800', lineHeight: 22, marginTop: 8 },
+  paymentPageSubtitleDark: { color: 'rgba(18,9,20,0.76)' },
+  paymentPageAmountRow: { backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 22, padding: 16, marginTop: 20 },
+  paymentPageAmountLabel: { color: 'rgba(255,255,255,0.72)', fontWeight: '900', marginBottom: 4 },
+  paymentPageAmountLabelDark: { color: 'rgba(18,9,20,0.66)' },
+  paymentPageAmount: { color: '#FFFFFF', fontSize: 32, fontWeight: '900' },
+  paymentPageAmountDark: { color: '#120914' },
+  paymentMethodPanel: { backgroundColor: '#111823', borderRadius: 28, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', padding: 18 },
+  paymentMethodTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '900', marginBottom: 14 },
+  methodCard: { flexDirection: 'row', gap: 12, alignItems: 'center', backgroundColor: '#0D111A', borderRadius: 20, padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  methodIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#00A846', alignItems: 'center', justifyContent: 'center' },
+  methodCopy: { flex: 1 },
+  methodTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
+  methodCaption: { color: 'rgba(255,255,255,0.62)', fontWeight: '700', lineHeight: 18, marginTop: 3, fontSize: 12 },
+  paymentPageInput: { minHeight: 54, borderRadius: 20, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', color: '#FFFFFF', paddingHorizontal: 16, fontWeight: '900', marginTop: 12, marginBottom: 12 },
+  paymentMpesaButton: { minHeight: 56, borderRadius: 28, backgroundColor: '#00A846', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9 },
+  paymentCardButton: { minHeight: 56, borderRadius: 28, backgroundColor: '#2563EB', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9 },
+  paymentMethodButtonText: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
+  cardDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
+  cardDividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.12)' },
+  cardDividerText: { color: 'rgba(255,255,255,0.58)', fontWeight: '900' },
   paymentNotice: { color: '#FFD700', fontWeight: '800', marginTop: 8, marginBottom: 12, textAlign: 'center' },
   paymentSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', justifyContent: 'flex-end' },
   paymentSheetCard: { backgroundColor: '#111823', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, paddingBottom: 30, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
@@ -2653,11 +2760,19 @@ const styles = StyleSheet.create({
   catalogRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
   catalogLabel: { color: '#FFFFFF', fontWeight: '800' },
   catalogCost: { color: '#FFD700', fontWeight: '900' },
-  planCard: { borderRadius: 22, padding: 18, borderWidth: 1, borderColor: 'rgba(255,215,0,0.28)', marginBottom: 12 },
+  planCard: { borderRadius: 24, padding: 18, borderWidth: 1, borderColor: 'rgba(255,215,0,0.28)', marginBottom: 12, overflow: 'hidden' },
+  platinumPlanCard: { borderColor: 'rgba(155,198,255,0.42)' },
   planCardActive: { borderColor: '#FFD700', borderWidth: 2 },
   planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   planName: { color: '#FFFFFF', fontSize: 24, fontWeight: '900' },
   planPrice: { color: '#FFD700', fontWeight: '900', fontSize: 16 },
+  planSubline: { color: 'rgba(255,255,255,0.68)', fontWeight: '800', fontSize: 12, marginTop: 3, maxWidth: 190 },
+  planPerkGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  planPerkPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.88)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
+  planPerkPillText: { color: '#120914', fontWeight: '900', fontSize: 11 },
+  planSelectButton: { minHeight: 50, borderRadius: 25, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 16 },
+  platinumSelectButton: { backgroundColor: '#9BC6FF' },
+  planSelectText: { color: '#120914', fontWeight: '900', fontSize: 16 },
   planPerk: { color: '#FFFFFF', fontWeight: '800', paddingVertical: 5 },
   boostButton: { backgroundColor: '#FFD700', padding: 18, borderRadius: 22, alignItems: 'center', marginTop: 12, marginBottom: 14 },
   boostButtonActive: { backgroundColor: '#FF6F61' },
