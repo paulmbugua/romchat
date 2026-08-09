@@ -117,7 +117,7 @@ export const romchatApi = {
       body: JSON.stringify({ boostId: 'local_peak_30', profileId: 'me' }),
     }),
   createPayment: (payload: { provider: 'mpesa' | 'paystack'; purpose?: 'tokens' | 'subscription'; packageId?: string; planId?: string; phone?: string }) =>
-    apiFetch<{ payment: { id: string; provider: string; amountKes: number; tokens: number; checkoutUrl?: string | null; instructions: string; status: string; currency: string; packageKind?: string; superLikeCount?: number | null } }>('/api/romchat/payments', {
+    apiFetch<{ payment: { id: string; provider: string; amountKes: number; tokens: number; checkoutUrl?: string | null; instructions: string; status: string; currency: string; reference?: string; packageKind?: string; superLikeCount?: number | null } }>('/api/romchat/payments', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

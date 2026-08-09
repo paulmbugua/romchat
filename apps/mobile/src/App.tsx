@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LinearGradient } from 'expo-linear-gradient';
 import Slider from '@react-native-community/slider';
@@ -39,6 +40,8 @@ type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
 type SessionState = RomChatSessionPayload & { onboarding: RomChatOnboardingState };
 type RomChatPromptAnswer = { prompt: string; answer: string };
 type PlanName = 'Free' | 'Gold' | 'Platinum';
+type RomChatPayment = { id: string; provider: string; amountKes: number; tokens: number; checkoutUrl?: string | null; instructions: string; status: string; currency: string; reference?: string; packageKind?: string; superLikeCount?: number | null };
+type PaymentSheetState = { provider: 'mpesa' | 'paystack'; title: string; subtitle: string; amountKes: number; paymentId: string; checkoutUrl?: string | null; instructions: string };
 
 const ROMCHAT_TOKEN_KEY = 'romchat:auth:token';
 const ROMCHAT_SESSION_KEY = 'romchat:auth:session';
@@ -218,6 +221,7 @@ export default function App() {
   const [boosted, setBoosted] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<PlanName>('Free');
   const [paymentNotice, setPaymentNotice] = useState('');
+  const [paymentSheet, setPaymentSheet] = useState<PaymentSheetState | null>(null);
   const [showMatch, setShowMatch] = useState(false);
   const [pendingChatProfileId, setPendingChatProfileId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -378,11 +382,33 @@ export default function App() {
     setActiveSection('premium');
   }
 
+  function showPaymentSheet(payment: RomChatPayment, provider: 'mpesa' | 'paystack', title: string, subtitle: string) {
+    setPaymentSheet({
+      provider,
+      title,
+      subtitle,
+      amountKes: Number(payment.amountKes || 0),
+      paymentId: payment.id,
+      checkoutUrl: payment.checkoutUrl || null,
+      instructions: payment.instructions || (provider === 'mpesa' ? 'Approve the M-Pesa prompt on your phone.' : 'Open card checkout to complete payment.'),
+    });
+  }
+
+  async function openPaymentCheckout() {
+    if (!paymentSheet?.checkoutUrl) return;
+    try {
+      await WebBrowser.openBrowserAsync(paymentSheet.checkoutUrl);
+    } catch (error) {
+      setPaymentNotice(error instanceof Error ? error.message : 'Unable to open card checkout.');
+    }
+  }
+
   async function startTokenPurchase(packageId = 'tokens_100', provider: 'mpesa' | 'paystack' = 'mpesa') {
     try {
       const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId });
       if (!payment) throw new Error('Payment could not start.');
-      setPaymentNotice(provider === 'mpesa' ? `M-Pesa STK initiated for KES ${payment.amountKes}. Tokens activate automatically after payment confirmation.` : `Paystack card checkout prepared for KES ${payment.amountKes}. Tokens activate after card confirmation.`);
+      setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for KES ${payment.amountKes}. Tokens activate automatically after payment confirmation.` : `Paystack card checkout prepared for KES ${payment.amountKes}. Tokens activate after card confirmation.`);
+      showPaymentSheet(payment, provider, 'Token Wallet', `${payment.tokens || 0} RomChat tokens`);
     } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start token payment.'); }
   }
 
@@ -391,7 +417,8 @@ export default function App() {
       const payment = await romchat.createPayment({ provider, purpose: 'subscription', planId });
       if (!payment) throw new Error('Payment could not start.');
       const plan = plans.find((item) => item.id === planId);
-      setPaymentNotice(provider === 'mpesa' ? `M-Pesa STK initiated for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates automatically after payment confirmation.` : `Paystack card checkout prepared for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates after card confirmation.`);
+      setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates automatically after payment confirmation.` : `Paystack card checkout prepared for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates after card confirmation.`);
+      showPaymentSheet(payment, provider, `${plan?.name || 'Premium'} plan`, 'Unlimited likes and premium discovery benefits');
     } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start subscription payment.'); }
   }
 
@@ -400,7 +427,8 @@ export default function App() {
     try {
       const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId });
       if (!payment) throw new Error('Payment could not start.');
-      setPaymentNotice(provider === 'mpesa' ? `M-Pesa checkout started for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after payment confirmation.` : `Paystack checkout prepared for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after card confirmation.`);
+      setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after payment confirmation.` : `Paystack checkout prepared for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after card confirmation.`);
+      showPaymentSheet(payment, provider, 'Super Likes', `${count} priority Super Likes`);
     } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start Super Likes payment.'); }
   }
 
@@ -844,6 +872,7 @@ export default function App() {
         >
           {renderSection(activeSection)}
         </ScrollView>
+        <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
         <FooterNav active={activeSection} setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} likesReceivedCount={likesReceivedCount} />
       </SafeAreaView>
     );
@@ -906,6 +935,7 @@ export default function App() {
           <EmptyDiscovery openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
         )}
       </ScrollView>
+      <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
       <FooterNav active="swipe" setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} likesReceivedCount={likesReceivedCount} />
     </SafeAreaView>
   );
@@ -1925,6 +1955,44 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
   );
 }
 
+
+function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: PaymentSheetState | null; onClose: () => void; onOpenCheckout: () => void; onRefresh: () => void }) {
+  if (!sheet) return null;
+  const isMpesa = sheet.provider === 'mpesa';
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.paymentSheetBackdrop}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+        <View style={styles.paymentSheetCard}>
+          <View style={styles.paymentSheetHandle} />
+          <View style={styles.paymentSheetTop}>
+            <LinearGradient colors={isMpesa ? ['#00C853', '#13A538'] : ['#00B8FF', '#0066FF']} style={styles.paymentProviderIcon}>
+              <Icon name={isMpesa ? 'phone-portrait' : 'card'} size={28} color="#FFFFFF" />
+            </LinearGradient>
+            <TouchableOpacity onPress={onClose} style={styles.paymentCloseButton}><Icon name="close" size={22} color="#FFFFFF" /></TouchableOpacity>
+          </View>
+          <Text style={styles.paymentSheetEyebrow}>{isMpesa ? 'M-Pesa payment' : 'Paystack card checkout'}</Text>
+          <Text style={styles.paymentSheetTitle}>{sheet.title}</Text>
+          <Text style={styles.paymentSheetSubtitle}>{sheet.subtitle}</Text>
+          <View style={styles.paymentAmountCard}><Text style={styles.paymentAmountLabel}>Amount</Text><Text style={styles.paymentAmountValue}>KES {sheet.amountKes.toLocaleString()}</Text></View>
+          <View style={styles.paymentStatusRow}><ActivityIndicator color={isMpesa ? '#00E676' : '#60A5FA'} /><Text style={styles.paymentStatusText}>{isMpesa ? 'Waiting for provider confirmation' : 'Checkout ready'}</Text></View>
+          <Text style={styles.paymentInstructionText}>{sheet.instructions}</Text>
+          <Text style={styles.paymentReferenceText}>Payment ID: {sheet.paymentId}</Text>
+          {isMpesa ? (
+            <View style={styles.paymentInfoBox}><Icon name="information-circle" size={18} color="#FFD700" /><Text style={styles.paymentInfoText}>RomChat created the payment intent. A real M-Pesa PIN popup requires the backend to call Safaricom STK Push with your phone number.</Text></View>
+          ) : (
+            <TouchableOpacity disabled={!sheet.checkoutUrl} onPress={onOpenCheckout} style={[styles.paymentPrimaryButton, !sheet.checkoutUrl && styles.paymentPrimaryButtonDisabled]}><Text style={styles.paymentPrimaryText}>{sheet.checkoutUrl ? 'Open card checkout' : 'Checkout link not ready'}</Text></TouchableOpacity>
+          )}
+          <View style={styles.paymentActionsRow}>
+            <TouchableOpacity onPress={onRefresh} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Refresh status</Text></TouchableOpacity>
+            <TouchableOpacity onPress={onClose} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Done</Text></TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ContactSafetySheet({ visible, matchName, onReview, onSend }: { visible: boolean; matchName: string; onReview: () => void; onSend: () => void }) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onReview}>
@@ -2468,6 +2536,30 @@ const styles = StyleSheet.create({
   packagePrice: { color: '#FF1493', fontWeight: '900', fontSize: 18, marginTop: 3 },
   packageUnit: { color: 'rgba(255,255,255,0.62)', fontWeight: '800', marginTop: 3 },
   paymentNotice: { color: '#FFD700', fontWeight: '800', marginTop: 8, marginBottom: 12, textAlign: 'center' },
+  paymentSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', justifyContent: 'flex-end' },
+  paymentSheetCard: { backgroundColor: '#111823', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, paddingBottom: 30, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  paymentSheetHandle: { width: 48, height: 5, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.24)', alignSelf: 'center', marginBottom: 18 },
+  paymentSheetTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  paymentProviderIcon: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
+  paymentCloseButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  paymentSheetEyebrow: { color: '#FFD700', fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0, marginTop: 18 },
+  paymentSheetTitle: { color: '#FFFFFF', fontSize: 30, fontWeight: '900', marginTop: 6 },
+  paymentSheetSubtitle: { color: 'rgba(255,255,255,0.74)', fontWeight: '800', lineHeight: 22, marginTop: 6 },
+  paymentAmountCard: { backgroundColor: '#0D111A', borderRadius: 22, padding: 18, marginTop: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  paymentAmountLabel: { color: 'rgba(255,255,255,0.62)', fontWeight: '900', marginBottom: 6 },
+  paymentAmountValue: { color: '#FFFFFF', fontSize: 32, fontWeight: '900' },
+  paymentStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 },
+  paymentStatusText: { color: '#FFFFFF', fontWeight: '900' },
+  paymentInstructionText: { color: 'rgba(255,255,255,0.76)', lineHeight: 21, fontWeight: '700', marginTop: 12 },
+  paymentReferenceText: { color: 'rgba(255,255,255,0.48)', fontSize: 12, fontWeight: '800', marginTop: 10 },
+  paymentInfoBox: { flexDirection: 'row', gap: 9, backgroundColor: 'rgba(255,215,0,0.1)', borderColor: 'rgba(255,215,0,0.24)', borderWidth: 1, borderRadius: 18, padding: 13, marginTop: 16 },
+  paymentInfoText: { color: '#FFE9A8', flex: 1, fontWeight: '800', lineHeight: 19, fontSize: 12 },
+  paymentPrimaryButton: { minHeight: 56, borderRadius: 28, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 18 },
+  paymentPrimaryButtonDisabled: { opacity: 0.5 },
+  paymentPrimaryText: { color: '#111823', fontSize: 17, fontWeight: '900' },
+  paymentActionsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  paymentSecondaryButton: { flex: 1, minHeight: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  paymentSecondaryText: { color: '#FFFFFF', fontWeight: '900' },
   purchaseScreen: { backgroundColor: '#111823', borderRadius: 24, padding: 18, paddingBottom: 26, marginBottom: 18 },
   purchaseCloseRow: { height: 42, justifyContent: 'center', alignItems: 'flex-start' },
   superStar: { width: 108, height: 108, borderRadius: 54, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
