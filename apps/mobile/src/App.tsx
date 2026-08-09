@@ -34,7 +34,7 @@ import { checkForAppUpdate } from './lib/appUpdates';
 import { ApiRequestError } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 
-type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
+type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
 type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
 type SessionState = RomChatSessionPayload & { onboarding: RomChatOnboardingState };
 type RomChatPromptAnswer = { prompt: string; answer: string };
@@ -194,6 +194,8 @@ const screenTitles: Record<Section, string> = {
   likes: 'Likes',
   chat: 'Chat',
   premium: 'RomChat Plus',
+  superlikes: 'Super Likes',
+  goldPlans: 'RomChat Gold',
   safety: 'Kenya Safety',
   profile: 'My Kenyan Profile',
   privacy: 'Privacy Policy',
@@ -373,6 +375,15 @@ export default function App() {
       if (plan) { setSubscriptionTier(plan.name); if (plan.name === 'Platinum') setBoosted(true); }
       setPaymentNotice(provider === 'mpesa' ? `M-Pesa STK initiated for ${plan?.price || `KES ${payment.amountKes}`}. Premium access is ready while payment confirms.` : `Paystack card checkout prepared for ${plan?.price || `KES ${payment.amountKes}`}.`);
     } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start subscription payment.'); }
+  }
+
+  async function startSuperLikePurchase(packageId: 'superlikes_15' | 'superlikes_30', provider: 'mpesa' | 'paystack' = 'mpesa') {
+    const count = packageId === 'superlikes_30' ? 30 : 15;
+    try {
+      const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId });
+      if (!payment) throw new Error('Payment could not start.');
+      setPaymentNotice(provider === 'mpesa' ? `M-Pesa checkout started for ${count} Super Likes at KES ${payment.amountKes}.` : `Paystack checkout prepared for ${count} Super Likes at KES ${payment.amountKes}.`);
+    } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start Super Likes payment.'); }
   }
 
   function openMatchedChatSoon() {
@@ -743,7 +754,7 @@ export default function App() {
       return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
+      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
     }
     if (section === 'chat') {
       return (
@@ -760,6 +771,12 @@ export default function App() {
     }
     if (section === 'premium') {
       return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} startTokenPurchase={startTokenPurchase} startPlanPurchase={startPlanPurchase} />;
+    }
+    if (section === 'superlikes') {
+      return <SuperLikesScreen paymentNotice={paymentNotice} openGoldPlans={() => setActiveSection('goldPlans')} startSuperLikePurchase={startSuperLikePurchase} />;
+    }
+    if (section === 'goldPlans') {
+      return <GoldPlansScreen paymentNotice={paymentNotice} startPlanPurchase={startPlanPurchase} />;
     }
     if (section === 'privacy' || section === 'terms' || section === 'community') {
       return <PolicyScreen section={section} />;
@@ -1349,8 +1366,8 @@ function ExploreScreen({ openLikes }: { openLikes: () => void }) {
   );
 }
 
-function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, openChat, acceptLikeAndOpenChat, passLikeProfile, likeProfile, passProfile }: {
-  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; passLikeProfile: (profileId: string) => void; likeProfile: () => void; passProfile: () => void }) {
+function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, openSuperLikes, openChat, acceptLikeAndOpenChat, passLikeProfile, likeProfile, passProfile }: {
+  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openSuperLikes: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; passLikeProfile: (profileId: string) => void; likeProfile: () => void; passProfile: () => void }) {
   const [tab, setTab] = useState<'received' | 'sent' | 'top'>('received');
   const [revealedLikeId, setRevealedLikeId] = useState<string | null>(null);
   const [nextDropCountdown, setNextDropCountdown] = useState(() => formatNextLikeDropCountdown());
@@ -1386,10 +1403,7 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
     passLikeProfile(dailyGoldMatch.id);
   }
   function superLikeUpsell() {
-    Alert.alert('Get Super Likes', "Stand out with a Super Like. You are pushed higher and matched faster with profiles you already like.", [
-      { text: 'Later', style: 'cancel' },
-      { text: 'Get Super Likes', onPress: openPremium },
-    ]);
+    openSuperLikes();
   }
 
   return (
@@ -1738,6 +1752,88 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
         })}
         {!visibleThreads.length && <Text style={styles.emptyThreadText}>No matched conversations found. New matches will appear here.</Text>}
       </View>
+    </View>
+  );
+}
+
+const superLikeOffers = [
+  { id: 'superlikes_15' as const, count: 15, unit: 200, total: 3000, badge: 'Popular' },
+  { id: 'superlikes_30' as const, count: 30, unit: 150, total: 4500, badge: 'Best Value' },
+];
+
+const goldPlanOptions = [
+  { id: 'week', label: '1 Week', unit: 300, total: 300, badge: 'Popular' },
+  { id: 'month', label: '1 Month', unit: 200, total: 800, badge: 'Save' },
+  { id: 'six', label: '6 Months', unit: 100, total: 2400, badge: 'Best Value' },
+];
+
+function SuperLikesScreen({ paymentNotice, openGoldPlans, startSuperLikePurchase }: {
+  paymentNotice: string;
+  openGoldPlans: () => void;
+  startSuperLikePurchase: (packageId: 'superlikes_15' | 'superlikes_30', provider?: 'mpesa' | 'paystack') => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<'superlikes_15' | 'superlikes_30'>('superlikes_15');
+  const selectedOffer = superLikeOffers.find((item) => item.id === selected) ?? superLikeOffers[0]!;
+  return (
+    <View style={styles.purchaseScreen}>
+      <View style={styles.purchaseCloseRow}><Icon name="close" size={34} color="#FFFFFF" /></View>
+      <LinearGradient colors={["#9BC6FF", "#60A5FA"]} style={styles.superStar}><Icon name="star" size={54} color="#FFFFFF" /></LinearGradient>
+      <Text style={styles.superTitle}>Get <Text style={styles.superTitleScript}>Super Likes</Text></Text>
+      <Text style={styles.superCopy}>Stand out with Super Like. You're 3x more likely to get a match.</Text>
+      <View style={styles.superOfferStack}>
+        {superLikeOffers.map((offer) => (
+          <TouchableOpacity key={offer.id} onPress={() => setSelected(offer.id)} activeOpacity={0.9} style={[styles.superOffer, selected === offer.id && styles.superOfferActive]}>
+            <View>
+              {!!offer.badge && offer.id !== 'superlikes_15' && <Text style={styles.superOfferBadge}>{offer.badge}</Text>}
+              <Text style={styles.superOfferCount}>{offer.count} Super Likes</Text>
+            </View>
+            <Text style={styles.superOfferPrice}>KES{offer.unit.toFixed(2)}/ea</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Text style={styles.orText}>or</Text>
+      <View style={styles.goldInlineCard}>
+        <View><Text style={styles.goldInlineTitle}>Get RomChat Gold</Text><Text style={styles.goldInlineCopy}>Includes 2 Free Super Likes Every Week</Text></View>
+        <TouchableOpacity onPress={openGoldPlans} style={styles.goldSelectButton}><Text style={styles.goldSelectText}>Select</Text></TouchableOpacity>
+      </View>
+      {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
+      <TouchableOpacity onPress={() => void startSuperLikePurchase(selected, 'mpesa')} onLongPress={() => void startSuperLikePurchase(selected, 'paystack')} style={styles.purchaseContinue}>
+        <Text style={styles.purchaseContinueText}>Continue for KES{selectedOffer.total.toLocaleString()} total</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function GoldPlansScreen({ paymentNotice, startPlanPurchase }: {
+  paymentNotice: string;
+  startPlanPurchase: (planId: 'gold' | 'platinum', provider?: 'mpesa' | 'paystack') => Promise<void>;
+}) {
+  const [selected, setSelected] = useState('week');
+  const plan = goldPlanOptions.find((item) => item.id === selected) ?? goldPlanOptions[0]!;
+  const benefits = ['Unlimited Likes', 'See Who Likes You', 'Unlimited Rewinds', '1 Free Boost per month', '2 Free Super Likes per week', 'Top Picks', 'Control Who Sees You', 'Hide Ads'];
+  return (
+    <View style={styles.purchaseScreen}>
+      <View style={styles.goldHeaderRow}><Icon name="close" size={34} color="#FFFFFF" /><View style={styles.goldBrand}><Text style={styles.goldBrandText}>ROMCHAT</Text><Text style={styles.goldBadge}>GOLD</Text></View></View>
+      <Text style={styles.goldHeroText}>3x more likely to get a match with Super Like.</Text>
+      <Text style={styles.goldPlanLabel}>Select a Plan</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.goldPlanScroller}>
+        {goldPlanOptions.map((option) => (
+          <TouchableOpacity key={option.id} onPress={() => setSelected(option.id)} activeOpacity={0.9} style={[styles.goldPlanOption, selected === option.id && styles.goldPlanOptionActive]}>
+            <View style={styles.goldOptionTop}><Text style={styles.goldOptionBadge}>{option.badge}</Text>{selected === option.id && <Icon name="checkmark" size={28} color="#FFD700" />}</View>
+            <Text style={styles.goldOptionLabel}>{option.label}</Text>
+            <Text style={styles.goldOptionPrice}>KES{option.unit}/wk</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <View style={styles.goldIncludedCard}>
+        <Text style={styles.goldIncludedPill}>Included with RomChat Gold</Text>
+        {benefits.map((benefit) => <View key={benefit} style={styles.goldBenefitRow}><Icon name="checkmark" size={28} color="#FFFFFF" /><Text style={styles.goldBenefitText}>{benefit}</Text></View>)}
+      </View>
+      <Text style={styles.goldTerms}>By tapping Continue, your subscription renews until cancelled. You agree to our Terms.</Text>
+      {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
+      <TouchableOpacity onPress={() => void startPlanPurchase('gold', 'mpesa')} onLongPress={() => void startPlanPurchase('gold', 'paystack')} style={styles.purchaseContinue}>
+        <Text style={styles.purchaseContinueText}>Continue for KES{plan.total.toLocaleString()} total</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -2354,6 +2450,44 @@ const styles = StyleSheet.create({
   packagePrice: { color: '#FF1493', fontWeight: '900', fontSize: 18, marginTop: 3 },
   packageUnit: { color: 'rgba(255,255,255,0.62)', fontWeight: '800', marginTop: 3 },
   paymentNotice: { color: '#FFD700', fontWeight: '800', marginTop: 8, marginBottom: 12, textAlign: 'center' },
+  purchaseScreen: { backgroundColor: '#111823', borderRadius: 24, padding: 18, paddingBottom: 26, marginBottom: 18 },
+  purchaseCloseRow: { height: 42, justifyContent: 'center', alignItems: 'flex-start' },
+  superStar: { width: 108, height: 108, borderRadius: 54, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
+  superTitle: { color: '#AFCBFF', fontSize: 45, fontWeight: '900', textAlign: 'center', marginBottom: 12 },
+  superTitleScript: { fontStyle: 'italic' },
+  superCopy: { color: '#BFD3F8', fontSize: 20, lineHeight: 28, fontWeight: '800', textAlign: 'center', marginBottom: 24 },
+  superOfferStack: { gap: 12 },
+  superOffer: { minHeight: 112, borderRadius: 22, padding: 18, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  superOfferActive: { backgroundColor: '#9BC6FF', borderColor: '#9BC6FF' },
+  superOfferBadge: { color: '#FFFFFF', fontWeight: '900', fontSize: 13, marginBottom: 12 },
+  superOfferCount: { color: '#FFFFFF', fontSize: 25, fontWeight: '900' },
+  superOfferPrice: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
+  orText: { color: '#FFFFFF', fontSize: 28, fontStyle: 'italic', fontWeight: '900', textAlign: 'center', marginVertical: 18 },
+  goldInlineCard: { minHeight: 92, borderRadius: 20, padding: 16, backgroundColor: '#0D111A', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  goldInlineTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
+  goldInlineCopy: { color: 'rgba(255,255,255,0.78)', fontSize: 13, fontWeight: '800', marginTop: 6 },
+  goldSelectButton: { backgroundColor: '#EAF0FF', borderRadius: 999, paddingHorizontal: 24, paddingVertical: 12 },
+  goldSelectText: { color: '#120914', fontWeight: '900', fontSize: 16 },
+  purchaseContinue: { minHeight: 60, borderRadius: 30, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 22 },
+  purchaseContinueText: { color: '#111111', fontWeight: '900', fontSize: 20, textAlign: 'center' },
+  goldHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  goldBrand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  goldBrandText: { color: '#FFFFFF', fontSize: 26, fontWeight: '900' },
+  goldBadge: { color: '#120914', backgroundColor: '#FFD700', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 6, fontWeight: '900' },
+  goldHeroText: { color: '#FFFFFF', fontSize: 36, lineHeight: 45, fontWeight: '900', marginBottom: 28 },
+  goldPlanLabel: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', marginBottom: 14 },
+  goldPlanScroller: { gap: 14, paddingRight: 20, paddingBottom: 18 },
+  goldPlanOption: { width: 245, minHeight: 170, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', padding: 18, justifyContent: 'space-between', backgroundColor: '#111111' },
+  goldPlanOptionActive: { borderColor: '#FFD700', borderWidth: 2 },
+  goldOptionTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  goldOptionBadge: { color: '#FFD700', fontWeight: '900', fontSize: 16 },
+  goldOptionLabel: { color: '#FFFFFF', fontSize: 35, fontWeight: '900' },
+  goldOptionPrice: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
+  goldIncludedCard: { borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', padding: 18, marginTop: 10 },
+  goldIncludedPill: { alignSelf: 'center', color: 'rgba(255,255,255,0.62)', backgroundColor: '#111111', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 5, marginTop: -34, marginBottom: 14, fontWeight: '800' },
+  goldBenefitRow: { flexDirection: 'row', alignItems: 'center', gap: 18, paddingVertical: 10 },
+  goldBenefitText: { color: '#FFFFFF', fontSize: 21, fontWeight: '900', flex: 1 },
+  goldTerms: { color: 'rgba(255,255,255,0.82)', lineHeight: 21, fontWeight: '700', marginTop: 18 },
   catalogCard: { backgroundColor: '#1E1222', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,215,0,0.22)', padding: 16, marginBottom: 16 },
   catalogRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
   catalogLabel: { color: '#FFFFFF', fontWeight: '800' },
@@ -2425,4 +2559,5 @@ const styles = StyleSheet.create({
   promptEditorLabel: { color: '#FFD700', fontWeight: '900', marginBottom: 7 },
   promptEditorInput: { minHeight: 46, color: '#FFFFFF', fontWeight: '800', lineHeight: 20, textAlignVertical: 'top' },
 });
+
 

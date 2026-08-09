@@ -21,6 +21,8 @@ export const tokenPackages = [
   { id: 'tokens_100', amount: 100, priceKes: 250, unitPriceKes: 2.5, badge: null, productIds: { android: 'romchat_tokens_100', ios: 'romchat.tokens.100' } },
   { id: 'tokens_350', amount: 350, priceKes: 650, unitPriceKes: 1.85, badge: 'MOST POPULAR', productIds: { android: 'romchat_tokens_350', ios: 'romchat.tokens.350' } },
   { id: 'tokens_1000', amount: 1000, priceKes: 1500, unitPriceKes: 1.5, badge: 'BEST VALUE', productIds: { android: 'romchat_tokens_1000', ios: 'romchat.tokens.1000' } },
+  { id: 'superlikes_15', amount: 15, priceKes: 3000, unitPriceKes: 200, badge: 'SUPER LIKES', productIds: { android: 'romchat_superlikes_15', ios: 'romchat.superlikes.15' } },
+  { id: 'superlikes_30', amount: 30, priceKes: 4500, unitPriceKes: 150, badge: 'BEST SUPER VALUE', productIds: { android: 'romchat_superlikes_30', ios: 'romchat.superlikes.30' } },
 ];
 
 export const boosts = [
