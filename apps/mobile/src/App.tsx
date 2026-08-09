@@ -341,6 +341,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const activeTier = String(romchat.bootstrap?.premium?.activeTier || '').toLowerCase();
+    if (activeTier === 'gold') {
+      setSubscriptionTier('Gold');
+      setBoosted(false);
+    } else if (activeTier === 'platinum') {
+      setSubscriptionTier('Platinum');
+      setBoosted(true);
+    } else if (activeTier === 'free') {
+      setSubscriptionTier('Free');
+      setBoosted(false);
+    }
+  }, [romchat.bootstrap?.premium?.activeTier]);
+
+  useEffect(() => {
+    const walletBalance = Number(romchat.bootstrap?.wallet?.balance);
+    if (Number.isFinite(walletBalance)) setTokens(Math.max(0, Math.floor(walletBalance)));
+  }, [romchat.bootstrap?.wallet?.balance]);
+
+  useEffect(() => {
     return () => {
       if (matchTimerRef.current) clearTimeout(matchTimerRef.current);
     };
@@ -363,7 +382,7 @@ export default function App() {
     try {
       const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId });
       if (!payment) throw new Error('Payment could not start.');
-      setPaymentNotice(provider === 'mpesa' ? `M-Pesa STK initiated for KES ${payment.amountKes}. Complete it on your phone to receive tokens.` : `Paystack card checkout prepared for KES ${payment.amountKes}.`);
+      setPaymentNotice(provider === 'mpesa' ? `M-Pesa STK initiated for KES ${payment.amountKes}. Tokens activate automatically after payment confirmation.` : `Paystack card checkout prepared for KES ${payment.amountKes}. Tokens activate after card confirmation.`);
     } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start token payment.'); }
   }
 
@@ -372,8 +391,7 @@ export default function App() {
       const payment = await romchat.createPayment({ provider, purpose: 'subscription', planId });
       if (!payment) throw new Error('Payment could not start.');
       const plan = plans.find((item) => item.id === planId);
-      if (plan) { setSubscriptionTier(plan.name); if (plan.name === 'Platinum') setBoosted(true); }
-      setPaymentNotice(provider === 'mpesa' ? `M-Pesa STK initiated for ${plan?.price || `KES ${payment.amountKes}`}. Premium access is ready while payment confirms.` : `Paystack card checkout prepared for ${plan?.price || `KES ${payment.amountKes}`}.`);
+      setPaymentNotice(provider === 'mpesa' ? `M-Pesa STK initiated for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates automatically after payment confirmation.` : `Paystack card checkout prepared for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates after card confirmation.`);
     } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start subscription payment.'); }
   }
 
@@ -382,7 +400,7 @@ export default function App() {
     try {
       const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId });
       if (!payment) throw new Error('Payment could not start.');
-      setPaymentNotice(provider === 'mpesa' ? `M-Pesa checkout started for ${count} Super Likes at KES ${payment.amountKes}.` : `Paystack checkout prepared for ${count} Super Likes at KES ${payment.amountKes}.`);
+      setPaymentNotice(provider === 'mpesa' ? `M-Pesa checkout started for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after payment confirmation.` : `Paystack checkout prepared for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after card confirmation.`);
     } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start Super Likes payment.'); }
   }
 

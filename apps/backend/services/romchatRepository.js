@@ -21,8 +21,8 @@ export const tokenPackages = [
   { id: 'tokens_100', amount: 100, priceKes: 250, unitPriceKes: 2.5, badge: null, productIds: { android: 'romchat_tokens_100', ios: 'romchat.tokens.100' } },
   { id: 'tokens_350', amount: 350, priceKes: 650, unitPriceKes: 1.85, badge: 'MOST POPULAR', productIds: { android: 'romchat_tokens_350', ios: 'romchat.tokens.350' } },
   { id: 'tokens_1000', amount: 1000, priceKes: 1500, unitPriceKes: 1.5, badge: 'BEST VALUE', productIds: { android: 'romchat_tokens_1000', ios: 'romchat.tokens.1000' } },
-  { id: 'superlikes_15', amount: 15, priceKes: 3000, unitPriceKes: 200, badge: 'SUPER LIKES', productIds: { android: 'romchat_superlikes_15', ios: 'romchat.superlikes.15' } },
-  { id: 'superlikes_30', amount: 30, priceKes: 4500, unitPriceKes: 150, badge: 'BEST SUPER VALUE', productIds: { android: 'romchat_superlikes_30', ios: 'romchat.superlikes.30' } },
+  { id: 'superlikes_15', amount: 225, superLikeCount: 15, priceKes: 3000, unitPriceKes: 200, badge: 'SUPER LIKES', productIds: { android: 'romchat_superlikes_15', ios: 'romchat.superlikes.15' } },
+  { id: 'superlikes_30', amount: 450, superLikeCount: 30, priceKes: 4500, unitPriceKes: 150, badge: 'BEST SUPER VALUE', productIds: { android: 'romchat_superlikes_30', ios: 'romchat.superlikes.30' } },
 ];
 
 export const boosts = [
@@ -219,6 +219,7 @@ function fromMemberProfileRow(row, catalogueAccess = 1) {
     verificationScore: row.verification_score == null ? null : Number(row.verification_score),
     lastSeenAt: row.last_seen_at || null,
     online: isRecentlyOnline(row),
+    boosted: Boolean(row.boosted_now),
     distanceKm: Number(row.distance_km || 0),
     gender: row.gender || '',
   };
@@ -328,6 +329,10 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
       `SELECT
          p.*,
          active_match.id AS match_id,
+         EXISTS (
+           SELECT 1 FROM romchat_boosts b
+           WHERE b.profile_id = p.member_id AND b.ends_at > now()
+         ) AS boosted_now,
          COALESCE(
            array_agg(m.url ORDER BY m.position ASC, m.created_at ASC)
              FILTER (WHERE m.media_type = 'image'),
@@ -352,6 +357,10 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
         `SELECT
            p.*,
            active_match.id AS match_id,
+           EXISTS (
+             SELECT 1 FROM romchat_boosts b
+             WHERE b.profile_id = p.member_id AND b.ends_at > now()
+           ) AS boosted_now,
            COALESCE(
              array_agg(m.url ORDER BY m.position ASC, m.created_at ASC)
                FILTER (WHERE m.media_type = 'image'),
@@ -375,7 +384,7 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
       .map((row) => ({ ...row, distance_km: viewerCoordinates ? haversineKm(viewerCoordinates, rowCoordinates(row)) : 0 }))
       .filter((row) => !viewerCoordinates || !mapDiscoveryEnabled || Number(row.distance_km || 0) <= maxDistanceKm)
       .filter((row) => Number(row.age || 0) >= minAge && Number(row.age || 0) <= maxAge)
-      .sort((a, b) => Number(a.distance_km || 0) - Number(b.distance_km || 0) || Number(b.profile_strength || 0) - Number(a.profile_strength || 0))
+      .sort((a, b) => Number(Boolean(b.boosted_now)) - Number(Boolean(a.boosted_now)) || Number(a.distance_km || 0) - Number(b.distance_km || 0) || Number(b.profile_strength || 0) - Number(a.profile_strength || 0))
       .map((row) => fromMemberProfileRow(row, access));
   }, () => []);
 }
@@ -441,12 +450,13 @@ export async function getLikesSummary(memberId = null) {
 }
 
 export async function getBootstrap({ catalogueAccess = 1, viewerId = null, verifiedOnly = false } = {}) {
-  const [profiles, messages, privacy, wallet, likes] = await Promise.all([
+  const [profiles, messages, privacy, wallet, likes, activeSubscription] = await Promise.all([
     getProfiles({ verifiedOnly, catalogueAccess, viewerId }),
     getMessages('match_elena'),
     getPrivacy(),
     getWallet(),
     getLikesSummary(viewerId),
+    getActiveSubscription(viewerId),
   ]);
   return {
     app: { name: 'RomChat', tagline: 'Kenyan singles. Real vibes. Safer chats.', mode: process.env.ROMCHAT_MODE || 'demo' },
@@ -462,7 +472,7 @@ export async function getBootstrap({ catalogueAccess = 1, viewerId = null, verif
       mandatorySelfieVerification: true,
       antiScreengrab: privacy.screenshotsBlocked,
     },
-    premium: { activeTier: 'free', plans: premiumPlans },
+    premium: { activeTier: activeSubscription?.plan_id || 'free', plans: premiumPlans },
     privacy,
   };
 }
@@ -480,14 +490,20 @@ function shouldCreateMutualMatch(profileId, action, profile) {
   return deterministicPercent(String(profileId) + ':' + action + ':romchat-mutual') < baseChance + scoreBoost;
 }
 
-async function hasUnlimitedLikes(memberId) {
+async function getActiveSubscription(memberId = 'me') {
   const active = await queryWithRetry(
-    `SELECT plan_id FROM romchat_subscriptions
+    `SELECT plan_id, status, started_at, renews_at
+     FROM romchat_subscriptions
      WHERE member_id = $1 AND status = 'active' AND (renews_at IS NULL OR renews_at > now())
      ORDER BY started_at DESC LIMIT 1`,
     [memberId || 'me']
   );
-  const plan = premiumPlans.find((item) => item.id === active.rows?.[0]?.plan_id);
+  return active.rows?.[0] || null;
+}
+
+async function hasUnlimitedLikes(memberId) {
+  const active = await getActiveSubscription(memberId);
+  const plan = premiumPlans.find((item) => item.id === active?.plan_id);
   return Boolean(plan?.features?.unlimitedLikes);
 }
 
@@ -861,9 +877,9 @@ export async function createPaymentIntent({ memberId = 'me', provider, purpose =
     await queryWithRetry(
       `INSERT INTO romchat_payment_intents (id, member_id, provider, purpose, amount_kes, tokens, plan_id, status, checkout_url, phone, reference, metadata)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [payment.id, memberId, payment.provider, payment.purpose, payment.amountKes, payment.tokens, payment.planId, payment.status, payment.checkoutUrl, payment.phone, payment.reference, { email, packageId }]
+      [payment.id, memberId, payment.provider, payment.purpose, payment.amountKes, payment.tokens, payment.planId, payment.status, payment.checkoutUrl, payment.phone, payment.reference, { email, packageId, packageKind: packageId?.startsWith('superlikes_') ? 'super_likes' : 'tokens', superLikeCount: tokenPackage.superLikeCount || null, unitPriceKes: tokenPackage.unitPriceKes || null }]
     );
-    return payment;
+    return { ...payment, packageKind: packageId?.startsWith('superlikes_') ? 'super_likes' : 'tokens', superLikeCount: tokenPackage.superLikeCount || null };
   }, () => payment);
 }
 
