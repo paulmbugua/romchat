@@ -1,5 +1,8 @@
 import crypto from 'crypto';
+import axios from 'axios';
 import { queryWithRetry } from '../config/db.js';
+import { getAccessToken, mpesaPassword, mpesaTimestamp, resolveStkCallbackUrl, shortcode, MPESA_BASE } from '../utils/mpesa.js';
+import { normalizePhoneNumber } from '../utils/phoneUtils.js';
 
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
@@ -838,6 +841,98 @@ export async function unlockVideoRequest(requestId) {
   });
 }
 
+
+function maskPhone(phone = '') {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 6) return 'missing';
+  return `${digits.slice(0, 5)}***${digits.slice(-2)}`;
+}
+
+async function initiateRomchatMpesaStk(payment) {
+  const requestId = `rcpay_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;
+  const normalizedPhone = normalizePhoneNumber(payment.phone || '');
+  if (!normalizedPhone) {
+    const error = new Error('Enter a valid Kenyan M-Pesa phone number.');
+    error.status = 400;
+    error.code = 'MPESA_PHONE_REQUIRED';
+    throw error;
+  }
+  const callbackUrl = process.env.ROMCHAT_MPESA_CALLBACK_URL || resolveStkCallbackUrl({ product: 'RomChat' });
+  if (!callbackUrl) {
+    const error = new Error('M-Pesa callback URL is not configured.');
+    error.status = 500;
+    error.code = 'MPESA_CALLBACK_MISSING';
+    throw error;
+  }
+  const ts = mpesaTimestamp();
+  const payload = {
+    BusinessShortCode: shortcode,
+    Password: mpesaPassword(ts),
+    Timestamp: ts,
+    TransactionType: 'CustomerPayBillOnline',
+    Amount: Math.max(1, Math.round(Number(payment.amountKes || 0))),
+    PartyA: normalizedPhone,
+    PartyB: shortcode,
+    PhoneNumber: normalizedPhone,
+    CallBackURL: callbackUrl,
+    AccountReference: payment.id.slice(0, 12),
+    TransactionDesc: `RomChat ${payment.purpose}`,
+  };
+  console.info('[romchat-payment] mpesa:stk:start', { requestId, paymentId: payment.id, amountKes: payment.amountKes, phone: maskPhone(normalizedPhone), callbackConfigured: Boolean(callbackUrl) });
+  try {
+    const accessToken = await getAccessToken();
+    const response = await axios.post(`${MPESA_BASE}/mpesa/stkpush/v1/processrequest`, payload, { headers: { Authorization: `Bearer ${accessToken}` }, timeout: 30000 });
+    console.info('[romchat-payment] mpesa:stk:ok', { requestId, paymentId: payment.id, merchantRequestId: response.data?.MerchantRequestID || null, checkoutRequestId: response.data?.CheckoutRequestID || null, responseCode: response.data?.ResponseCode || null });
+    return { providerReference: response.data?.CheckoutRequestID || payment.reference, merchantRequestId: response.data?.MerchantRequestID || null, response: response.data };
+  } catch (error) {
+    const providerError = error.response?.data || { message: error.message };
+    console.warn('[romchat-payment] mpesa:stk:failed', { requestId, paymentId: payment.id, status: error.response?.status || null, providerError });
+    const wrapped = new Error(providerError?.errorMessage || providerError?.ResponseDescription || providerError?.message || 'M-Pesa STK Push failed.');
+    wrapped.status = 502;
+    wrapped.code = 'MPESA_STK_FAILED';
+    throw wrapped;
+  }
+}
+
+async function initiateRomchatPaystackCheckout(payment, email = '') {
+  const requestId = `rcpay_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;
+  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+  if (!secretKey) {
+    const error = new Error('Paystack secret key is not configured.');
+    error.status = 500;
+    error.code = 'PAYSTACK_SECRET_MISSING';
+    throw error;
+  }
+  if (!email) {
+    const error = new Error('A verified email is required for card checkout.');
+    error.status = 400;
+    error.code = 'PAYSTACK_EMAIL_REQUIRED';
+    throw error;
+  }
+  const payload = {
+    amount: Math.max(1, Math.round(Number(payment.amountKes || 0) * 100)),
+    email,
+    currency: 'KES',
+    reference: payment.reference,
+    callback_url: process.env.ROMCHAT_PAYSTACK_CALLBACK_URL || process.env.FRONTEND_URL || undefined,
+    metadata: { paymentId: payment.id, memberId: payment.memberId, purpose: payment.purpose, planId: payment.planId, tokens: payment.tokens },
+  };
+  console.info('[romchat-payment] paystack:init:start', { requestId, paymentId: payment.id, amountKes: payment.amountKes, emailDomain: email.split('@')[1] || 'unknown' });
+  try {
+    const response = await axios.post('https://api.paystack.co/transaction/initialize', payload, { headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/json' }, timeout: 30000 });
+    if (!response.data?.status || !response.data?.data?.authorization_url) throw new Error(response.data?.message || 'Paystack did not return a checkout URL.');
+    console.info('[romchat-payment] paystack:init:ok', { requestId, paymentId: payment.id, reference: response.data.data.reference, hasCheckoutUrl: Boolean(response.data.data.authorization_url) });
+    return { providerReference: response.data.data.reference || payment.reference, checkoutUrl: response.data.data.authorization_url, response: response.data.data };
+  } catch (error) {
+    const providerError = error.response?.data || { message: error.message };
+    console.warn('[romchat-payment] paystack:init:failed', { requestId, paymentId: payment.id, status: error.response?.status || null, providerError });
+    const wrapped = new Error(providerError?.message || 'Paystack checkout could not start.');
+    wrapped.status = 502;
+    wrapped.code = 'PAYSTACK_INIT_FAILED';
+    throw wrapped;
+  }
+}
+
 export async function getRevenueCatalog() {
   return {
     lockedMedia: { costTokens: 10, title: 'Unlock private media', description: 'Basic text stays free; only optional voice notes, HD photos, and premium media previews use tokens.' },
@@ -861,6 +956,7 @@ export async function createPaymentIntent({ memberId = 'me', provider, purpose =
   const tokens = purpose === 'subscription' ? 0 : Number(tokenPackage.amount || 0);
   const payment = {
     id: id('pay'),
+    memberId: memberId || 'me',
     provider: normalizedProvider,
     purpose,
     amountKes,
@@ -869,17 +965,26 @@ export async function createPaymentIntent({ memberId = 'me', provider, purpose =
     phone: phone || null,
     reference: `romchat_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
     status: 'pending',
-    checkoutUrl: normalizedProvider === 'paystack' ? `https://checkout.paystack.com/romchat-${Date.now().toString(36)}` : null,
-    instructions: normalizedProvider === 'mpesa' ? 'M-Pesa STK push initiated. Enter your PIN to complete.' : 'Open Paystack card checkout to complete payment.',
+    checkoutUrl: null,
+    instructions: normalizedProvider === 'mpesa' ? 'M-Pesa STK push sent. Enter your PIN to complete.' : 'Open Paystack card checkout to complete payment.',
     currency: 'KES',
   };
+  const metadata = { email, packageId, packageKind: packageId?.startsWith('superlikes_') ? 'super_likes' : 'tokens', superLikeCount: tokenPackage.superLikeCount || null, unitPriceKes: tokenPackage.unitPriceKes || null };
+  console.info('[romchat-payment] intent:start', { paymentId: payment.id, memberId: payment.memberId, provider: payment.provider, purpose: payment.purpose, amountKes: payment.amountKes, planId: payment.planId, packageId, hasPhone: Boolean(phone), hasEmail: Boolean(email) });
+  const providerResult = normalizedProvider === 'mpesa'
+    ? await initiateRomchatMpesaStk(payment)
+    : await initiateRomchatPaystackCheckout(payment, email);
+  payment.reference = providerResult.providerReference || payment.reference;
+  payment.checkoutUrl = providerResult.checkoutUrl || null;
+  const providerMetadata = { ...metadata, providerReference: payment.reference, merchantRequestId: providerResult.merchantRequestId || null, providerResponse: providerResult.response || null };
   return withDb(async () => {
     await queryWithRetry(
       `INSERT INTO romchat_payment_intents (id, member_id, provider, purpose, amount_kes, tokens, plan_id, status, checkout_url, phone, reference, metadata)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [payment.id, memberId, payment.provider, payment.purpose, payment.amountKes, payment.tokens, payment.planId, payment.status, payment.checkoutUrl, payment.phone, payment.reference, { email, packageId, packageKind: packageId?.startsWith('superlikes_') ? 'super_likes' : 'tokens', superLikeCount: tokenPackage.superLikeCount || null, unitPriceKes: tokenPackage.unitPriceKes || null }]
+      [payment.id, payment.memberId, payment.provider, payment.purpose, payment.amountKes, payment.tokens, payment.planId, payment.status, payment.checkoutUrl, payment.phone, payment.reference, providerMetadata]
     );
-    return { ...payment, packageKind: packageId?.startsWith('superlikes_') ? 'super_likes' : 'tokens', superLikeCount: tokenPackage.superLikeCount || null };
+    console.info('[romchat-payment] intent:stored', { paymentId: payment.id, provider: payment.provider, reference: payment.reference, hasCheckoutUrl: Boolean(payment.checkoutUrl) });
+    return { ...payment, packageKind: metadata.packageKind, superLikeCount: tokenPackage.superLikeCount || null };
   }, () => payment);
 }
 

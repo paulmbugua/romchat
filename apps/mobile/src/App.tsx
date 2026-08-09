@@ -221,6 +221,7 @@ export default function App() {
   const [boosted, setBoosted] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<PlanName>('Free');
   const [paymentNotice, setPaymentNotice] = useState('');
+  const [mpesaPhone, setMpesaPhone] = useState('');
   const [paymentSheet, setPaymentSheet] = useState<PaymentSheetState | null>(null);
   const [showMatch, setShowMatch] = useState(false);
   const [pendingChatProfileId, setPendingChatProfileId] = useState<string | null>(null);
@@ -383,6 +384,14 @@ export default function App() {
   }
 
   function showPaymentSheet(payment: RomChatPayment, provider: 'mpesa' | 'paystack', title: string, subtitle: string) {
+    console.info('[romchat-payment-ui] sheet:open', {
+      paymentId: payment.id,
+      provider,
+      status: payment.status,
+      amountKes: payment.amountKes,
+      hasCheckoutUrl: Boolean(payment.checkoutUrl),
+      reference: payment.reference || null,
+    });
     setPaymentSheet({
       provider,
       title,
@@ -405,7 +414,9 @@ export default function App() {
 
   async function startTokenPurchase(packageId = 'tokens_100', provider: 'mpesa' | 'paystack' = 'mpesa') {
     try {
-      const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId });
+      if (provider === 'mpesa' && !mpesaPhone.trim()) throw new Error('Enter your M-Pesa phone number first.');
+      console.info('[romchat-payment-ui] token:start', { provider, packageId, hasPhone: Boolean(mpesaPhone.trim()) });
+      const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId, phone: provider === 'mpesa' ? mpesaPhone : undefined });
       if (!payment) throw new Error('Payment could not start.');
       setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for KES ${payment.amountKes}. Tokens activate automatically after payment confirmation.` : `Paystack card checkout prepared for KES ${payment.amountKes}. Tokens activate after card confirmation.`);
       showPaymentSheet(payment, provider, 'Token Wallet', `${payment.tokens || 0} RomChat tokens`);
@@ -414,7 +425,9 @@ export default function App() {
 
   async function startPlanPurchase(planId: 'gold' | 'platinum', provider: 'mpesa' | 'paystack' = 'mpesa') {
     try {
-      const payment = await romchat.createPayment({ provider, purpose: 'subscription', planId });
+      if (provider === 'mpesa' && !mpesaPhone.trim()) throw new Error('Enter your M-Pesa phone number first.');
+      console.info('[romchat-payment-ui] subscription:start', { provider, planId, hasPhone: Boolean(mpesaPhone.trim()) });
+      const payment = await romchat.createPayment({ provider, purpose: 'subscription', planId, phone: provider === 'mpesa' ? mpesaPhone : undefined });
       if (!payment) throw new Error('Payment could not start.');
       const plan = plans.find((item) => item.id === planId);
       setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates automatically after payment confirmation.` : `Paystack card checkout prepared for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates after card confirmation.`);
@@ -425,7 +438,9 @@ export default function App() {
   async function startSuperLikePurchase(packageId: 'superlikes_15' | 'superlikes_30', provider: 'mpesa' | 'paystack' = 'mpesa') {
     const count = packageId === 'superlikes_30' ? 30 : 15;
     try {
-      const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId });
+      if (provider === 'mpesa' && !mpesaPhone.trim()) throw new Error('Enter your M-Pesa phone number first.');
+      console.info('[romchat-payment-ui] superlike:start', { provider, packageId, count, hasPhone: Boolean(mpesaPhone.trim()) });
+      const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId, phone: provider === 'mpesa' ? mpesaPhone : undefined });
       if (!payment) throw new Error('Payment could not start.');
       setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after payment confirmation.` : `Paystack checkout prepared for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after card confirmation.`);
       showPaymentSheet(payment, provider, 'Super Likes', `${count} priority Super Likes`);
@@ -816,13 +831,13 @@ export default function App() {
       );
     }
     if (section === 'premium') {
-      return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} startTokenPurchase={startTokenPurchase} startPlanPurchase={startPlanPurchase} />;
+      return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} startTokenPurchase={startTokenPurchase} startPlanPurchase={startPlanPurchase} />;
     }
     if (section === 'superlikes') {
-      return <SuperLikesScreen paymentNotice={paymentNotice} openGoldPlans={() => setActiveSection('goldPlans')} startSuperLikePurchase={startSuperLikePurchase} />;
+      return <SuperLikesScreen paymentNotice={paymentNotice} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} openGoldPlans={() => setActiveSection('goldPlans')} startSuperLikePurchase={startSuperLikePurchase} />;
     }
     if (section === 'goldPlans') {
-      return <GoldPlansScreen paymentNotice={paymentNotice} startPlanPurchase={startPlanPurchase} />;
+      return <GoldPlansScreen paymentNotice={paymentNotice} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} startPlanPurchase={startPlanPurchase} />;
     }
     if (section === 'privacy' || section === 'terms' || section === 'community') {
       return <PolicyScreen section={section} />;
@@ -1815,8 +1830,10 @@ const goldPlanOptions = [
   { id: 'six', label: '6 Months', unit: 100, total: 2400, badge: 'Best Value' },
 ];
 
-function SuperLikesScreen({ paymentNotice, openGoldPlans, startSuperLikePurchase }: {
+function SuperLikesScreen({ paymentNotice, mpesaPhone, setMpesaPhone, openGoldPlans, startSuperLikePurchase }: {
   paymentNotice: string;
+  mpesaPhone: string;
+  setMpesaPhone: (value: string) => void;
   openGoldPlans: () => void;
   startSuperLikePurchase: (packageId: 'superlikes_15' | 'superlikes_30', provider?: 'mpesa' | 'paystack') => Promise<void>;
 }) {
@@ -1844,16 +1861,16 @@ function SuperLikesScreen({ paymentNotice, openGoldPlans, startSuperLikePurchase
         <View><Text style={styles.goldInlineTitle}>Get RomChat Gold</Text><Text style={styles.goldInlineCopy}>Includes 2 Free Super Likes Every Week</Text></View>
         <TouchableOpacity onPress={openGoldPlans} style={styles.goldSelectButton}><Text style={styles.goldSelectText}>Select</Text></TouchableOpacity>
       </View>
+      <PaymentChoice amountKes={selectedOffer.total} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} onMpesa={() => void startSuperLikePurchase(selected, 'mpesa')} onCard={() => void startSuperLikePurchase(selected, 'paystack')} />
       {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
-      <TouchableOpacity onPress={() => void startSuperLikePurchase(selected, 'mpesa')} onLongPress={() => void startSuperLikePurchase(selected, 'paystack')} style={styles.purchaseContinue}>
-        <Text style={styles.purchaseContinueText}>Continue for KES{selectedOffer.total.toLocaleString()} total</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
-function GoldPlansScreen({ paymentNotice, startPlanPurchase }: {
+function GoldPlansScreen({ paymentNotice, mpesaPhone, setMpesaPhone, startPlanPurchase }: {
   paymentNotice: string;
+  mpesaPhone: string;
+  setMpesaPhone: (value: string) => void;
   startPlanPurchase: (planId: 'gold' | 'platinum', provider?: 'mpesa' | 'paystack') => Promise<void>;
 }) {
   const [selected, setSelected] = useState('week');
@@ -1878,16 +1895,14 @@ function GoldPlansScreen({ paymentNotice, startPlanPurchase }: {
         {benefits.map((benefit) => <View key={benefit} style={styles.goldBenefitRow}><Icon name="checkmark" size={28} color="#FFFFFF" /><Text style={styles.goldBenefitText}>{benefit}</Text></View>)}
       </View>
       <Text style={styles.goldTerms}>By tapping Continue, your subscription renews until cancelled. You agree to our Terms.</Text>
+      <PaymentChoice amountKes={plan.total} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} onMpesa={() => void startPlanPurchase('gold', 'mpesa')} onCard={() => void startPlanPurchase('gold', 'paystack')} />
       {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
-      <TouchableOpacity onPress={() => void startPlanPurchase('gold', 'mpesa')} onLongPress={() => void startPlanPurchase('gold', 'paystack')} style={styles.purchaseContinue}>
-        <Text style={styles.purchaseContinueText}>Continue for KES{plan.total.toLocaleString()} total</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
-function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, startTokenPurchase, startPlanPurchase }: {
-  tokens: number; boosted: boolean; activePlan: PlanName; paymentNotice: string; activateBoost: () => void;
+function Premium({ tokens, boosted, activePlan, paymentNotice, mpesaPhone, setMpesaPhone, activateBoost, startTokenPurchase, startPlanPurchase }: {
+  tokens: number; boosted: boolean; activePlan: PlanName; paymentNotice: string; mpesaPhone: string; setMpesaPhone: (value: string) => void; activateBoost: () => void;
   startTokenPurchase: (packageId?: string, provider?: 'mpesa' | 'paystack') => Promise<void>;
   startPlanPurchase: (planId: 'gold' | 'platinum', provider?: 'mpesa' | 'paystack') => Promise<void>;
 }) {
@@ -1896,7 +1911,7 @@ function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, st
       <LinearGradient colors={['#FFD700', '#FFA500']} style={styles.walletHero}>
         <Text style={styles.kickerDark}>Token Wallet</Text><Text style={styles.balance}>{tokens} tokens</Text><Text style={styles.heroCopyDark}>Transparent KES token pricing before every purchase.</Text>
       </LinearGradient>
-      <View style={styles.packageGrid}>{tokenPackages.map((pack) => (<TouchableOpacity key={pack.id} onPress={() => void startTokenPurchase(pack.id, 'mpesa')} onLongPress={() => void startTokenPurchase(pack.id, 'paystack')} style={[styles.packageCard, pack.badge && styles.packageFeatured]}>{!!pack.badge && <Text style={styles.packageBadge}>{pack.badge}</Text>}<Text style={styles.packageAmount}>{pack.amount}</Text><Text style={styles.packagePrice}>{pack.price}</Text><Text style={styles.packageUnit}>{pack.unit}</Text></TouchableOpacity>))}</View>
+      <View style={styles.packageGrid}>{tokenPackages.map((pack) => (<View key={pack.id} style={[styles.packageCard, pack.badge && styles.packageFeatured]}>{!!pack.badge && <Text style={styles.packageBadge}>{pack.badge}</Text>}<Text style={styles.packageAmount}>{pack.amount}</Text><Text style={styles.packagePrice}>{pack.price}</Text><Text style={styles.packageUnit}>{pack.unit}</Text><PaymentChoice compact amountKes={Number(String(pack.price).replace(/[^0-9]/g, '') || 0)} mpesaPhone={mpesaPhone} setMpesaPhone={setMpesaPhone} onMpesa={() => void startTokenPurchase(pack.id, 'mpesa')} onCard={() => void startTokenPurchase(pack.id, 'paystack')} /></View>))}</View>
       {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
       <View style={styles.catalogCard}><Text style={styles.sectionLabel}>Token feature catalog</Text>{tokenCatalog.map((item) => <View key={item.id} style={styles.catalogRow}><Text style={styles.catalogLabel}>{item.label}</Text><Text style={styles.catalogCost}>{item.cost}</Text></View>)}</View>
       <Text style={styles.sectionLabel}>Plus tiers</Text>
@@ -1956,6 +1971,33 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
 }
 
 
+
+function PaymentChoice({ amountKes, mpesaPhone, setMpesaPhone, onMpesa, onCard, compact = false }: { amountKes: number; mpesaPhone: string; setMpesaPhone: (value: string) => void; onMpesa: () => void; onCard: () => void; compact?: boolean }) {
+  return (
+    <View style={[styles.paymentChoice, compact && styles.paymentChoiceCompact]}>
+      <TextInput
+        value={mpesaPhone}
+        onChangeText={setMpesaPhone}
+        keyboardType="phone-pad"
+        placeholder="M-Pesa phone e.g. 0712345678"
+        placeholderTextColor="rgba(255,255,255,0.45)"
+        style={styles.mpesaInput}
+      />
+      <View style={styles.paymentChoiceRow}>
+        <TouchableOpacity onPress={onMpesa} style={[styles.paymentOptionButton, styles.mpesaOptionButton]}>
+          <Icon name="phone-portrait" size={17} color="#FFFFFF" />
+          <Text style={styles.paymentOptionText}>Pay M-Pesa</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onCard} style={[styles.paymentOptionButton, styles.cardOptionButton]}>
+          <Icon name="card" size={17} color="#FFFFFF" />
+          <Text style={styles.paymentOptionText}>Card</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.paymentChoiceHint}>KES {amountKes.toLocaleString()} total. Choose how you want to pay.</Text>
+    </View>
+  );
+}
+
 function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: PaymentSheetState | null; onClose: () => void; onOpenCheckout: () => void; onRefresh: () => void }) {
   if (!sheet) return null;
   const isMpesa = sheet.provider === 'mpesa';
@@ -1979,7 +2021,7 @@ function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: Pa
           <Text style={styles.paymentInstructionText}>{sheet.instructions}</Text>
           <Text style={styles.paymentReferenceText}>Payment ID: {sheet.paymentId}</Text>
           {isMpesa ? (
-            <View style={styles.paymentInfoBox}><Icon name="information-circle" size={18} color="#FFD700" /><Text style={styles.paymentInfoText}>RomChat created the payment intent. A real M-Pesa PIN popup requires the backend to call Safaricom STK Push with your phone number.</Text></View>
+            <View style={styles.paymentInfoBox}><Icon name="information-circle" size={18} color="#FFD700" /><Text style={styles.paymentInfoText}>Check your phone for the M-Pesa PIN prompt. If it does not arrive, confirm the phone number and backend STK logs.</Text></View>
           ) : (
             <TouchableOpacity disabled={!sheet.checkoutUrl} onPress={onOpenCheckout} style={[styles.paymentPrimaryButton, !sheet.checkoutUrl && styles.paymentPrimaryButtonDisabled]}><Text style={styles.paymentPrimaryText}>{sheet.checkoutUrl ? 'Open card checkout' : 'Checkout link not ready'}</Text></TouchableOpacity>
           )}
@@ -2535,6 +2577,15 @@ const styles = StyleSheet.create({
   packageAmount: { color: '#FFFFFF', fontSize: 28, fontWeight: '900' },
   packagePrice: { color: '#FF1493', fontWeight: '900', fontSize: 18, marginTop: 3 },
   packageUnit: { color: 'rgba(255,255,255,0.62)', fontWeight: '800', marginTop: 3 },
+  paymentChoice: { gap: 10, marginTop: 16 },
+  paymentChoiceCompact: { marginTop: 12 },
+  mpesaInput: { minHeight: 48, borderRadius: 18, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', color: '#FFFFFF', paddingHorizontal: 14, fontWeight: '900' },
+  paymentChoiceRow: { flexDirection: 'row', gap: 10 },
+  paymentOptionButton: { flex: 1, minHeight: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  mpesaOptionButton: { backgroundColor: '#00A846' },
+  cardOptionButton: { backgroundColor: '#2563EB' },
+  paymentOptionText: { color: '#FFFFFF', fontWeight: '900', fontSize: 13 },
+  paymentChoiceHint: { color: 'rgba(255,255,255,0.58)', fontWeight: '800', fontSize: 11, textAlign: 'center' },
   paymentNotice: { color: '#FFD700', fontWeight: '800', marginTop: 8, marginBottom: 12, textAlign: 'center' },
   paymentSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', justifyContent: 'flex-end' },
   paymentSheetCard: { backgroundColor: '#111823', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, paddingBottom: 30, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
