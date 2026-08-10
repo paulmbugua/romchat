@@ -25,7 +25,7 @@ function pickBackend(): string {
   const v =
     (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
     (typeof window !== 'undefined' && (window as any).__BACKEND_URL__) ||
-    'http://localhost:4000';
+    'http://localhost:4009';
   return String(v).replace(/\/+$/, '');
 }
 
