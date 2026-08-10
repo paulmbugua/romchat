@@ -1979,11 +1979,11 @@ function SuperLikesScreen({ paymentNotice, openGoldPlans, openPaymentPage }: {
       <View style={styles.superOfferStack}>
         {superLikeOffers.map((offer) => (
           <TouchableOpacity key={offer.id} onPress={() => setSelected(offer.id)} activeOpacity={0.9} style={[styles.superOffer, selected === offer.id && styles.superOfferActive]}>
-            <View>
+            <View style={styles.superOfferCopy}>
               {!!offer.badge && offer.id !== 'superlikes_15' && <Text style={styles.superOfferBadge}>{offer.badge}</Text>}
               <Text style={styles.superOfferCount}>{offer.count} Super Likes</Text>
+              <Text style={styles.superOfferPrice}>KES {offer.unit.toFixed(2)} per Super Like</Text>
             </View>
-            <Text style={styles.superOfferPrice}>KES{offer.unit.toFixed(2)}/ea</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -2020,7 +2020,7 @@ function GoldPlansScreen({ paymentNotice, openPaymentPage }: {
           <TouchableOpacity key={option.id} onPress={() => setSelected(option.id)} activeOpacity={0.9} style={[styles.goldPlanOption, selected === option.id && styles.goldPlanOptionActive]}>
             <View style={styles.goldOptionTop}><Text style={styles.goldOptionBadge}>{option.badge}</Text>{selected === option.id && <Icon name="checkmark" size={28} color="#FFD700" />}</View>
             <Text style={styles.goldOptionLabel}>{option.label}</Text>
-            <Text style={styles.goldOptionPrice}>KES{option.unit}/wk</Text>
+            <Text style={styles.goldOptionPrice}>KES {option.unit}/wk</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -2208,29 +2208,38 @@ function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: Pa
       <View style={styles.paymentSheetBackdrop}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
         <AnimatedSalesPanel style={styles.paymentSheetCard}>
-          <View style={styles.paymentSheetHandle} />
-          <View style={styles.paymentSheetTop}>
-            <LinearGradient colors={isMpesa ? ['#00C853', '#13A538'] : ['#00B8FF', '#0066FF']} style={styles.paymentProviderIcon}>
-              <Icon name={isMpesa ? 'phone-portrait' : 'card'} size={28} color="#FFFFFF" />
-            </LinearGradient>
-            <TouchableOpacity onPress={onClose} style={styles.paymentCloseButton}><Icon name="close" size={22} color="#FFFFFF" /></TouchableOpacity>
-          </View>
-          <Text style={styles.paymentSheetEyebrow}>{isMpesa ? 'M-Pesa payment' : 'Paystack card checkout'}</Text>
-          <Text style={styles.paymentSheetTitle}>{sheet.title}</Text>
-          <Text style={styles.paymentSheetSubtitle}>{sheet.subtitle}</Text>
-          <View style={styles.paymentAmountCard}><Text style={styles.paymentAmountLabel}>Amount</Text><Text style={styles.paymentAmountValue}>KES {sheet.amountKes.toLocaleString()}</Text></View>
-          <View style={styles.paymentStatusRow}><ActivityIndicator color={isMpesa ? '#00E676' : '#60A5FA'} /><Text style={styles.paymentStatusText}>{isMpesa ? 'Waiting for provider confirmation' : 'Checkout ready'}</Text></View>
-          <Text style={styles.paymentInstructionText}>{sheet.instructions}</Text>
-          <Text style={styles.paymentReferenceText}>Payment ID: {sheet.paymentId}</Text>
           {isMpesa ? (
-            <View style={styles.paymentInfoBox}><Icon name="information-circle" size={18} color="#FFD700" /><Text style={styles.paymentInfoText}>Check your phone for the M-Pesa PIN prompt. If it does not arrive, confirm the phone number and backend STK logs.</Text></View>
+            <>
+              <View style={styles.paymentSheetHandle} />
+              <View style={styles.paymentSheetTop}>
+                <LinearGradient colors={['#00C853', '#13A538']} style={styles.paymentProviderIcon}>
+                  <Icon name="phone-portrait" size={28} color="#FFFFFF" />
+                </LinearGradient>
+                <TouchableOpacity onPress={onClose} style={styles.paymentCloseButton}><Icon name="close" size={22} color="#FFFFFF" /></TouchableOpacity>
+              </View>
+              <Text style={styles.paymentSheetEyebrow}>M-Pesa payment</Text>
+              <Text style={styles.paymentSheetTitle}>{sheet.title}</Text>
+              <Text style={styles.paymentSheetSubtitle}>{sheet.subtitle}</Text>
+              <View style={styles.paymentAmountCard}><Text style={styles.paymentAmountLabel}>Amount</Text><Text style={styles.paymentAmountValue}>KES {sheet.amountKes.toLocaleString()}</Text></View>
+              <View style={styles.paymentStatusRow}><ActivityIndicator color="#00E676" /><Text style={styles.paymentStatusText}>Waiting for provider confirmation</Text></View>
+              <Text style={styles.paymentInstructionText}>{sheet.instructions}</Text>
+              <Text style={styles.paymentReferenceText}>Payment ID: {sheet.paymentId}</Text>
+              <View style={styles.paymentInfoBox}><Icon name="information-circle" size={18} color="#FFD700" /><Text style={styles.paymentInfoText}>Check your phone for the M-Pesa PIN prompt. If it does not arrive, confirm the phone number and backend STK logs.</Text></View>
+              <View style={styles.paymentActionsRow}>
+                <TouchableOpacity onPress={onRefresh} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Refresh status</Text></TouchableOpacity>
+                <TouchableOpacity onPress={onClose} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Done</Text></TouchableOpacity>
+              </View>
+            </>
           ) : (
-            <TouchableOpacity disabled={!sheet.checkoutUrl} onPress={onOpenCheckout} style={[styles.paymentPrimaryButton, !sheet.checkoutUrl && styles.paymentPrimaryButtonDisabled]}><Text style={styles.paymentPrimaryText}>{sheet.checkoutUrl ? 'Open card checkout' : 'Checkout link not ready'}</Text></TouchableOpacity>
+            <View style={styles.paymentCardOnly}>
+              <TouchableOpacity disabled={!sheet.checkoutUrl} onPress={onOpenCheckout} style={[styles.paymentCardOnlyButton, !sheet.checkoutUrl && styles.paymentPrimaryButtonDisabled]}>
+                <Icon name="card" size={20} color="#120914" />
+                <Text style={styles.paymentPrimaryTextDark}>{sheet.checkoutUrl ? 'Pay with Card' : 'Checkout link not ready'}</Text>
+              </TouchableOpacity>
+            </View>
           )}
-          <View style={styles.paymentActionsRow}>
-            <TouchableOpacity onPress={onRefresh} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Refresh status</Text></TouchableOpacity>
-            <TouchableOpacity onPress={onClose} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Done</Text></TouchableOpacity>
-          </View>
+        </AnimatedSalesPanel>
+      </View>
         </AnimatedSalesPanel>
       </View>
     </Modal>
@@ -2850,11 +2859,12 @@ const styles = StyleSheet.create({
   superTitleScript: { fontStyle: 'italic' },
   superCopy: { color: '#BFD3F8', fontSize: 20, lineHeight: 28, fontWeight: '800', textAlign: 'center', marginBottom: 24 },
   superOfferStack: { gap: 12 },
-  superOffer: { minHeight: 112, borderRadius: 22, padding: 18, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  superOffer: { minHeight: 122, borderRadius: 22, padding: 18, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   superOfferActive: { backgroundColor: '#9BC6FF', borderColor: '#9BC6FF' },
-  superOfferBadge: { color: '#FFFFFF', fontWeight: '900', fontSize: 13, marginBottom: 12 },
-  superOfferCount: { color: '#FFFFFF', fontSize: 25, fontWeight: '900' },
-  superOfferPrice: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
+  superOfferCopy: { gap: 8 },
+  superOfferBadge: { color: '#FFFFFF', fontWeight: '900', fontSize: 13 },
+  superOfferCount: { color: '#FFFFFF', fontSize: 25, fontWeight: '900', lineHeight: 30 },
+  superOfferPrice: { color: '#FFFFFF', fontSize: 16, fontWeight: '900', lineHeight: 22, opacity: 0.94 },
   orText: { color: '#FFFFFF', fontSize: 28, fontStyle: 'italic', fontWeight: '900', textAlign: 'center', marginVertical: 18 },
   goldInlineCard: { minHeight: 92, borderRadius: 20, padding: 16, backgroundColor: '#0D111A', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   goldInlineTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
@@ -2870,12 +2880,12 @@ const styles = StyleSheet.create({
   goldHeroText: { color: '#FFFFFF', fontSize: 29, lineHeight: 36, fontWeight: '900', marginBottom: 22 },
   goldPlanLabel: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', marginBottom: 14 },
   goldPlanScroller: { gap: 14, paddingRight: 20, paddingBottom: 18 },
-  goldPlanOption: { width: 218, minHeight: 146, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', padding: 16, justifyContent: 'space-between', backgroundColor: '#111111' },
+  goldPlanOption: { width: 228, minHeight: 152, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', padding: 18, justifyContent: 'space-between', backgroundColor: '#111111' },
   goldPlanOptionActive: { borderColor: '#FFD700', borderWidth: 2 },
   goldOptionTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   goldOptionBadge: { color: '#FFD700', fontWeight: '900', fontSize: 16 },
-  goldOptionLabel: { color: '#FFFFFF', fontSize: 28, fontWeight: '900' },
-  goldOptionPrice: { color: '#FFFFFF', fontSize: 17, fontWeight: '900' },
+  goldOptionLabel: { color: '#FFFFFF', fontSize: 28, fontWeight: '900', lineHeight: 32 },
+  goldOptionPrice: { color: '#FFFFFF', fontSize: 17, fontWeight: '900', marginTop: 6 },
   goldIncludedCard: { borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', padding: 18, marginTop: 10 },
   goldIncludedPill: { alignSelf: 'center', color: 'rgba(255,255,255,0.62)', backgroundColor: '#111111', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 5, marginTop: -34, marginBottom: 14, fontWeight: '800' },
   goldBenefitRow: { flexDirection: 'row', alignItems: 'center', gap: 18, paddingVertical: 10 },
