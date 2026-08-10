@@ -92,6 +92,18 @@ export const romchatAccountApi = {
       body: JSON.stringify({ idToken }),
     }),
   me: (token: string) => apiFetch<Omit<RomChatSessionPayload, 'token'>>('/api/romchat/auth/me', { token }),
+  deleteAccount: (token: string, payload?: { reason?: string; confirmation?: string }) =>
+    apiFetch<{ message: string }>('/api/romchat/auth/account', {
+      method: 'DELETE',
+      token,
+      body: JSON.stringify(payload || {}),
+    }),
+  requestAccountDeletion: (token: string, payload?: { reason?: string }) =>
+    apiFetch<{ message: string; request: { id: string; status: string; requestedAt: string } }>('/api/romchat/auth/account/deletion-request', {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload || {}),
+    }),
   saveProfile: (token: string, payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[]; promptAnswers?: Array<{ prompt: string; answer: string }>; latitude?: number | null; longitude?: number | null; maxDistanceKm?: number; minAge?: number; maxAge?: number; mapDiscoveryEnabled?: boolean }) =>
     apiFetch<{ profile: RomChatMemberProfile }>('/api/romchat/profile', {
       method: 'PATCH',
@@ -116,3 +128,4 @@ export const romchatAccountApi = {
       body: JSON.stringify(payload),
     }),
 };
+

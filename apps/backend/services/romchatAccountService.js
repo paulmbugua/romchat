@@ -90,6 +90,19 @@ CREATE TABLE IF NOT EXISTS romchat_profile_media (
 
 CREATE INDEX IF NOT EXISTS idx_romchat_profile_media_member_position ON romchat_profile_media(member_id, position, created_at);
 
+CREATE TABLE IF NOT EXISTS romchat_data_deletion_requests (
+  id TEXT PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'queued',
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  processed_at TIMESTAMPTZ,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_romchat_data_deletion_requests_member_created ON romchat_data_deletion_requests(member_id, requested_at DESC);
+
 ALTER TABLE romchat_member_profiles
   ADD COLUMN IF NOT EXISTS prompt_answers JSONB NOT NULL DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS voice_intro_url TEXT,

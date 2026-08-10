@@ -25,6 +25,7 @@ import {
   updatePrivacy,
 } from '../services/romchatRepository.js';
 import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
+import pool, { queryWithRetry } from '../config/db.js';
 import { getAuthState, loginWithGoogleToken, loginWithPassword, requestPasswordReset, requestSignupOtp, requireRomchatAccount, resetPasswordWithCode, setMainProfilePhoto, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
 
 function sendError(res, error) {
@@ -37,6 +38,47 @@ function sendError(res, error) {
 }
 
 export function createRomchatController(io) {
+  async function purgeRomchatAccount(memberId, email) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const matchSubquery = 'SELECT id FROM romchat_matches WHERE actor_id = $1 OR profile_id = $1';
+      const deletions = [
+        ['DELETE FROM romchat_messages WHERE sender_id = $1 OR match_id IN (' + matchSubquery + ')', [memberId]],
+        ['DELETE FROM romchat_notifications WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_token_unlocks WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_payment_intents WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_wallet_ledger WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_subscriptions WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_boosts WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_gifts WHERE sender_id = $1 OR match_id IN (' + matchSubquery + ')', [memberId]],
+        ['DELETE FROM romchat_reports WHERE reporter_id = $1 OR profile_id = $1', [memberId]],
+        ['DELETE FROM romchat_verification_requests WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_video_requests WHERE sender_profile_id = $1 OR match_id IN (' + matchSubquery + ')', [memberId]],
+        ['DELETE FROM romchat_privacy_settings WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_swipes WHERE actor_id = $1 OR profile_id = $1', [memberId]],
+        ['DELETE FROM romchat_matches WHERE actor_id = $1 OR profile_id = $1', [memberId]],
+        ['DELETE FROM romchat_profile_media WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_member_profiles WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_profiles WHERE id = $1', [memberId]],
+        ['DELETE FROM romchat_email_otps WHERE email = $1', [email]],
+        ['DELETE FROM romchat_password_resets WHERE email = $1', [email]],
+        ['DELETE FROM romchat_accounts WHERE id = $1 OR email = $2', [memberId, email]],
+      ];
+
+      for (const [sql, params] of deletions) {
+        await client.query(sql, params);
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async function authStateFor(req) {
     try {
       return await getAuthState(req);
@@ -100,6 +142,36 @@ export function createRomchatController(io) {
     async authMe(req, res) {
       try {
         res.json(await getAuthState(req));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async deleteAccount(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        const email = String(user.email || '').trim();
+        console.info('[romchat-account] delete:start', { memberId: user.id, email: email ? email.replace(/(.{2}).+(@.+)/, '$1***$2') : null });
+        await purgeRomchatAccount(user.id, email);
+        res.json({ message: 'RomChat account deleted successfully.' });
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async requestAccountDeletion(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        const email = String(user.email || '').trim();
+        const reason = String(req.body?.reason || '').trim();
+        const requestId = 'del_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        console.info('[romchat-account] deletion-request:start', { memberId: user.id, email: email ? email.replace(/(.{2}).+(@.+)/, '$1***$2') : null, requestId });
+        const metadata = { source: 'web-profile', userAgent: req.get('user-agent') || null, ip: req.ip || null };
+        const result = await queryWithRetry(
+          `INSERT INTO romchat_data_deletion_requests (id, member_id, email, reason, status, metadata)
+           VALUES ($1, $2, $3, $4, 'queued', $5::jsonb)
+           RETURNING id, status, requested_at AS "requestedAt"`,
+          [requestId, user.id, email, reason, JSON.stringify(metadata)]
+        );
+        res.status(201).json({ message: 'Your deletion request has been queued.', request: result.rows[0] });
       } catch (error) {
         sendError(res, error);
       }

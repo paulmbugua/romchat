@@ -5,6 +5,7 @@ import {
   ImageBackground,
   Alert,
   Animated,
+  BackHandler,
   Modal,
   KeyboardAvoidingView,
   PanResponder,
@@ -235,6 +236,7 @@ export default function App() {
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
   const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigationHistoryRef = useRef<Section[]>([]);
   const swipePosition = useRef(new Animated.ValueXY()).current;
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -317,9 +319,83 @@ export default function App() {
     await persistSession(next);
   }
 
+  function goToSection(next: Section | null) {
+    setActiveSection((current) => {
+      if (current === next) return current;
+      if (next === null) {
+        navigationHistoryRef.current = [];
+        return null;
+      }
+      if (current) {
+        navigationHistoryRef.current = [...navigationHistoryRef.current, current];
+      }
+      return next;
+    });
+  }
+
+  function goBackSection() {
+    setActiveSection(() => {
+      const history = navigationHistoryRef.current.slice();
+      const previous = history.pop() || null;
+      navigationHistoryRef.current = history;
+      return previous;
+    });
+  }
+
   async function signOut() {
+    clearMatchTimer();
+    setShowMatch(false);
+    setPaymentSheet(null);
+    navigationHistoryRef.current = [];
     await persistSession(null);
-    setActiveSection(null);
+    goToSection(null);
+  }
+
+  async function requestDataDeletion() {
+    if (!session?.token) return;
+    try {
+      setAuthBusy(true);
+      setAuthError('');
+      console.info('[romchat-account] deletion-request:start', { memberId: session.user.id, email: session.user.email });
+      const response = await romchatAccountApi.requestAccountDeletion(session.token, { reason: 'Requested from RomChat profile screen.' });
+      Alert.alert('Deletion request sent', response.message || 'Your data deletion request has been recorded.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to submit deletion request.';
+      setAuthError(message);
+      Alert.alert('Deletion request failed', message);
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function confirmDeleteAccount() {
+    if (!session?.token) return;
+    try {
+      setAuthBusy(true);
+      setAuthError('');
+      console.info('[romchat-account] delete:start', { memberId: session.user.id, email: session.user.email });
+      await romchatAccountApi.deleteAccount(session.token, { reason: 'Deleted from RomChat profile screen.' });
+      await signOut();
+      Alert.alert('Account deleted', 'Your RomChat account has been removed from the device and backend.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to delete account.';
+      setAuthError(message);
+      Alert.alert('Delete failed', message);
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function deleteAccount() {
+    Alert.alert(
+      'Delete your RomChat account?',
+      'This removes your account access and profile data. You can also request a data deletion review instead.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Request deletion', onPress: () => { void requestDataDeletion(); } },
+        { text: 'Delete now', style: 'destructive', onPress: () => { void confirmDeleteAccount(); } },
+      ]
+    );
   }
 
   useEffect(() => {
@@ -376,6 +452,26 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (paymentSheet) {
+        setPaymentSheet(null);
+        return true;
+      }
+      if (showMatch) {
+        setShowMatch(false);
+        return true;
+      }
+      if (activeSection) {
+        goBackSection();
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [activeSection, paymentSheet, showMatch]);
+
   function clearMatchTimer() {
     if (matchTimerRef.current) {
       clearTimeout(matchTimerRef.current);
@@ -386,7 +482,7 @@ export default function App() {
   function openTokenStore() {
     clearMatchTimer();
     setShowMatch(false);
-    setActiveSection('premium');
+    goToSection('premium');
   }
 
   function showPaymentSheet(payment: RomChatPayment, provider: 'mpesa' | 'paystack', title: string, subtitle: string) {
@@ -421,7 +517,7 @@ export default function App() {
   function openPaymentPage(next: PendingPurchase) {
     setPaymentNotice('');
     setPendingPurchase(next);
-    setActiveSection('payment');
+    goToSection('payment');
   }
 
   async function startTokenPurchase(packageId = 'tokens_100', provider: 'mpesa' | 'paystack' = 'mpesa') {
@@ -464,7 +560,7 @@ export default function App() {
     setShowMatch(true);
     matchTimerRef.current = setTimeout(() => {
       setShowMatch(false);
-      setActiveSection('chat');
+      goToSection('chat');
     }, MATCH_POP_DURATION_MS);
   }
 
@@ -543,7 +639,7 @@ export default function App() {
     const result = await romchat.swipe(profileId, 'like', { forceMatch: true });
     setPendingChatProfileId(profileId);
     await romchat.refresh();
-    setActiveSection('chat');
+    goToSection('chat');
     if (!result?.matched) console.warn('[romchat-likes] accepted like did not return matched result', { profileId, result });
   }
 
@@ -820,16 +916,16 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
   function openSwipeDeck() {
-    setActiveSection(null);
+    goToSection(null);
     if (appReady) void romchat.refresh();
   }
 
   function renderSection(section: Section) {
     if (section === 'explore') {
-      return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
+      return <ExploreScreen openLikes={() => goToSection('likes')} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
+      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openSuperLikes={() => goToSection('superlikes')} openChat={() => goToSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} />;
     }
     if (section === 'chat') {
       return (
@@ -848,7 +944,7 @@ export default function App() {
       return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} openPaymentPage={openPaymentPage} />;
     }
     if (section === 'superlikes') {
-      return <SuperLikesScreen paymentNotice={paymentNotice} openGoldPlans={() => setActiveSection('goldPlans')} openPaymentPage={openPaymentPage} />;
+      return <SuperLikesScreen paymentNotice={paymentNotice} openGoldPlans={() => goToSection('goldPlans')} openPaymentPage={openPaymentPage} />;
     }
     if (section === 'goldPlans') {
       return <GoldPlansScreen paymentNotice={paymentNotice} openPaymentPage={openPaymentPage} />;
@@ -860,7 +956,7 @@ export default function App() {
           mpesaPhone={mpesaPhone}
           setMpesaPhone={setMpesaPhone}
           paymentNotice={paymentNotice}
-          onBack={() => setActiveSection('premium')}
+          onBack={goBackSection}
           onMpesa={() => {
             if (!pendingPurchase) return;
             if (pendingPurchase.kind === 'plan') void startPlanPurchase(pendingPurchase.planId, 'mpesa');
@@ -895,7 +991,7 @@ export default function App() {
         />
       );
     }
-    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} openPolicy={(section) => setActiveSection(section)} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} onDeleteAccount={deleteAccount} onRequestDataDeletion={requestDataDeletion} openPolicy={(section) => goToSection(section)} />;
   }
 
   if (!authBooted) {
@@ -914,7 +1010,7 @@ export default function App() {
     return (
       <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.safe}>
         <StatusBar barStyle="light-content" backgroundColor="#120914" />
-        <ScreenHeader title={screenTitles[activeSection]} onBack={() => setActiveSection(null)} apiOnline={romchat.apiOnline} />
+        <ScreenHeader title={screenTitles[activeSection]} onBack={goBackSection} apiOnline={romchat.apiOnline} />
         <ScrollView
           contentContainerStyle={[styles.screenContent, { paddingBottom: bottomContentPadding }]}
           contentInsetAdjustmentBehavior="automatic"
@@ -944,18 +1040,18 @@ export default function App() {
         overScrollMode="never"
       >
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => setActiveSection('profile')} style={styles.brandRow}>
+          <TouchableOpacity onPress={() => goToSection('profile')} style={styles.brandRow}>
             <Image source={firstUploadedImageUrl ? { uri: firstUploadedImageUrl } : require('../assets/icon.png')} style={styles.logo} />
             <View><Text style={styles.brand}>RomChat</Text><Text style={styles.brandTagline}>Kenya dating</Text></View>
           </TouchableOpacity>
           <View style={styles.topControls}>
-            <TouchableOpacity onPress={() => setActiveSection('chat')} style={styles.iconButton} accessibilityLabel="Open inbox">
+            <TouchableOpacity onPress={() => goToSection('chat')} style={styles.iconButton} accessibilityLabel="Open inbox">
               <Icon name="chatbubbles" size={20} color="#FFFFFF" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setActiveSection('safety')} style={styles.iconButton} accessibilityLabel="Open safety center">
+            <TouchableOpacity onPress={() => goToSection('safety')} style={styles.iconButton} accessibilityLabel="Open safety center">
               <Icon name="shield-checkmark" size={20} color="#FFFFFF" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setActiveSection('premium')} style={styles.walletPill}>
+            <TouchableOpacity onPress={() => goToSection('premium')} style={styles.walletPill}>
               <Icon name="diamond" size={15} color="#FFD700" />
               <Text style={styles.walletText}>{tokens}</Text>
             </TouchableOpacity>
@@ -977,14 +1073,14 @@ export default function App() {
               openChat={() => {
                 clearMatchTimer();
                 setShowMatch(false);
-                setActiveSection('chat');
+                goToSection('chat');
               }}
               profiles={profiles}
               cardHeight={swipeCardHeight}
             />
           </>
         ) : (
-          <EmptyDiscovery openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
+          <EmptyDiscovery openProfile={() => goToSection('profile')} status={romchat.lastAction} />
         )}
       </ScrollView>
       <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
@@ -1402,7 +1498,7 @@ function ShortcutRail({ setActiveSection }: { setActiveSection: (section: Sectio
   return (
     <View style={styles.shortcutRail}>
       {shortcuts.map((item) => (
-        <TouchableOpacity key={item.id} onPress={() => setActiveSection(item.id)} style={styles.shortcut}>
+        <TouchableOpacity key={item.id} onPress={() => goToSection(item.id)} style={styles.shortcut}>
           <Text style={styles.shortcutLabel}>{item.label}</Text>
           <Text style={styles.shortcutTitle}>{item.title}</Text>
         </TouchableOpacity>
@@ -1426,7 +1522,7 @@ function FooterNav({ active, setActiveSection, openSwipeDeck, bottomInset, chatB
       {items.map((item) => {
         const selected = active === item.key;
         return (
-          <TouchableOpacity key={item.key} onPress={() => item.key === 'swipe' ? openSwipeDeck() : setActiveSection(item.target)} style={styles.footerItem} accessibilityLabel={item.label}>
+          <TouchableOpacity key={item.key} onPress={() => item.key === 'swipe' ? openSwipeDeck() : goToSection(item.target)} style={styles.footerItem} accessibilityLabel={item.label}>
             <View>
               <Icon name={item.icon} size={21} color={selected ? '#FFFFFF' : 'rgba(255,255,255,0.62)'} />
               {!!item.badge && <Text style={styles.footerBadge}>{item.badge}</Text>}
@@ -2218,7 +2314,7 @@ function resolveMediaUrl(url?: string) {
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community') => void }) {
+function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, onDeleteAccount, onRequestDataDeletion, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; onDeleteAccount: () => Promise<void>; onRequestDataDeletion: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community') => void }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
@@ -2336,6 +2432,14 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
         ))}
         <View style={styles.profileActionGrid}><TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} style={styles.profileAction}><Icon name="images" size={18} color="#FFD700" /><Text style={styles.profileActionText}>Add photo</Text></TouchableOpacity><TouchableOpacity disabled={busy || !imageCount} onPress={() => void onVerifySelfie()} style={[styles.profileAction, !imageCount && styles.profileActionDisabled]}><Icon name="shield-checkmark" size={18} color="#FFD700" /><Text style={styles.profileActionText}>{profile?.selfieVerified ? 'Verified' : 'Verify selfie'}</Text></TouchableOpacity></View>{!!error && <Text style={styles.authError}>{error}</Text>}
         <TouchableOpacity onPress={() => void onSignOut()} style={styles.textButton}><Text style={styles.textButtonLabel}>Sign out</Text></TouchableOpacity>
+      </View>
+      <View style={styles.dangerPanel}>
+        <Text style={styles.sectionLabel}>Account deletion</Text>
+        <Text style={styles.caption}>Request a data deletion review or remove your RomChat account immediately.</Text>
+        <View style={styles.dangerActionRow}>
+          <TouchableOpacity disabled={busy} onPress={() => void onRequestDataDeletion()} style={styles.dangerSoftButton}><Text style={styles.dangerSoftButtonText}>Request data deletion</Text></TouchableOpacity>
+          <TouchableOpacity disabled={busy} onPress={() => void onDeleteAccount()} style={styles.dangerButton}><Text style={styles.dangerButtonText}>Delete account</Text></TouchableOpacity>
+        </View>
       </View>
       <View style={styles.legalPanel}>
         <Text style={styles.sectionLabel}>Legal and privacy</Text>
@@ -2801,6 +2905,12 @@ const styles = StyleSheet.create({
   textButton: { alignItems: 'center', paddingVertical: 12 },
   textButtonLabel: { color: '#FFD700', fontWeight: '900' },
   legalPanel: { backgroundColor: '#1E1222', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,215,0,0.18)', padding: 16, marginBottom: 14 },
+  dangerPanel: { backgroundColor: '#1E1222', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,111,97,0.28)', padding: 16, marginBottom: 14 },
+  dangerActionRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  dangerSoftButton: { flex: 1, minHeight: 50, borderRadius: 16, backgroundColor: 'rgba(255,111,97,0.1)', borderWidth: 1, borderColor: 'rgba(255,111,97,0.28)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  dangerSoftButtonText: { color: '#FFD7D2', fontWeight: '900', textAlign: 'center' },
+  dangerButton: { flex: 1, minHeight: 50, borderRadius: 16, backgroundColor: '#FF6F61', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  dangerButtonText: { color: '#120914', fontWeight: '900', textAlign: 'center' },
   legalLink: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   legalTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginBottom: 4 },
   policyScreen: { gap: 12 },
@@ -2856,5 +2966,13 @@ const styles = StyleSheet.create({
   promptEditorLabel: { color: '#FFD700', fontWeight: '900', marginBottom: 7 },
   promptEditorInput: { minHeight: 46, color: '#FFFFFF', fontWeight: '800', lineHeight: 20, textAlignVertical: 'top' },
 });
+
+
+
+
+
+
+
+
 
 

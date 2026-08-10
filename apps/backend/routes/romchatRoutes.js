@@ -13,6 +13,8 @@ export default function romchatRoutes(io) {
   router.post('/auth/reset-password', controller.authResetPassword);
   router.post('/auth/google', controller.authGoogle);
   router.get('/auth/me', controller.authMe);
+  router.delete('/auth/account', controller.deleteAccount);
+  router.post('/auth/account/deletion-request', controller.requestAccountDeletion);
   router.patch('/profile', controller.saveProfile);
   router.post('/profile/media', controller.uploadProfileMedia);
   router.patch('/profile/media/:mediaId/main', controller.setMainProfilePhoto);

@@ -3,10 +3,10 @@ import { LegalPage } from '../../components/LegalPage';
 import { buildBreadcrumbSchema, buildPageMetadata } from '../../lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
-  title: 'Delete Account | Grogon SACCO',
-  description: 'Delete Grogon SACCO web and mobile app access directly from the member portal, with SACCO records retained where legally required.',
+  title: 'Delete Account | RomChat',
+  description: 'Delete your RomChat access, request deletion review, and understand what data may be retained for safety, legal, or fraud-prevention reasons.',
   path: '/delete-account',
-  keywords: ['delete Grogon SACCO account', 'SACCO account deletion', 'Grogon SACCO data request'],
+  keywords: ['delete RomChat account', 'RomChat data deletion', 'RomChat privacy'],
 });
 
 const breadcrumbSchema = buildBreadcrumbSchema([
@@ -16,52 +16,38 @@ const breadcrumbSchema = buildBreadcrumbSchema([
 
 const sections = [
   {
-    title: '1. What direct deletion does',
+    title: '1. What deleting your account means',
     body:
-      'A logged-in member can delete digital account access directly from the member portal. This revokes web and mobile app login sessions and removes the member portal password.',
+      'Deleting your RomChat account removes your active access to the web and mobile app, revokes sessions, and clears your profile from the live experience.',
   },
   {
-    title: '2. Before you delete digital access',
+    title: '2. Request a deletion review first',
     items: [
-      'Make sure you have downloaded or requested any savings, loan or dividend statements you need for your records.',
-      'Clear any pending loan, guarantor, dividend, complaint, repayment, dispute or account reconciliation issue where applicable.',
-      'Understand that SACCO financial records may need to be retained for audit, legal, regulatory, fraud-prevention and accounting reasons.',
+      'If you want a review instead of immediate removal, use the data deletion request button from your profile screen.',
+      'A request lets the team confirm identity, resolve active safety or payment issues, and process the deletion correctly.',
+      'You can still delete immediately from the profile screen after you confirm the warning dialog.',
     ],
   },
   {
-    title: '3. How to delete your account directly',
+    title: '3. What is removed',
     items: [
-      'Log in to the member portal with your member number, registered phone and password.',
-      'Open the Account tab and choose Delete digital account.',
-      'Enter your current password and type DELETE MY ACCOUNT to confirm.',
-      'The system immediately revokes your sessions and disables future web or mobile app login.',
+      'Your login session is revoked.',
+      'Your active profile, media links, swipes, matches, messages, notifications, subscriptions, boosts, gifts, payments, wallet history, and verification records are removed from the live user experience where possible.',
+      'Any linked password-reset or email-otp records tied to your account are cleared.',
     ],
   },
   {
-    title: '4. What is deleted or deactivated',
+    title: '4. What may be retained',
     items: [
-      'Mobile app and web portal sessions are revoked.',
-      'The member portal password is removed so the deleted digital account cannot be used for future login.',
-      'A closed support record and audit entry are created to show that the member performed the deletion directly.',
+      'Safety, fraud-prevention, abuse-reporting, tax, payment, audit, and legal records may be retained where required.',
+      'A deletion request audit entry may be kept to show that the request was processed.',
+      'Backups can persist for a limited operational period before expiring.',
     ],
   },
   {
-    title: '5. What may be retained',
-    items: [
-      'Membership, KYC, savings, loan, repayment, dividend, guarantor and transaction records may be retained where required for SACCO operations, law, audit, tax, dispute resolution or fraud prevention.',
-      'Support tickets, admin approvals and account activity logs may be retained where needed to protect the SACCO and members.',
-      'Outstanding obligations may prevent full closure until they are resolved.',
-    ],
-  },
-  {
-    title: '6. When support is still needed',
+    title: '5. Need support?',
     body:
-      'If you cannot log in, need full SACCO membership closure, have unresolved loans, guarantor issues, payment disputes or identity verification problems, call the SACCO desk on 0114330356.',
-  },
-  {
-    title: '7. Reopening access',
-    body:
-      'If your SACCO membership remains active, digital access may be restored after identity verification and admin approval. A new password or onboarding step may be required.',
+      'If you cannot sign in or need help with a deletion request, open the RomChat profile screen, submit a request, or contact support through the help page.',
   },
 ];
 
@@ -71,18 +57,20 @@ export default function Page() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
       <LegalPage
         eyebrow="Account deletion"
-        title="Delete your digital account access."
-        intro="Logged-in members can delete web and mobile app access directly from the member portal. SACCO financial, KYC and audit records may still be retained where required."
-        updated="29 June 2026"
+        title="Delete your RomChat account."
+        intro="Control your RomChat presence from the profile screen. You can request a deletion review or remove your live account access immediately."
+        updated="10 August 2026"
         icon="delete"
         sections={sections}
       >
-        <div className="mt-6 rounded-xl border border-[#f5b47d] bg-[#fff4ea] p-6 text-[#351000]">
-          <h2 className="font-mont text-2xl font-black">Need help?</h2>
+        <div className="mt-6 rounded-xl border border-[#ff6f61]/30 bg-[#fff0f0] p-6 text-[#351000]">
+          <h2 className="font-mont text-2xl font-black">Start in your profile</h2>
           <p className="mt-3 leading-7 font-semibold">
-            Members who cannot log in or need full SACCO membership closure should call 0114330356 with their member number and registered phone details ready.
+            Open RomChat profile settings to request deletion or remove the account immediately. That screen includes the live account actions.
           </p>
-          <a href="/login" className="mt-4 inline-flex rounded-lg bg-[#0d1c32] px-5 py-3 font-black text-white">Login to delete directly</a>
+          <a href="/profile" className="mt-4 inline-flex rounded-lg bg-[#120914] px-5 py-3 font-black text-white">
+            Go to profile
+          </a>
         </div>
       </LegalPage>
     </>
