@@ -307,9 +307,7 @@ async function seedProfiles() {
      ON CONFLICT (member_id) DO NOTHING`
   );
   await queryWithRetry(
-    `INSERT INTO romchat_wallet_ledger (id, member_id, title, amount)
-     VALUES ('wl_seed_topup', 'me', 'Starter wallet', 146)
-     ON CONFLICT (id) DO NOTHING`
+    `DELETE FROM romchat_wallet_ledger WHERE id = 'wl_seed_topup' OR (member_id = 'me' AND title = 'Starter wallet')`
   );
 }
 
@@ -416,16 +414,17 @@ export async function getPrivacy() {
   }, () => ({ incognito: true, screenshotsBlocked: true, visibleToLikedOnly: true, disappearingDefaultSeconds: 86400 }));
 }
 
-export async function getWallet() {
+export async function getWallet(memberId = 'me') {
+  const walletMemberId = memberId || 'me';
   return withDb(async () => {
-    const balance = await queryWithRetry('SELECT COALESCE(SUM(amount), 0) AS balance FROM romchat_wallet_ledger WHERE member_id = $1', ['me']);
-    const ledger = await queryWithRetry('SELECT * FROM romchat_wallet_ledger WHERE member_id = $1 ORDER BY created_at DESC LIMIT 20', ['me']);
+    const balance = await queryWithRetry('SELECT COALESCE(SUM(amount), 0) AS balance FROM romchat_wallet_ledger WHERE member_id = $1', [walletMemberId]);
+    const ledger = await queryWithRetry('SELECT * FROM romchat_wallet_ledger WHERE member_id = $1 ORDER BY created_at DESC LIMIT 20', [walletMemberId]);
     return {
       balance: Number(balance.rows[0]?.balance || 0),
       currency: 'KES',
       ledger: ledger.rows.map((row) => ({ id: row.id, title: row.title, amount: Number(row.amount), metadata: row.metadata, createdAt: row.created_at })),
     };
-  }, () => ({ balance: 146, currency: 'KES', ledger: [] }));
+  }, () => ({ balance: 0, currency: 'KES', ledger: [] }));
 }
 
 export async function getLikesSummary(memberId = null) {
@@ -457,7 +456,7 @@ export async function getBootstrap({ catalogueAccess = 1, viewerId = null, verif
     getProfiles({ verifiedOnly, catalogueAccess, viewerId }),
     getMessages('match_elena'),
     getPrivacy(),
-    getWallet(),
+    getWallet(viewerId || 'me'),
     getLikesSummary(viewerId),
     getActiveSubscription(viewerId),
   ]);
@@ -632,21 +631,39 @@ export async function updatePrivacy(payload = {}) {
 }
 
 export async function createReport(payload = {}) {
+  const evidence = payload.evidence || {};
+  const moderation = payload.moderation || {};
+  const reportedMemberId = payload.reportedMemberId || payload.profileId || evidence.senderId || null;
+  const severity = payload.severity || moderation.severity || (moderation.shouldBlock ? 'high' : 'medium');
+  const autoBlocked = Boolean(payload.autoBlock ?? moderation.shouldBlock ?? ['high', 'critical'].includes(severity));
   const report = {
     id: id('rp'),
-    reporterId: 'me',
-    profileId: payload.profileId || null,
+    reporterId: payload.reporterId || 'me',
+    profileId: payload.profileId || reportedMemberId,
+    reportedMemberId,
+    matchId: payload.matchId || evidence.matchId || null,
+    messageId: payload.messageId || evidence.messageId || null,
     type: payload.type || 'Safety report',
-    severity: payload.severity || 'medium',
-    status: 'open',
-    details: payload.details || '',
+    severity,
+    status: autoBlocked ? 'auto_blocked' : 'open',
+    details: payload.details || payload.reporterNote || '',
+    reporterNote: payload.reporterNote || payload.details || '',
+    evidence,
+    moderation,
+    autoBlocked,
     createdAt: now(),
   };
   return withDb(async () => {
     await queryWithRetry(
-      'INSERT INTO romchat_reports (id, reporter_id, profile_id, type, severity, status, details) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [report.id, report.reporterId, report.profileId, report.type, report.severity, report.status, report.details]
+      'INSERT INTO romchat_reports (id, reporter_id, profile_id, type, severity, status, details, match_id, message_id, reported_member_id, reporter_note, evidence, moderation, auto_blocked) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
+      [report.id, report.reporterId, report.profileId, report.type, report.severity, report.status, report.details, report.matchId, report.messageId, report.reportedMemberId, report.reporterNote, report.evidence, report.moderation, report.autoBlocked]
     );
+    if (autoBlocked && reportedMemberId) {
+      await queryWithRetry(
+        "INSERT INTO romchat_blocks (id, blocker_id, blocked_member_id, report_id, reason, status) VALUES ($1,$2,$3,$4,$5,'active') ON CONFLICT (blocker_id, blocked_member_id) DO UPDATE SET report_id = EXCLUDED.report_id, reason = EXCLUDED.reason, status = 'active', resolved_at = NULL",
+        [id('blk'), report.reporterId, reportedMemberId, report.id, report.type]
+      );
+    }
     return report;
   }, () => report);
 }
@@ -672,7 +689,7 @@ export async function activateBoost(payload = {}) {
     );
     await queryWithRetry('INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)', [id('wl'), 'me', 'Profile boost', -Number(boost.priceKes || 0), { boostId: boost.id }]);
     return { boost: activation, catalog: boost, wallet: await getWallet() };
-  }, () => ({ boost: activation, catalog: boost, wallet: { balance: 146, currency: 'KES', ledger: [] } }));
+  }, () => ({ boost: activation, catalog: boost, wallet: { balance: 0, currency: 'KES', ledger: [] } }));
 }
 
 export async function sendGift(payload = {}) {
@@ -692,7 +709,7 @@ export async function sendGift(payload = {}) {
     await queryWithRetry('INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)', [id('wl'), 'me', `Gift: ${gift.name}`, -gift.tokenCost, { giftId: gift.id }]);
     await createNotification({ memberId: match.profile_id, matchId: entry.matchId, type: 'gift', title: `RomChat gift: ${gift.name}`, body: entry.note || 'A match sent you a gift.', metadata: { giftId: gift.id, giftEntryId: entry.id } });
     return { gift: { ...entry, recipientId: match.profile_id, notificationSent: true }, wallet: await getWallet() };
-  }, () => ({ gift: entry, wallet: { balance: Math.max(0, 146 - gift.tokenCost), currency: 'KES', ledger: [] } }));
+  }, () => ({ gift: entry, wallet: { balance: 0, currency: 'KES', ledger: [] } }));
 }
 
 export async function createLockedMediaPreview({ matchId = 'match_elena', senderId = 'elena', text = 'I sent a private voice note preview. Basic text stays free; unlock this optional media when the vibe feels right.', mediaUrl = 'romchat://demo/voice/aisha-saturday-note', mediaType = 'voice', unlockCostTokens = 18 } = {}) {
@@ -786,7 +803,7 @@ export async function unlockPaidMessage(messageId) {
     return { message: { ...fromMessageRow({ ...row, unlocked_by_actor: true }), unlockedByActor: true }, ...spend };
   }, () => {
     const message = fallbackMessages.find((item) => item.id === messageId) || fallbackMessages.find((item) => item.locked);
-    return { message: { ...message, unlockedByActor: true }, spent: Number(message?.unlockCostTokens || 10), wallet: { balance: 128, currency: 'KES', ledger: [] } };
+    return { message: { ...message, unlockedByActor: true }, spent: Number(message?.unlockCostTokens || 10), wallet: { balance: 0, currency: 'KES', ledger: [] } };
   });
 }
 
@@ -988,7 +1005,7 @@ export async function createPaymentIntent({ memberId = 'me', provider, purpose =
   }, () => payment);
 }
 
-export async function topUpWallet({ amount, platform, purchaseToken, transactionId, productId } = {}) {
+export async function topUpWallet({ memberId = 'me', amount, platform, purchaseToken, transactionId, productId } = {}) {
   const value = Number(amount || 0);
   const nativePlatform = String(platform || '').toLowerCase();
   const hasNativeProof = ['google_play', 'app_store'].includes(nativePlatform) && Boolean(purchaseToken || transactionId) && Boolean(productId);
@@ -1009,8 +1026,48 @@ export async function topUpWallet({ amount, platform, purchaseToken, transaction
     const entry = { id: id('wl'), title: 'Native IAP wallet top-up', amount: value, createdAt: now(), platform: nativePlatform, productId };
     await queryWithRetry(
       'INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)',
-      [entry.id, 'me', entry.title, entry.amount, { platform: nativePlatform, productId, purchaseToken: purchaseToken || null, transactionId: transactionId || null }]
+      [entry.id, memberId || 'me', entry.title, entry.amount, { platform: nativePlatform, productId, purchaseToken: purchaseToken || null, transactionId: transactionId || null }]
     );
-    return { wallet: await getWallet(), entry };
-  }, () => ({ wallet: { balance: 146 + value, currency: 'KES', ledger: [] }, entry: { id: id('wl'), title: 'Native IAP wallet top-up', amount: value, createdAt: now(), platform: nativePlatform, productId } }));
+    return { wallet: await getWallet(memberId || 'me'), entry };
+  }, () => ({ wallet: { balance: value, currency: 'KES', ledger: [] }, entry: { id: id('wl'), title: 'Native IAP wallet top-up', amount: value, createdAt: now(), platform: nativePlatform, productId } }));
 }
+
+
+function moderationCaseFromRow(row = {}) {
+  return { id: row.id, reporterId: row.reporter_id, profileId: row.profile_id, reportedMemberId: row.reported_member_id, matchId: row.match_id, messageId: row.message_id, type: row.type, severity: row.severity, status: row.status, details: row.details || '', reporterNote: row.reporter_note || '', evidence: row.evidence || {}, moderation: row.moderation || {}, autoBlocked: Boolean(row.auto_blocked), resolutionNote: row.resolution_note || '', createdAt: row.created_at, resolvedAt: row.resolved_at };
+}
+
+export async function listModerationCases() {
+  return withDb(async () => {
+    const result = await queryWithRetry('SELECT * FROM romchat_reports ORDER BY created_at DESC LIMIT 200');
+    const appeals = await queryWithRetry('SELECT * FROM romchat_moderation_appeals ORDER BY created_at DESC LIMIT 200');
+    return { cases: result.rows.map(moderationCaseFromRow), appeals: appeals.rows.map((row) => ({ id: row.id, reportId: row.report_id, memberId: row.member_id, status: row.status, appealText: row.appeal_text, adminNote: row.admin_note || '', createdAt: row.created_at, resolvedAt: row.resolved_at })) };
+  }, () => ({ cases: [], appeals: [] }));
+}
+
+export async function resolveModerationCase(reportId, { status = 'resolved', adminNote = '' } = {}) {
+  return withDb(async () => {
+    const result = await queryWithRetry('UPDATE romchat_reports SET status = $2, resolution_note = $3, resolved_at = now() WHERE id = $1 RETURNING *', [reportId, status, adminNote]);
+    return moderationCaseFromRow(result.rows[0] || {});
+  }, () => ({ id: reportId, status, resolutionNote: adminNote }));
+}
+
+export async function reinstateModeratedMember(memberId, { reportId = null, adminNote = '' } = {}) {
+  return withDb(async () => {
+    await queryWithRetry("UPDATE romchat_blocks SET status = 'reinstated', resolved_at = now() WHERE blocked_member_id = $1", [memberId]);
+    if (reportId) await queryWithRetry("UPDATE romchat_reports SET status = 'reinstated', resolution_note = $2, resolved_at = now() WHERE id = $1", [reportId, adminNote]);
+    await queryWithRetry("UPDATE romchat_moderation_appeals SET status = 'approved', admin_note = $2, resolved_at = now() WHERE member_id = $1 AND status = 'open'", [memberId, adminNote]);
+    return { memberId, reportId, status: 'reinstated', adminNote };
+  }, () => ({ memberId, reportId, status: 'reinstated', adminNote }));
+}
+
+export async function createModerationAppeal({ memberId, reportId = null, appealText = '' } = {}) {
+  const appeal = { id: id('apl'), memberId: memberId || 'me', reportId, appealText: String(appealText || '').trim(), status: 'open', createdAt: now() };
+  return withDb(async () => {
+    await queryWithRetry('INSERT INTO romchat_moderation_appeals (id, report_id, member_id, appeal_text, status) VALUES ($1,$2,$3,$4,$5)', [appeal.id, appeal.reportId, appeal.memberId, appeal.appealText, appeal.status]);
+    return appeal;
+  }, () => appeal);
+}
+
+
+

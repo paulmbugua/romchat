@@ -240,5 +240,5 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, report, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, report, reportMessage, verify };
 }

@@ -240,6 +240,9 @@ export function createRomchatController(io) {
       try {
         const moderation = moderateTextPayload(req.body?.text || '');
         const mediaModeration = req.body?.mediaUrl ? moderateMediaAsset(req.body || {}) : null;
+        if (moderation.status === 'blocked') {
+          return res.status(422).json({ message: 'This message breaks RomChat community safety rules. Please rewrite it respectfully.', code: 'MESSAGE_BLOCKED_BY_SAFETY', moderation });
+        }
         const riskOverride = moderation.status === 'review' || mediaModeration?.status === 'pending_provider_review' ? 'review' : null;
         const state = await authStateFor(req);
         const message = await sendMessage({ ...(req.body || {}), actorId: state?.user?.id || 'me', priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
@@ -360,12 +363,14 @@ export function createRomchatController(io) {
         sendError(res, error);
       }
     },
-    async wallet(_req, res) {
-      res.json(await getWallet());
+    async wallet(req, res) {
+      const state = await authStateFor(req);
+      res.json(await getWallet(state?.user?.id || 'me'));
     },
     async topUp(req, res) {
       try {
-        res.status(201).json(await topUpWallet(req.body || {}));
+        const state = await authStateFor(req);
+        res.status(201).json(await topUpWallet({ ...(req.body || {}), memberId: state?.user?.id || 'me' }));
       } catch (error) {
         sendError(res, error);
       }
@@ -386,3 +391,5 @@ export function createRomchatController(io) {
     },
   };
 }
+
+

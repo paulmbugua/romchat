@@ -35,6 +35,10 @@ export default function romchatRoutes(io) {
   router.get('/revenue', controller.revenue);
   router.post('/moderation/text', controller.moderateText);
   router.post('/moderation/media', controller.moderateMedia);
+  router.get('/admin/moderation/cases', controller.moderationCases);
+  router.patch('/admin/moderation/cases/:reportId', controller.moderationResolve);
+  router.post('/admin/moderation/reinstate/:memberId', controller.moderationReinstate);
+  router.post('/moderation/appeals', controller.moderationAppeal);
   router.get('/video-requests', controller.videoRequests);
   router.post('/video-requests', controller.createVideoRequest);
   router.post('/messages/:messageId/unlock', controller.unlockMessage);

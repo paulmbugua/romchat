@@ -132,6 +132,22 @@ export const romchatApi = {
       method: 'POST',
       body: JSON.stringify({ profileId, type, severity: 'medium' }),
     }),
+  reportMessage: (payload: { profileId: string; reportedMemberId?: string; matchId?: string; messageId?: string; text?: string; senderId?: string; moderation?: unknown; reporterNote?: string }) =>
+    apiFetch('/api/romchat/reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        profileId: payload.profileId,
+        reportedMemberId: payload.reportedMemberId || payload.profileId,
+        matchId: payload.matchId,
+        messageId: payload.messageId,
+        type: 'Abusive chat message',
+        severity: 'high',
+        autoBlock: true,
+        reporterNote: payload.reporterNote || 'Reported from chat safety controls',
+        moderation: payload.moderation,
+        evidence: { matchId: payload.matchId, messageId: payload.messageId, senderId: payload.senderId, text: payload.text },
+      }),
+    }),
   verify: () =>
     apiFetch('/api/romchat/verification', {
       method: 'POST',
