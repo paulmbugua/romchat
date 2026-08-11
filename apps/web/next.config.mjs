@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare';
 
 const require = createRequire(import.meta.url);
-const DEFAULT_PUBLIC_BACKEND_URL = 'https://server.grogonsacco.co.ke';
+const DEFAULT_PUBLIC_BACKEND_URL = 'https://server.romchat.co.ke';
 const nextPublicBackendUrl =
   process.env.NEXT_PUBLIC_BACKEND_URL?.trim().replace(/\/+$/, '') || DEFAULT_PUBLIC_BACKEND_URL;
 
@@ -29,8 +29,8 @@ const nextConfig = {
     NEXT_PUBLIC_BACKEND_URL: nextPublicBackendUrl,
     NEXT_PUBLIC_API_URL: nextPublicBackendUrl,
     NEXT_PUBLIC_API_BASE_URL: nextPublicBackendUrl,
-    NEXT_PUBLIC_APP_ORIGIN: process.env.NEXT_PUBLIC_APP_ORIGIN || 'https://grogonsacco.co.ke',
-    NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || 'https://grogonsacco.co.ke',
+    NEXT_PUBLIC_APP_ORIGIN: process.env.NEXT_PUBLIC_APP_ORIGIN || 'https://www.romchat.co.ke',
+    NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || 'https://www.romchat.co.ke',
   },
 
   webpack: (config) => {

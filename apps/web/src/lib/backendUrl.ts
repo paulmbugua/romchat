@@ -1,10 +1,10 @@
-const PROD_BACKEND_URL = 'https://server.grogonsacco.co.ke';
+const PROD_BACKEND_URL = 'https://server.romchat.co.ke';
 const DEV_BACKEND_URL = 'http://localhost:4000';
 
 const PRODUCTION_HOST_PATTERNS = [
-  'grogonsacco.co.ke',
-  'www.grogonsacco.co.ke',
-  'admin.grogonsacco.co.ke',
+  'romchat.co.ke',
+  'www.romchat.co.ke',
+  'admin.romchat.co.ke',
 ];
 
 const isDev = process.env.NODE_ENV !== 'production';

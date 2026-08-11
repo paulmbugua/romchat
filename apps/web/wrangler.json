@@ -1,6 +1,6 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "grogonsacco",
+  "name": "romchat-web",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-06-29",
   "compatibility_flags": [
@@ -13,19 +13,19 @@
   },
   "vars": {
     "NEXTJS_ENV": "production",
-    "NEXT_PUBLIC_SITE_URL": "https://grogonsacco.co.ke",
-    "NEXT_PUBLIC_APP_ORIGIN": "https://grogonsacco.co.ke",
-    "NEXT_PUBLIC_BACKEND_URL": "https://server.grogonsacco.co.ke",
-    "NEXT_PUBLIC_API_URL": "https://server.grogonsacco.co.ke",
-    "NEXT_PUBLIC_API_BASE_URL": "https://server.grogonsacco.co.ke"
+    "NEXT_PUBLIC_SITE_URL": "https://www.romchat.co.ke",
+    "NEXT_PUBLIC_APP_ORIGIN": "https://www.romchat.co.ke",
+    "NEXT_PUBLIC_BACKEND_URL": "https://server.romchat.co.ke",
+    "NEXT_PUBLIC_API_URL": "https://server.romchat.co.ke",
+    "NEXT_PUBLIC_API_BASE_URL": "https://server.romchat.co.ke"
   },
   "routes": [
     {
-      "pattern": "grogonsacco.co.ke",
+      "pattern": "romchat.co.ke",
       "custom_domain": true
     },
     {
-      "pattern": "www.grogonsacco.co.ke",
+      "pattern": "www.romchat.co.ke",
       "custom_domain": true
     }
   ]
