@@ -7,6 +7,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import crypto from 'crypto';
 import romchatRoutes from './routes/romchatRoutes.js';
+import authRoutes from './routes/authRoutes.js';
 import { localMediaRoot } from './services/romchatMediaStorage.js';
 
 const app = express();
@@ -32,6 +33,7 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '24mb' }));
 app.use('/api/romchat/media-local', express.static(localMediaRoot, { fallthrough: false, maxAge: '1h' }));
+app.use('/api/auth', authRoutes);
 app.use('/api/romchat', romchatRoutes(io));
 
 const now = () => new Date().toISOString();

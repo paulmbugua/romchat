@@ -5,12 +5,12 @@ import { ArrowLeft, ShieldCheck } from 'lucide-react';
 
 const sections = [
   {
-    "title": "Safety complaints",
-    "body": "Use in-app report/block actions for abusive or suspicious users so our admin team can inspect evidence and act quickly."
+    "title": "Consumable tokens",
+    "body": "Consumed tokens, Super Likes, boosts, and delivered digital benefits are generally not refundable unless required by law or caused by a verified platform error."
   },
   {
-    "title": "Product feedback",
-    "body": "Send clear details including account email, device/browser, screenshots when safe, and the affected feature."
+    "title": "Subscriptions",
+    "body": "Subscription cancellation stops future renewal. Access may continue until the end of the paid period depending on the payment provider."
   }
 ];
 
@@ -25,8 +25,8 @@ export default function Page() {
           <div className="inline-flex items-center gap-2 rounded-full bg-[#ff1493] px-3 py-2 text-xs font-black uppercase">
             <ShieldCheck size={15} /> RomChat policy
           </div>
-          <h1 className="mt-5 text-4xl font-black sm:text-6xl">Complaints & Feedback</h1>
-          <p className="mt-4 max-w-3xl leading-8 text-white/70">How users can report product issues, safety concerns, payment problems, and policy complaints.</p>
+          <h1 className="mt-5 text-4xl font-black sm:text-6xl">Refund & Cancellation Policy</h1>
+          <p className="mt-4 max-w-3xl leading-8 text-white/70">Refund and cancellation expectations for RomChat tokens, subscriptions, boosts, and premium features.</p>
         </section>
         <div className="mt-5 grid gap-4">
           {sections.map((section) => (

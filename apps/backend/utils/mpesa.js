@@ -22,6 +22,25 @@ const initiatorName     = process.env.MPESA_INITIATOR_NAME;
 const initiatorPassword = process.env.MPESA_INITIATOR_PASSWORD;
 const certPath          = process.env.MPESA_CERTIFICATE_PATH;
 
+const bundledCertificatePath = path.resolve(process.cwd(), 'certs', 'ProductionCertificate.cer');
+
+function resolveCertificatePath(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return fs.existsSync(bundledCertificatePath) ? bundledCertificatePath : '';
+
+  const candidates = [
+    raw,
+    path.resolve(raw),
+    path.resolve(process.cwd(), raw),
+    path.resolve(process.cwd(), 'certs', path.basename(raw.replace(/\\/g, '/'))),
+    bundledCertificatePath,
+  ];
+
+  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) || raw;
+}
+
+const resolvedCertPath = resolveCertificatePath(certPath);
+
 // New: environment-aware base (sandbox vs live)
 const MPESA_ENV  = (process.env.MPESA_ENV || 'live').trim().toLowerCase();
 const MPESA_BASE = MPESA_ENV === 'sandbox'
@@ -55,7 +74,7 @@ const MindCare_CALLBACK_URL =
   ['RESULT_URL', resultURL],
   ['MPESA_INITIATOR_NAME', initiatorName],
   ['MPESA_INITIATOR_PASSWORD', initiatorPassword],
-  ['MPESA_CERTIFICATE_PATH', certPath],
+  ['MPESA_CERTIFICATE_PATH', resolvedCertPath],
   ['MPESA_ENV', MPESA_ENV],
 ].forEach(([name, val]) => {
   if (!val) console.warn(`⚠️ ${name} is missing`);
@@ -99,9 +118,9 @@ const password  = mpesaPassword(timestamp);
  * SecurityCredential (encrypt initiatorPassword using Safaricom public cert)
  * ───────────────────────────────────────────────────────── */
 let securityCredential = null;
-if (initiatorPassword && certPath) {
+if (initiatorPassword && resolvedCertPath) {
   try {
-    const pubKey = fs.readFileSync(path.resolve(certPath), 'utf8');
+    const pubKey = fs.readFileSync(resolvedCertPath, 'utf8');
     const encrypted = crypto.publicEncrypt(
       { key: pubKey, padding: crypto.constants.RSA_PKCS1_PADDING },
       Buffer.from(initiatorPassword, 'utf8')

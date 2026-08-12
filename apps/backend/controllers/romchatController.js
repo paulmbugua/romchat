@@ -22,6 +22,10 @@ import {
   unlockVideoRequest,
   topUpWallet,
   createPaymentIntent,
+  createModerationAppeal,
+  listModerationCases,
+  reinstateModeratedMember,
+  resolveModerationCase,
   updatePrivacy,
 } from '../services/romchatRepository.js';
 import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
@@ -302,6 +306,34 @@ export function createRomchatController(io) {
     },
     async moderateMedia(req, res) {
       res.json({ moderation: moderateMediaAsset(req.body || {}) });
+    },
+    async moderationCases(_req, res) {
+      try {
+        res.json(await listModerationCases());
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async moderationResolve(req, res) {
+      try {
+        res.json({ case: await resolveModerationCase(req.params.reportId, req.body || {}) });
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async moderationReinstate(req, res) {
+      try {
+        res.json(await reinstateModeratedMember(req.params.memberId, req.body || {}));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async moderationAppeal(req, res) {
+      try {
+        res.status(201).json({ appeal: await createModerationAppeal(req.body || {}) });
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async videoRequests(req, res) {
       res.json({ videoRequests: await getVideoRequests(req.query.matchId || 'match_elena') });

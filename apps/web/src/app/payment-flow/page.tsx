@@ -5,12 +5,16 @@ import { ArrowLeft, ShieldCheck } from 'lucide-react';
 
 const sections = [
   {
-    "title": "Safety complaints",
-    "body": "Use in-app report/block actions for abusive or suspicious users so our admin team can inspect evidence and act quickly."
+    "title": "M-Pesa",
+    "body": "Choose M-Pesa, enter your phone number, confirm the STK push on your device, and wait for provider confirmation."
   },
   {
-    "title": "Product feedback",
-    "body": "Send clear details including account email, device/browser, screenshots when safe, and the affected feature."
+    "title": "Card payments",
+    "body": "Choose card checkout to open the secure provider page. RomChat does not store raw card details."
+  },
+  {
+    "title": "After payment",
+    "body": "Successful payment updates your token balance, Super Likes, or subscription entitlement on your RomChat account."
   }
 ];
 
@@ -25,8 +29,8 @@ export default function Page() {
           <div className="inline-flex items-center gap-2 rounded-full bg-[#ff1493] px-3 py-2 text-xs font-black uppercase">
             <ShieldCheck size={15} /> RomChat policy
           </div>
-          <h1 className="mt-5 text-4xl font-black sm:text-6xl">Complaints & Feedback</h1>
-          <p className="mt-4 max-w-3xl leading-8 text-white/70">How users can report product issues, safety concerns, payment problems, and policy complaints.</p>
+          <h1 className="mt-5 text-4xl font-black sm:text-6xl">How Payments Work</h1>
+          <p className="mt-4 max-w-3xl leading-8 text-white/70">A clear explanation of RomChat payment modes, token delivery, and provider redirects.</p>
         </section>
         <div className="mt-5 grid gap-4">
           {sections.map((section) => (

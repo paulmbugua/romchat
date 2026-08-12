@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { FcGoogle } from 'react-icons/fc';
 
 import { resolveBackendUrl } from '@/lib/backendUrl';
-import { DEFAULT_RETURN_TO, sanitizeInternalReturnTo } from '@/lib/returnTo';
+import { sanitizeInternalReturnTo } from '@/lib/returnTo';
 
 export default function CustomGoogleButtonLogin({
   returnTo,
@@ -20,7 +20,7 @@ export default function CustomGoogleButtonLogin({
       setLoading(true);
 
       const backendUrl = resolveBackendUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
-      const safeReturnTo = sanitizeInternalReturnTo(returnTo, DEFAULT_RETURN_TO);
+      const safeReturnTo = sanitizeInternalReturnTo(returnTo, '/login');
 
       const params = new URLSearchParams();
       params.set('returnTo', safeReturnTo);
