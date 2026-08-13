@@ -1861,9 +1861,8 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
       </View>
       <Text style={styles.nudgeAction}>View</Text>
     </TouchableOpacity>
-  );+++++++++++++++++++++++++++++++.
+  );
 }
-+
 function Chat({ profiles, sendMessage, getMessages, reportMessage, currentUserId, initialProfileId, goldMatchProfileIds, onInitialProfileHandled, status }: {
   profiles: ProfileSeed[];
   sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean }) => Promise<unknown>;
@@ -2371,9 +2370,9 @@ function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: Pa
             </>
           ) : (
             <View style={styles.paymentCardOnly}>
-              <TouchableOpacity disabled={!sheet.checkoutUrl} onPress={onOpenCheckout} style={[styles.paymentCardOnlyButton, !sheet.checkoutUrl && styles.paymentPrimaryButtonDisabled]}>
+              <TouchableOpacity disabled={!sheet.checkoutUrl} onPress={onOpenCheckout} style={[styles.paymentPrimaryButton, !sheet.checkoutUrl && styles.paymentPrimaryButtonDisabled]}>
                 <Icon name="card" size={20} color="#120914" />
-                <Text style={styles.paymentPrimaryTextDark}>{sheet.checkoutUrl ? 'Pay with Card' : 'Checkout link not ready'}</Text>
+                <Text style={styles.paymentPrimaryText}>{sheet.checkoutUrl ? 'Pay with Card' : 'Checkout link not ready'}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -3013,6 +3012,8 @@ const styles = StyleSheet.create({
   paymentPrimaryButton: { minHeight: 56, borderRadius: 28, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 18 },
   paymentPrimaryButtonDisabled: { opacity: 0.5 },
   paymentPrimaryText: { color: '#111823', fontSize: 17, fontWeight: '900' },
+  superOfferCopy: { flex: 1 },
+  paymentCardOnly: { paddingTop: 12 },
   paymentActionsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   paymentSecondaryButton: { flex: 1, minHeight: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
   paymentSecondaryText: { color: '#FFFFFF', fontWeight: '900' },
@@ -3142,3 +3143,4 @@ const styles = StyleSheet.create({
   promptEditorLabel: { color: '#FFD700', fontWeight: '900', marginBottom: 7 },
   promptEditorInput: { minHeight: 46, color: '#FFFFFF', fontWeight: '800', lineHeight: 20, textAlignVertical: 'top' },
 });
+
