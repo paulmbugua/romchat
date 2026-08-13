@@ -979,16 +979,17 @@ export default function App() {
     }
     if (section === 'chat') {
       return (
-        <Chat
-          profiles={profiles}
-          sendMessage={romchat.sendMessage}
-          getMessages={romchat.getMessages}
-          currentUserId={session?.user?.id || 'me'}
-          initialProfileId={pendingChatProfileId}
-          goldMatchProfileIds={goldMatchProfileIds}
-          onInitialProfileHandled={() => setPendingChatProfileId(null)}
-          status={romchat.lastAction}
-        />
+       <Chat
+        profiles={profiles}
+        sendMessage={romchat.sendMessage}
+        getMessages={romchat.getMessages}
+        reportMessage={romchat.reportMessage}
+        currentUserId={session?.user?.id || 'me'}
+        initialProfileId={pendingChatProfileId}
+        goldMatchProfileIds={goldMatchProfileIds}
+        onInitialProfileHandled={() => setPendingChatProfileId(null)}
+        status={romchat.lastAction}
+      />
       );
     }
     if (section === 'premium') {
@@ -1860,13 +1861,23 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
       </View>
       <Text style={styles.nudgeAction}>View</Text>
     </TouchableOpacity>
-  );
+  );+++++++++++++++++++++++++++++++.
 }
-
++
 function Chat({ profiles, sendMessage, getMessages, reportMessage, currentUserId, initialProfileId, goldMatchProfileIds, onInitialProfileHandled, status }: {
   profiles: ProfileSeed[];
   sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean }) => Promise<unknown>;
   getMessages: (matchId: string) => Promise<Array<{ id: string; senderId?: string; from?: string; text: string; createdAt?: string }>>;
+  reportMessage: (payload: {
+    profileId: string;
+    reportedMemberId?: string;
+    matchId?: string;
+    messageId?: string;
+    text?: string;
+    senderId?: string;
+    moderation?: unknown;
+    reporterNote?: string;
+  }) => Promise<boolean>;
   currentUserId: string;
   initialProfileId?: string | null;
   goldMatchProfileIds?: string[];

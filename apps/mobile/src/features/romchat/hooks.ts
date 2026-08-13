@@ -230,6 +230,32 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
+  const reportMessage = useCallback(
+  async (payload: {
+    profileId: string;
+    reportedMemberId?: string;
+    matchId?: string;
+    messageId?: string;
+    text?: string;
+    senderId?: string;
+    moderation?: unknown;
+    reporterNote?: string;
+  }) => {
+    setLastAction('Reporting message');
+
+    try {
+      await romchatApi.reportMessage(payload);
+      setLastAction('Message reported and user blocked');
+      return true;
+    } catch (error) {
+      console.error('[romchat] report-message failed', error);
+      setLastAction('Unable to report message');
+      return false;
+    }
+  },
+  []
+);
+
   const verify = useCallback(async () => {
     setLastAction('Submitting verification');
     try {
