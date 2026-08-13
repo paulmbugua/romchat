@@ -2,10 +2,9 @@
 
 import React, { useState } from 'react';
 import { FcGoogle } from 'react-icons/fc';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { getIdToken } from 'firebase/auth';
 
-import { firebaseAuth } from '@/lib/firebase';
-import { resolveBackendUrl } from '@/lib/backendUrl';
+import { signInGooglePopup } from '@/lib/firebaseAuthWeb';
 
 type Props = {
   className?: string;
@@ -22,26 +21,9 @@ export default function CustomGoogleButtonLogin({
     try {
       setLoading(true);
 
-      const backendUrl = resolveBackendUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
-      const isLocalHost =
-        typeof window !== 'undefined' &&
-        ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-
-      if (!isLocalHost) {
-        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-        const target = new URL('/api/auth/google', backendUrl);
-        target.searchParams.set('returnTo', returnTo || '/login');
-        window.location.assign(target.toString());
-        return;
-      }
-
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({
-        prompt: 'select_account',
-      });
-
-      const result = await signInWithPopup(firebaseAuth, provider);
-      const idToken = await result.user.getIdToken();
+      const result = await signInGooglePopup();
+      const idToken = await getIdToken(result.user, true);
+      const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || '').replace(/\/+$/, '');
 
       console.info('[romchat-google-web] firebase-login-success', {
         uid: result.user.uid,
