@@ -14,7 +14,7 @@ const now = () => Date.now();
 const isProd = process.env.NODE_ENV === 'production';
 
 const APP_FRONTEND_URL =
-  process.env.FRONTEND_URL?.trim() || 'https://mindcareonlinetherapy.com';
+  process.env.FRONTEND_URL?.trim() || 'https://www.romchat.co.ke';
 
 const createToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '1d' });

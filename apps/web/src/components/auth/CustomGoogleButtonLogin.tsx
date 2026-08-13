@@ -2,10 +2,7 @@
 
 import React, { useState } from 'react';
 import { FcGoogle } from 'react-icons/fc';
-import {
-  GoogleAuthProvider,
-  signInWithPopup,
-} from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 
 import { firebaseAuth } from '@/lib/firebase';
 import { resolveBackendUrl } from '@/lib/backendUrl';
@@ -25,16 +22,25 @@ export default function CustomGoogleButtonLogin({
     try {
       setLoading(true);
 
-      const provider = new GoogleAuthProvider();
+      const backendUrl = resolveBackendUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
+      const isLocalHost =
+        typeof window !== 'undefined' &&
+        ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 
+      if (!isLocalHost) {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        const target = new URL('/api/auth/google', backendUrl);
+        target.searchParams.set('returnTo', returnTo || '/login');
+        window.location.assign(target.toString());
+        return;
+      }
+
+      const provider = new GoogleAuthProvider();
       provider.setCustomParameters({
         prompt: 'select_account',
       });
 
-      // 1. Login through Firebase
       const result = await signInWithPopup(firebaseAuth, provider);
-
-      // 2. Obtain Firebase ID token
       const idToken = await result.user.getIdToken();
 
       console.info('[romchat-google-web] firebase-login-success', {
@@ -43,37 +49,24 @@ export default function CustomGoogleButtonLogin({
         hasIdToken: Boolean(idToken),
       });
 
-      // 3. Exchange Firebase token with RomChat backend
-      const backendUrl = resolveBackendUrl(
-        process.env.NEXT_PUBLIC_BACKEND_URL
-      );
-
-      const response = await fetch(
-        `${backendUrl}/api/romchat/auth/google`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            idToken,
-          }),
-        }
-      );
+      const response = await fetch(`${backendUrl}/api/romchat/auth/google`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          idToken,
+        }),
+      });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          data?.message ||
-          data?.error ||
-          'RomChat Google login failed.'
-        );
+        throw new Error(data?.message || data?.error || 'RomChat Google login failed.');
       }
 
       console.info('[romchat-google-web] backend-login-success');
 
-      // 4. Save RomChat JWT
       if (data.token) {
         localStorage.setItem('romchat-web-token', data.token);
         localStorage.setItem('romchat:auth:token', data.token);
@@ -89,10 +82,7 @@ export default function CustomGoogleButtonLogin({
         return;
       }
 
-      alert(
-        error?.message ||
-        'Google sign-in failed. Please try again.'
-      );
+      alert(error?.message || 'Google sign-in failed. Please try again.');
     } finally {
       setLoading(false);
     }
