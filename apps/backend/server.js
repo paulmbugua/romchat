@@ -13,22 +13,40 @@ import { localMediaRoot } from './services/romchatMediaStorage.js';
 const app = express();
 const server = http.createServer(app);
 const port = Number(process.env.PORT || 4000);
-const allowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173')
+const allowedOrigins = String(
+  process.env.CORS_ALLOWED_ORIGINS ||
+    'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://romchat.co.ke,https://www.romchat.co.ke,https://server.romchat.co.ke,https://admin.romchat.co.ke',
+)
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const allowedOriginMatchers = [
+  ...allowedOrigins,
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
+  /^https:\/\/([a-z0-9-]+\.)*romchat\.co\.ke$/,
+];
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  return allowedOriginMatchers.some((matcher) =>
+    typeof matcher === 'string' ? matcher === origin : matcher.test(origin),
+  );
+}
+
+const corsOptions = {
+  origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
+  credentials: true,
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+};
+
 const io = new Server(server, {
-  cors: {
-    origin: (origin, callback) => callback(null, !origin || allowedOrigins.includes(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)),
-    credentials: true,
-  },
+  cors: corsOptions,
 });
 
-app.use(cors({
-  origin: (origin, callback) => callback(null, !origin || allowedOrigins.includes(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)),
-  credentials: true,
-}));
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '24mb' }));
