@@ -98,6 +98,7 @@ export function LegalPage({ eyebrow, title, intro, updated, icon, sections, chil
             <a href="/terms">Terms</a>
             <a href="/privacy">Privacy</a>
             <a href="/policies">Policies</a>
+            <a href="/safety-standards">Safety standards</a>
             <a href="/delete-account">Delete account</a>
           </div>
         </div>
