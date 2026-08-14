@@ -268,6 +268,7 @@ export default function App() {
   const [goldMatchProfileIds, setGoldMatchProfileIds] = useState<string[]>([]);
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
   const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
+  const reportMessage = romchat?.reportMessage ?? romchat?.report ?? (async () => undefined);
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationHistoryRef = useRef<Section[]>([]);
   const swipePosition = useRef(new Animated.ValueXY()).current;
@@ -983,7 +984,7 @@ export default function App() {
         profiles={profiles}
         sendMessage={romchat.sendMessage}
         getMessages={romchat.getMessages}
-        reportMessage={romchat.reportMessage}
+        reportMessage={reportMessage}
         currentUserId={session?.user?.id || 'me'}
         initialProfileId={pendingChatProfileId}
         goldMatchProfileIds={goldMatchProfileIds}
