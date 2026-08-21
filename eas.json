@@ -2,7 +2,6 @@
   "cli": { "version": ">= 3.0.0", "appVersionSource": "remote" },
   "build": {
     "development": {
-      "workingDirectory": "apps/mobile",
       "node": "20.19.4",
       "developmentClient": true,
       "distribution": "internal",
@@ -15,7 +14,6 @@
       "android": { "buildType": "app-bundle" }
     },
     "production": {
-      "workingDirectory": "apps/mobile",
       "node": "20.19.4",
       "autoIncrement": true,
       "environment": "production",
