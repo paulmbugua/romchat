@@ -167,6 +167,7 @@ let schemaReady = false;
 async function ensureSchema() {
   if (schemaReady) return;
   await queryWithRetry(schemaSql);
+  await queryWithRetry('CREATE TABLE IF NOT EXISTS romchat_moderation_appeals (id TEXT PRIMARY KEY, member_id TEXT NOT NULL, report_id TEXT, reason TEXT NOT NULL, status TEXT NOT NULL, details JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, reviewed_at TIMESTAMPTZ, reviewed_by TEXT)');
   await seedProfiles();
   schemaReady = true;
 }
@@ -652,6 +653,46 @@ export async function createReport(payload = {}) {
     );
     return report;
   }, () => report);
+}
+
+export async function createModerationAppeal(payload = {}) {
+  const appeal = { id: id('appeal'), memberId: payload.memberId || payload.member_id || 'me', reportId: payload.reportId || payload.report_id || null, reason: String(payload.reason || payload.details || '').trim(), status: 'pending', details: payload.details && typeof payload.details === 'object' ? payload.details : {}, createdAt: now() };
+  if (!appeal.reason) { const error = new Error('Please explain why the moderation action should be reviewed.'); error.status = 400; error.code = 'MODERATION_APPEAL_REASON_REQUIRED'; throw error; }
+  return withDb(async () => {
+    await queryWithRetry('INSERT INTO romchat_moderation_appeals (id, member_id, report_id, reason, status, details) VALUES ($1,$2,$3,$4,$5,$6)', [appeal.id, appeal.memberId, appeal.reportId, appeal.reason, appeal.status, appeal.details]);
+    console.info('[romchat-moderation] appeal:created', { appealId: appeal.id, memberId: appeal.memberId, reportId: appeal.reportId });
+    return appeal;
+  }, () => appeal);
+}
+
+export async function listModerationCases() {
+  return withDb(async () => {
+    const result = await queryWithRetry('SELECT r.*, COALESCE(json_agg(a ORDER BY a.created_at DESC) FILTER (WHERE a.id IS NOT NULL), \'[]\'::json) AS appeals FROM romchat_reports r LEFT JOIN romchat_moderation_appeals a ON a.report_id = r.id GROUP BY r.id ORDER BY r.created_at DESC');
+    return { cases: result.rows.map((row) => ({ id: row.id, reporterId: row.reporter_id, profileId: row.profile_id, type: row.type, severity: row.severity, status: row.status, details: row.details || '', createdAt: row.created_at, appeals: row.appeals || [] })) };
+  }, () => ({ cases: [] }));
+}
+
+export async function resolveModerationCase(reportId, payload = {}) {
+  const status = String(payload.status || 'resolved');
+  const reviewedBy = payload.reviewedBy || payload.reviewed_by || 'admin';
+  return withDb(async () => {
+    const result = await queryWithRetry('UPDATE romchat_reports SET status = $2 WHERE id = $1 RETURNING *', [reportId, status]);
+    if (!result.rows[0]) { const error = new Error('Moderation case not found.'); error.status = 404; throw error; }
+    await queryWithRetry("UPDATE romchat_moderation_appeals SET status = $2, reviewed_at = now(), reviewed_by = $3 WHERE report_id = $1 AND status = 'pending'", [reportId, status, reviewedBy]);
+    const row = result.rows[0];
+    return { id: row.id, status: row.status, profileId: row.profile_id, reviewedBy };
+  }, () => ({ id: reportId, status, reviewedBy }));
+}
+
+export async function reinstateModeratedMember(memberId, payload = {}) {
+  const reason = String(payload.reason || 'Appeal reviewed by RomChat safety.');
+  return withDb(async () => {
+    const result = await queryWithRetry("UPDATE romchat_accounts SET moderation_status = 'approved_for_review', updated_at = now() WHERE id = $1 RETURNING id, email, moderation_status", [memberId]);
+    if (!result.rows[0]) { const error = new Error('Member account not found.'); error.status = 404; throw error; }
+    await queryWithRetry("UPDATE romchat_moderation_appeals SET status = 'reinstated', reviewed_at = now(), reviewed_by = 'admin' WHERE member_id = $1 AND status = 'pending'", [memberId]);
+    console.info('[romchat-moderation] member:reinstated', { memberId, reason });
+    return { memberId, status: result.rows[0].moderation_status, reason };
+  }, () => ({ memberId, status: 'approved_for_review', reason }));
 }
 
 export async function createVerification(payload = {}) {
