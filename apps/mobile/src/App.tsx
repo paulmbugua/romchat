@@ -35,6 +35,7 @@ import { apiBaseUrl } from './lib/api';
 import { checkForAppUpdate } from './lib/appUpdates';
 import { ApiRequestError } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
+import { ProfileDetailModal, type ProfileDetailData } from './components/ProfileDetailModal';
 
 type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'payment' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
 type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
@@ -46,7 +47,8 @@ type PaymentSheetState = { provider: 'mpesa' | 'paystack'; title: string; subtit
 type PendingPurchase =
   | { kind: 'tokens'; title: string; subtitle: string; amountKes: number; packageId: string; accent: 'gold' | 'pink' | 'blue' }
   | { kind: 'superlikes'; title: string; subtitle: string; amountKes: number; packageId: 'superlikes_15' | 'superlikes_30'; accent: 'blue' }
-  | { kind: 'plan'; title: string; subtitle: string; amountKes: number; planId: 'gold' | 'platinum'; accent: 'gold' | 'platinum' };
+  | { kind: 'plan'; title: string; subtitle: string; amountKes: number; planId: 'gold' | 'platinum'; accent: 'gold' | 'platinum' }
+  | { kind: 'firstImpressions'; title: string; subtitle: string; amountKes: number; packageId: string; accent: 'blue' };
 
 const ROMCHAT_TOKEN_KEY = 'romchat:auth:token';
 const ROMCHAT_SESSION_KEY = 'romchat:auth:session';
@@ -191,36 +193,6 @@ const tokenCatalog = [
   { id: 'rewind_after_pass', label: 'Undo previous swipe', cost: String(UNDO_SWIPE_COST) },
 ];
 
-
-const chatSafetyRules = [
-  { category: 'racial slur', severity: 'critical', patterns: [/\bn+[\W_]*[i1!]+[\W_]*g+[\W_]*g*(?:[e3]r|a|ah|uh)s?\b/i, /\bk+[\W_]*[i1!]+[\W_]*k+[\W_]*e+s?\b/i, /\bc+[\W_]*h+[\W_]*[i1!]+[\W_]*n+[\W_]*k+s?\b/i] },
-  { category: 'sexual abuse', severity: 'high', patterns: [/\brape\b/i, /\bsexual(?:ly)?\s+assault\b/i, /\bforce\s+(?:you|u)\s+to\s+(?:sex|sleep)/i, /\bslut\b/i, /\bwhore\b/i] },
-  { category: 'abusive threat', severity: 'high', patterns: [/\bkill\s+(?:you|u|yourself)\b/i, /\bbeat\s+(?:you|u)\b/i, /\bhurt\s+(?:you|u)\b/i, /\bi\s+hate\s+you\b/i, /\bworthless\b/i] },
-  { category: 'scam pressure', severity: 'medium', patterns: [/\bwire\s+money\b/i, /\bgift\s*card\b/i, /\bcrypto\b/i, /\bpassword\b/i] },
-];
-
-function normalizeChatSafetyText(text: string) {
-  const swap: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '!': 'i' };
-  return String(text || '')
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[013457@$!]/g, (char) => swap[char] || char)
-    .replace(/(.)\1{2,}/g, '$1$1')
-    .replace(/[\s._-]+/g, ' ')
-    .trim();
-}
-
-function checkRomchatChatSafety(text: string) {
-  const normalized = normalizeChatSafetyText(text);
-  const compact = normalized.replace(/[^a-z0-9]+/g, '');
-  const hits = chatSafetyRules
-    .filter((rule) => rule.patterns.some((pattern) => pattern.test(normalized) || pattern.test(compact)))
-    .map((rule) => ({ category: rule.category, severity: rule.severity }));
-  const shouldBlock = hits.some((hit) => hit.severity === 'critical' || hit.severity === 'high');
-  return { status: shouldBlock ? 'blocked' : hits.length ? 'review' : 'approved', shouldBlock, categories: hits.map((hit) => hit.category), severity: hits[0]?.severity || 'none', checkedAt: new Date().toISOString() };
-}
-
 const starterMessages: Array<[string, string, string]> = [
   ['Aisha', 'Your answer about building a life with room for quiet days was rare.', 'Seen 8:41 PM'],
   ['You', 'The best connection feels calm before it feels exciting.', 'Read'],
@@ -253,7 +225,7 @@ export default function App() {
   const [incognito, setIncognito] = useState(true);
   const [antiGrab, setAntiGrab] = useState(true);
   const [chatBadgeCount, setChatBadgeCount] = useState(0);
-  const [tokens, setTokens] = useState(0);
+  const [tokens, setTokens] = useState(146);
   const [boosted, setBoosted] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<PlanName>('Free');
   const [paymentNotice, setPaymentNotice] = useState('');
@@ -264,13 +236,9 @@ export default function App() {
   const [pendingChatProfileId, setPendingChatProfileId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [likesFeedViewed, setLikesFeedViewed] = useState(false);
-  const [reviewedLikeIds, setReviewedLikeIds] = useState<string[]>([]);
-  const [goldMatchProfileIds, setGoldMatchProfileIds] = useState<string[]>([]);
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
   const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
-  const reportMessage = romchat?.reportMessage ?? romchat?.report ?? (async () => undefined);
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const navigationHistoryRef = useRef<Section[]>([]);
   const swipePosition = useRef(new Animated.ValueXY()).current;
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -293,7 +261,7 @@ export default function App() {
   const activePlan: PlanName = boosted ? 'Platinum' : subscriptionTier;
   const likesSummary = romchat.bootstrap?.likes || { receivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] };
   const likesReceivedCount = Math.max(0, Number(likesSummary.receivedCount || 0));
-  const visibleLikesReceivedCount = likesFeedViewed ? 0 : Math.max(0, likesReceivedCount - reviewedLikeIds.length);
+  const visibleLikesReceivedCount = likesFeedViewed ? 0 : likesReceivedCount;
   const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
   const hasPlatinumAccess = activePlan === 'Platinum';
 
@@ -354,83 +322,9 @@ export default function App() {
     await persistSession(next);
   }
 
-  function goToSection(next: Section | null) {
-    setActiveSection((current) => {
-      if (current === next) return current;
-      if (next === null) {
-        navigationHistoryRef.current = [];
-        return null;
-      }
-      if (current) {
-        navigationHistoryRef.current = [...navigationHistoryRef.current, current];
-      }
-      return next;
-    });
-  }
-
-  function goBackSection() {
-    setActiveSection(() => {
-      const history = navigationHistoryRef.current.slice();
-      const previous = history.pop() || null;
-      navigationHistoryRef.current = history;
-      return previous;
-    });
-  }
-
   async function signOut() {
-    clearMatchTimer();
-    setShowMatch(false);
-    setPaymentSheet(null);
-    navigationHistoryRef.current = [];
     await persistSession(null);
-    goToSection(null);
-  }
-
-  async function requestDataDeletion() {
-    if (!session?.token) return;
-    try {
-      setAuthBusy(true);
-      setAuthError('');
-      console.info('[romchat-account] deletion-request:start', { memberId: session.user.id, email: session.user.email });
-      const response = await romchatAccountApi.requestAccountDeletion(session.token, { reason: 'Requested from RomChat profile screen.' });
-      Alert.alert('Deletion request sent', response.message || 'Your data deletion request has been recorded.');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to submit deletion request.';
-      setAuthError(message);
-      Alert.alert('Deletion request failed', message);
-    } finally {
-      setAuthBusy(false);
-    }
-  }
-
-  async function confirmDeleteAccount() {
-    if (!session?.token) return;
-    try {
-      setAuthBusy(true);
-      setAuthError('');
-      console.info('[romchat-account] delete:start', { memberId: session.user.id, email: session.user.email });
-      await romchatAccountApi.deleteAccount(session.token, { reason: 'Deleted from RomChat profile screen.' });
-      await signOut();
-      Alert.alert('Account deleted', 'Your RomChat account has been removed from the device and backend.');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to delete account.';
-      setAuthError(message);
-      Alert.alert('Delete failed', message);
-    } finally {
-      setAuthBusy(false);
-    }
-  }
-
-  async function deleteAccount() {
-    Alert.alert(
-      'Delete your RomChat account?',
-      'This removes your account access and profile data. You can also request a data deletion review instead.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Request deletion', onPress: () => { void requestDataDeletion(); } },
-        { text: 'Delete now', style: 'destructive', onPress: () => { void confirmDeleteAccount(); } },
-      ]
-    );
+    setActiveSection(null);
   }
 
   useEffect(() => {
@@ -488,24 +382,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS !== 'android') return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (paymentSheet) {
         setPaymentSheet(null);
         return true;
       }
-      if (showMatch) {
-        setShowMatch(false);
-        return true;
-      }
       if (activeSection) {
-        goBackSection();
+        setActiveSection(null);
         return true;
       }
       return false;
     });
     return () => subscription.remove();
-  }, [activeSection, paymentSheet, showMatch]);
+  }, [activeSection, paymentSheet]);
 
   function clearMatchTimer() {
     if (matchTimerRef.current) {
@@ -517,7 +406,7 @@ export default function App() {
   function openTokenStore() {
     clearMatchTimer();
     setShowMatch(false);
-    goToSection('premium');
+    setActiveSection('premium');
   }
 
   function showPaymentSheet(payment: RomChatPayment, provider: 'mpesa' | 'paystack', title: string, subtitle: string) {
@@ -552,7 +441,7 @@ export default function App() {
   function openPaymentPage(next: PendingPurchase) {
     setPaymentNotice('');
     setPendingPurchase(next);
-    goToSection('payment');
+    setActiveSection('payment');
   }
 
   async function startTokenPurchase(packageId = 'tokens_100', provider: 'mpesa' | 'paystack' = 'mpesa') {
@@ -595,7 +484,7 @@ export default function App() {
     setShowMatch(true);
     matchTimerRef.current = setTimeout(() => {
       setShowMatch(false);
-      goToSection('chat');
+      setActiveSection('chat');
     }, MATCH_POP_DURATION_MS);
   }
 
@@ -668,33 +557,17 @@ export default function App() {
     }
   }
 
-  function markLikeReviewed(profileId: string) {
-    setReviewedLikeIds((current) => current.includes(profileId) ? current : [...current, profileId]);
-  }
-
-  async function acceptLikeAndOpenChat(profileId: string, options: { openChat?: boolean } = {}) {
+  async function acceptLikeAndOpenChat(profileId: string) {
     clearMatchTimer();
     setShowMatch(false);
-    markLikeReviewed(profileId);
-    setGoldMatchProfileIds((current) => current.includes(profileId) ? current : [profileId, ...current]);
     const result = await romchat.swipe(profileId, 'like', { forceMatch: true });
     setPendingChatProfileId(profileId);
     await romchat.refresh();
-    if (options.openChat !== false) goToSection('chat');
+    setActiveSection('chat');
     if (!result?.matched) console.warn('[romchat-likes] accepted like did not return matched result', { profileId, result });
   }
 
-  async function messageGoldMatch(profileId: string, text: string) {
-    const clean = text.trim();
-    if (!clean) return;
-    setGoldMatchProfileIds((current) => current.includes(profileId) ? current : [profileId, ...current]);
-    setPendingChatProfileId(profileId);
-    await romchat.sendMessage(clean, `match_${profileId}`, { mode: 'standard', readReceiptRequested: false });
-    goToSection('chat');
-  }
-
   function passLikeProfile(profileId: string) {
-    markLikeReviewed(profileId);
     void romchat.swipe(profileId, 'pass');
   }
 
@@ -967,37 +840,35 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
   function openSwipeDeck() {
-    goToSection(null);
+    setActiveSection(null);
     if (appReady) void romchat.refresh();
   }
 
   function renderSection(section: Section) {
     if (section === 'explore') {
-      return <ExploreScreen openLikes={() => goToSection('likes')} />;
+      return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={profiles} likesReceivedCount={visibleLikesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openSuperLikes={() => goToSection('superlikes')} openChat={() => goToSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId, { openChat: false })} passLikeProfile={passLikeProfile} messageGoldMatch={(profileId, text) => void messageGoldMatch(profileId, text)} likeProfile={() => likeProfile('like')} passProfile={passProfile} onAllLikesSeenChange={setLikesFeedViewed} />;
+      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} onAllLikesSeenChange={setLikesFeedViewed} />;
     }
     if (section === 'chat') {
       return (
-       <Chat
-        profiles={profiles}
-        sendMessage={romchat.sendMessage}
-        getMessages={romchat.getMessages}
-        reportMessage={reportMessage}
-        currentUserId={session?.user?.id || 'me'}
-        initialProfileId={pendingChatProfileId}
-        goldMatchProfileIds={goldMatchProfileIds}
-        onInitialProfileHandled={() => setPendingChatProfileId(null)}
-        status={romchat.lastAction}
-      />
+        <Chat
+          profiles={profiles}
+          sendMessage={romchat.sendMessage}
+          getMessages={romchat.getMessages}
+          currentUserId={session?.user?.id || 'me'}
+          initialProfileId={pendingChatProfileId}
+          onInitialProfileHandled={() => setPendingChatProfileId(null)}
+          status={romchat.lastAction}
+        />
       );
     }
     if (section === 'premium') {
       return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} openPaymentPage={openPaymentPage} />;
     }
     if (section === 'superlikes') {
-      return <SuperLikesScreen paymentNotice={paymentNotice} openGoldPlans={() => goToSection('goldPlans')} openPaymentPage={openPaymentPage} />;
+      return <SuperLikesScreen paymentNotice={paymentNotice} openGoldPlans={() => setActiveSection('goldPlans')} openPaymentPage={openPaymentPage} />;
     }
     if (section === 'goldPlans') {
       return <GoldPlansScreen paymentNotice={paymentNotice} openPaymentPage={openPaymentPage} />;
@@ -1009,7 +880,7 @@ export default function App() {
           mpesaPhone={mpesaPhone}
           setMpesaPhone={setMpesaPhone}
           paymentNotice={paymentNotice}
-          onBack={goBackSection}
+          onBack={() => setActiveSection('premium')}
           onMpesa={() => {
             if (!pendingPurchase) return;
             if (pendingPurchase.kind === 'plan') void startPlanPurchase(pendingPurchase.planId, 'mpesa');
@@ -1044,7 +915,7 @@ export default function App() {
         />
       );
     }
-    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} onDeleteAccount={deleteAccount} onRequestDataDeletion={requestDataDeletion} openPolicy={(section) => goToSection(section)} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} openPolicy={(section) => setActiveSection(section)} />;
   }
 
   if (!authBooted) {
@@ -1063,7 +934,7 @@ export default function App() {
     return (
       <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.safe}>
         <StatusBar barStyle="light-content" backgroundColor="#120914" />
-        <ScreenHeader title={screenTitles[activeSection]} onBack={goBackSection} apiOnline={romchat.apiOnline} />
+        <ScreenHeader title={screenTitles[activeSection]} onBack={() => setActiveSection(null)} apiOnline={romchat.apiOnline} />
         <ScrollView
           contentContainerStyle={[styles.screenContent, { paddingBottom: bottomContentPadding }]}
           contentInsetAdjustmentBehavior="automatic"
@@ -1093,18 +964,18 @@ export default function App() {
         overScrollMode="never"
       >
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => goToSection('profile')} style={styles.brandRow}>
+          <TouchableOpacity onPress={() => setActiveSection('profile')} style={styles.brandRow}>
             <Image source={firstUploadedImageUrl ? { uri: firstUploadedImageUrl } : require('../assets/icon.png')} style={styles.logo} />
             <View><Text style={styles.brand}>RomChat</Text><Text style={styles.brandTagline}>Kenya dating</Text></View>
           </TouchableOpacity>
           <View style={styles.topControls}>
-            <TouchableOpacity onPress={() => goToSection('chat')} style={styles.iconButton} accessibilityLabel="Open inbox">
+            <TouchableOpacity onPress={() => setActiveSection('chat')} style={styles.iconButton} accessibilityLabel="Open inbox">
               <Icon name="chatbubbles" size={20} color="#FFFFFF" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => goToSection('safety')} style={styles.iconButton} accessibilityLabel="Open safety center">
+            <TouchableOpacity onPress={() => setActiveSection('safety')} style={styles.iconButton} accessibilityLabel="Open safety center">
               <Icon name="shield-checkmark" size={20} color="#FFFFFF" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => goToSection('premium')} style={styles.walletPill}>
+            <TouchableOpacity onPress={() => setActiveSection('premium')} style={styles.walletPill}>
               <Icon name="diamond" size={15} color="#FFD700" />
               <Text style={styles.walletText}>{tokens}</Text>
             </TouchableOpacity>
@@ -1118,6 +989,7 @@ export default function App() {
               passProfile={animatedPassProfile}
               likeProfile={animatedLikeProfile}
               topProfile={superLikeProfile}
+              onFirstImpression={(offer) => openPaymentPage({ kind: 'firstImpressions', title: `${offer.count} First Impressions`, subtitle: 'Send thoughtful priority messages before a mutual match.', amountKes: offer.total, packageId: offer.id, accent: 'blue' })}
               previous={previous}
               swipeHandlers={swipeHandlers}
               swipeCardStyle={swipeCardStyle}
@@ -1126,14 +998,14 @@ export default function App() {
               openChat={() => {
                 clearMatchTimer();
                 setShowMatch(false);
-                goToSection('chat');
+                setActiveSection('chat');
               }}
               profiles={profiles}
               cardHeight={swipeCardHeight}
             />
           </>
         ) : (
-          <EmptyDiscovery openProfile={() => goToSection('profile')} status={romchat.lastAction} />
+          <EmptyDiscovery openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
         )}
       </ScrollView>
       <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
@@ -1423,6 +1295,7 @@ function Discover({
   passProfile,
   likeProfile,
   topProfile,
+  onFirstImpression,
   previous,
   swipeHandlers,
   swipeCardStyle,
@@ -1436,6 +1309,7 @@ function Discover({
   passProfile: () => void;
   likeProfile: () => void;
   topProfile: () => void;
+  onFirstImpression: (offer: { id: string; count: number; total: number; unit: number; badge?: string }) => void;
   previous: () => void;
   swipeHandlers: GestureResponderHandlers;
   swipeCardStyle: object;
@@ -1447,6 +1321,7 @@ function Discover({
 }) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [galleryNotice, setGalleryNotice] = useState('');
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const popScale = useRef(new Animated.Value(0.82)).current;
   const popOpacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -1466,6 +1341,7 @@ function Discover({
   const remotePhotos = (profile.photos || []).map((url) => ({ uri: resolveMediaUrl(url) })).filter((item) => Boolean(item.uri));
   const photoSlots = remotePhotos.length ? remotePhotos : [profile.photo];
   const totalGallery = Number(profile.fullGallery || profile.gallery || photoSlots.length);
+  const detailProfile: ProfileDetailData = { id: profile.id, name: profile.name, age: profile.age, city: profile.city, distanceKm: profile.distanceKm, intent: profile.intent, prompt: profile.prompt, quote: profile.quote, song: profile.song, tags: profile.tags, answers: profile.answers, photos: photoSlots, photo: photoSlots[0]!, color: profile.color, online: profile.online, verified: profile.verified };
   const changePhoto = (direction: -1 | 1) => setPhotoIndex((value) => {
     if (direction > 0 && value >= photoSlots.length - 1 && totalGallery > photoSlots.length) {
       setGalleryNotice('Add more of your own photos to unlock the rest of this gallery.');
@@ -1495,6 +1371,7 @@ function Discover({
               <Text style={styles.galleryLockText}>{galleryNotice}</Text>
             </View>
           )}
+          <TouchableOpacity onPress={() => setDetailsOpen(true)} style={styles.expandCardButton} accessibilityLabel="Open full profile details"><Icon name="arrow-up" size={21} color="#FFFFFF" /></TouchableOpacity>
           <View style={styles.cardCopy}>
             <View style={styles.pillRow}>
               <Text style={styles.cardBadge}>{profile.match}%</Text>
@@ -1524,6 +1401,8 @@ function Discover({
           </View>
         </ImageBackground>
       </Animated.View>
+
+      <ProfileDetailModal profile={detailProfile} visible={detailsOpen} onClose={() => setDetailsOpen(false)} onPass={() => { setDetailsOpen(false); passProfile(); }} onLike={() => { setDetailsOpen(false); likeProfile(); }} onSuperLike={() => { setDetailsOpen(false); topProfile(); }} onFirstImpression={onFirstImpression} />
 
       {showMatch && (
         <Animated.View pointerEvents="box-none" style={[styles.matchPopOverlay, { opacity: popOpacity, transform: [{ scale: popScale }] }]}>
@@ -1615,14 +1494,10 @@ function ExploreScreen({ openLikes }: { openLikes: () => void }) {
   );
 }
 
-function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, openSuperLikes, openChat, acceptLikeAndOpenChat, passLikeProfile, messageGoldMatch, likeProfile, passProfile, onAllLikesSeenChange }: {
-  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openSuperLikes: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; passLikeProfile: (profileId: string) => void; messageGoldMatch: (profileId: string, text: string) => void; likeProfile: () => void; passProfile: () => void; onAllLikesSeenChange: (seen: boolean) => void }) {
+function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, openSuperLikes, openChat, acceptLikeAndOpenChat, passLikeProfile, likeProfile, passProfile }: {
+  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openSuperLikes: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; passLikeProfile: (profileId: string) => void; likeProfile: () => void; passProfile: () => void; onAllLikesSeenChange?: (seen: boolean) => void }) {
   const [tab, setTab] = useState<'received' | 'sent' | 'top'>('received');
   const [revealedLikeId, setRevealedLikeId] = useState<string | null>(null);
-  const [expandedLikeId, setExpandedLikeId] = useState<string | null>(null);
-  const [likedChatProfile, setLikedChatProfile] = useState<ProfileSeed | null>(null);
-  const [goldChatDraft, setGoldChatDraft] = useState('');
-  const [dismissedLikeIds, setDismissedLikeIds] = useState<string[]>([]);
   const [nextDropCountdown, setNextDropCountdown] = useState(() => formatNextLikeDropCountdown());
   const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
   const sentIds = new Set(likesSummary.sentProfileIds || []);
@@ -1630,9 +1505,8 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
   const sentProfiles = profiles.filter((profile) => sentIds.has(profile.id));
   const topPicks = profiles.filter((profile) => topIds.has(profile.id));
   const fallbackTopPicks = profiles.filter((profile) => profile.match >= 88).slice(0, 6);
-  const dismissedLikeIdSet = new Set(dismissedLikeIds);
-  const admirerProfiles = profiles.filter((profile) => !sentIds.has(profile.id) && !dismissedLikeIdSet.has(profile.id)).slice(0, 8);
-  const dailyGoldMatch = admirerProfiles[0] || null;
+  const admirerProfiles = profiles.filter((profile) => !sentIds.has(profile.id)).slice(0, 8);
+  const dailyGoldMatch = admirerProfiles[0] || profiles[0] || localProfiles[0]!;
   const topPickList = (topPicks.length ? topPicks : fallbackTopPicks).slice(0, 6);
   const sentList = (sentProfiles.length ? sentProfiles : profiles.slice(0, 4)).slice(0, 8);
   const likesLabel = likesReceivedCount > 99 ? '99+' : String(Math.max(likesReceivedCount, admirerProfiles.length));
@@ -1643,42 +1517,17 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    onAllLikesSeenChange(tab === 'received' && hasGoldAccess);
-  }, [hasGoldAccess, onAllLikesSeenChange, tab]);
-
   function revealDailyLike() {
-    if (!dailyGoldMatch) return;
-    if (revealedLikeId || hasGoldAccess) {
-      setExpandedLikeId(dailyGoldMatch.id);
-      return;
-    }
+    if (revealedLikeId || hasGoldAccess) return openPremium();
     setRevealedLikeId(dailyGoldMatch.id);
-    setExpandedLikeId(dailyGoldMatch.id);
   }
   function acceptDailyLike() {
-    if (!dailyGoldMatch) return;
-    setDismissedLikeIds((current) => current.includes(dailyGoldMatch.id) ? current : [...current, dailyGoldMatch.id]);
     setRevealedLikeId(null);
-    setExpandedLikeId(null);
-    setLikedChatProfile(dailyGoldMatch);
     acceptLikeAndOpenChat(dailyGoldMatch.id);
-    openChat();
-  }
-
-  function sendGoldIntro() {
-    if (!likedChatProfile || !goldChatDraft.trim()) return;
-    const text = goldChatDraft.trim();
-    setGoldChatDraft('');
-    messageGoldMatch(likedChatProfile.id, text);
-    setLikedChatProfile(null);
   }
 
   function passDailyLike() {
-    if (!dailyGoldMatch) return;
-    setDismissedLikeIds((current) => current.includes(dailyGoldMatch.id) ? current : [...current, dailyGoldMatch.id]);
     setRevealedLikeId(null);
-    setExpandedLikeId(null);
     passLikeProfile(dailyGoldMatch.id);
   }
   function superLikeUpsell() {
@@ -1703,7 +1552,7 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
             <Text style={styles.freeLikeCopy}>One Like is free to review each day. Accept to match and message, or pass to keep browsing.</Text>
           </LinearGradient>
           <Text style={styles.likesSectionTitle}>Gold Match</Text>
-          {dailyGoldMatch ? <GoldMatchCard profile={dailyGoldMatch} revealed={revealedLikeId === dailyGoldMatch.id || hasGoldAccess} expanded={expandedLikeId === dailyGoldMatch.id} onReveal={revealDailyLike} onOpenProfile={() => setExpandedLikeId(dailyGoldMatch.id)} onAccept={acceptDailyLike} onPass={passDailyLike} /> : <View style={styles.emptyThreadCard}><Text style={styles.emptyThreadTitle}>No free Like waiting</Text><Text style={styles.emptyThreadText}>You reviewed today's free Like. The next one drops when the timer reaches zero.</Text></View>}
+          <GoldMatchCard profile={dailyGoldMatch} revealed={revealedLikeId === dailyGoldMatch.id || hasGoldAccess} onReveal={revealDailyLike} onAccept={acceptDailyLike} onPass={passDailyLike} />
           <Text style={styles.likesSectionTitle}>Everyone else who's into you</Text>
           <View style={styles.likesGrid}>
             {admirerProfiles.slice(1, 7).map((profile, index) => <BlurredLikeCard key={profile.id} profile={profile} onPress={openPremium} index={index} />)}
@@ -1746,54 +1595,25 @@ function formatNextLikeDropCountdown() {
   return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
 }
 
-function GoldMatchCard({ profile, revealed, expanded, onReveal, onOpenProfile, onAccept, onPass }: { profile: ProfileSeed; revealed: boolean; expanded: boolean; onReveal: () => void; onOpenProfile: () => void; onAccept: () => void; onPass: () => void }) {
-  const gallery = profile.photos?.length ? profile.photos.map((photo) => ({ uri: resolveMediaUrl(photo) })) : [profile.photo];
-  const [photoIndex, setPhotoIndex] = useState(0);
-  const [viewerOpen, setViewerOpen] = useState(false);
-  const photo = gallery[photoIndex % gallery.length] || profile.photo;
-  const visibleName = revealed ? profile.name : 'Someone';
-  useEffect(function () { setPhotoIndex(0); }, [profile.id]);
-  function movePhoto(direction: number) { if (!revealed || gallery.length < 2) return; setPhotoIndex(function (current) { return (current + direction + gallery.length) % gallery.length; }); }
-  const fullPhotoPanResponder = PanResponder.create({
-    onMoveShouldSetPanResponder: function (_event, gesture) { return Math.abs(gesture.dx) > 18 && Math.abs(gesture.dx) > Math.abs(gesture.dy); },
-    onPanResponderRelease: function (_event, gesture) {
-      if (gesture.dx < -35) movePhoto(1);
-      if (gesture.dx > 35) movePhoto(-1);
-    },
-  });
+function GoldMatchCard({ profile, revealed, onReveal, onAccept, onPass }: { profile: ProfileSeed; revealed: boolean; onReveal: () => void; onAccept: () => void; onPass: () => void }) {
+  const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
   return (
-    <View style={[styles.goldMatchShell, expanded && styles.goldMatchShellExpanded]}>
-      <Modal visible={viewerOpen} animationType='fade' transparent onRequestClose={function () { setViewerOpen(false); }}><View style={styles.fullPhotoViewer} {...fullPhotoPanResponder.panHandlers}><Image source={photo} resizeMode='contain' style={styles.fullPhotoImage} /><TouchableOpacity onPress={function () { setViewerOpen(false); }} style={styles.fullPhotoClose}><Icon name='close' size={30} color='#FFFFFF' /></TouchableOpacity></View></Modal>
-      <TouchableOpacity activeOpacity={revealed ? 0.96 : 1} onPress={revealed ? function () { setViewerOpen(true); } : undefined} style={styles.goldMatchTouch}>
-      <ImageBackground source={photo} resizeMode="cover" blurRadius={revealed ? 0 : 18} style={[styles.goldMatchCard, expanded && styles.goldMatchCardExpanded]} imageStyle={styles.goldMatchImage}>
-        <LinearGradient colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.72)"]} style={styles.photoOverlay} />
-        <View style={styles.goldMatchBadge}><Icon name="star" size={15} color="#120914" /><Text style={styles.goldMatchBadgeText}>Today's free Like</Text></View>
-        {revealed && gallery.length > 1 && <TouchableOpacity onPress={function () { movePhoto(-1); }} style={[styles.goldPhotoArrow, styles.goldPhotoArrowLeft]}><Icon name='chevron-back' size={20} color='#FFFFFF' /></TouchableOpacity>}
-        {revealed && gallery.length > 1 && <TouchableOpacity onPress={function () { movePhoto(1); }} style={[styles.goldPhotoArrow, styles.goldPhotoArrowRight]}><Icon name='chevron-forward' size={20} color='#FFFFFF' /></TouchableOpacity>}
-        <View style={styles.goldMatchFooter}>
-          <Text style={styles.goldMatchName}>{visibleName} <Text style={styles.cardAge}>{profile.age}</Text></Text>
-          <Text style={styles.goldMatchMeta}>{profile.online ? 'Recently Active' : `${profile.city} vibe`}</Text>
-          {expanded && revealed && (
-            <View style={styles.goldExpandedPanel}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.goldExpandedGallery}>
-                {gallery.map((item, index) => <Image key={`${profile.id}-like-photo-${index}`} source={item} style={styles.goldExpandedPhoto} />)}
-              </ScrollView>
-              <Text numberOfLines={2} style={styles.goldExpandedBio}>{profile.prompt || `A little more about ${profile.name}`}</Text>
-              <View style={styles.goldExpandedTags}>{profile.tags.slice(0, 3).map((tag) => <Text key={tag} style={styles.goldExpandedTag}>{tag}</Text>)}</View>
-            </View>
-          )}
-          {revealed ? (
-            <View style={styles.goldMatchActions}>
-              <TouchableOpacity onPress={onPass} style={styles.goldPassButton} accessibilityLabel="Pass this like"><Icon name="close" size={29} color="#FFFFFF" /></TouchableOpacity>
-              <TouchableOpacity onPress={onAccept} style={styles.goldAcceptIconButton} accessibilityLabel="Like back and message"><Icon name="heart" size={30} color="#FF1200" /></TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity onPress={onReveal} style={styles.goldRevealButton}><Text style={styles.goldRevealText}>Reveal free Like</Text></TouchableOpacity>
-          )}
-        </View>
-      </ImageBackground>
-      </TouchableOpacity>
-    </View>
+    <ImageBackground source={photo} resizeMode="cover" blurRadius={revealed ? 0 : 18} style={styles.goldMatchCard} imageStyle={styles.goldMatchImage}>
+      <LinearGradient colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.72)"]} style={styles.photoOverlay} />
+      <View style={styles.goldMatchBadge}><Icon name="star" size={15} color="#120914" /><Text style={styles.goldMatchBadgeText}>Today's free Like</Text></View>
+      <View style={styles.goldMatchFooter}>
+        <Text style={styles.goldMatchName}>{revealed ? profile.name : 'Someone'} <Text style={styles.cardAge}>{profile.age}</Text></Text>
+        <Text style={styles.goldMatchMeta}>{profile.online ? 'Recently Active' : `${profile.city} vibe`}</Text>
+        {revealed ? (
+          <View style={styles.goldMatchActions}>
+            <TouchableOpacity onPress={onPass} style={styles.goldPassButton}><Icon name="close" size={27} color="#FFFFFF" /></TouchableOpacity>
+            <TouchableOpacity onPress={onAccept} style={styles.goldAcceptButton}><Text style={styles.goldAcceptText}>Message...</Text></TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={onReveal} style={styles.goldRevealButton}><Text style={styles.goldRevealText}>Reveal free Like</Text></TouchableOpacity>
+        )}
+      </View>
+    </ImageBackground>
   );
 }
 
@@ -1864,50 +1684,30 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
     </TouchableOpacity>
   );
 }
-function Chat({ profiles, sendMessage, getMessages, reportMessage, currentUserId, initialProfileId, goldMatchProfileIds, onInitialProfileHandled, status }: {
+
+function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfileId, onInitialProfileHandled, status }: {
   profiles: ProfileSeed[];
   sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean }) => Promise<unknown>;
   getMessages: (matchId: string) => Promise<Array<{ id: string; senderId?: string; from?: string; text: string; createdAt?: string }>>;
-  reportMessage: (payload: {
-    profileId: string;
-    reportedMemberId?: string;
-    matchId?: string;
-    messageId?: string;
-    text?: string;
-    senderId?: string;
-    moderation?: unknown;
-    reporterNote?: string;
-  }) => Promise<boolean>;
   currentUserId: string;
   initialProfileId?: string | null;
-  goldMatchProfileIds?: string[];
   onInitialProfileHandled?: () => void;
   status: string;
 }) {
-  const goldMatchIdSet = new Set(goldMatchProfileIds || []);
-  const matchPool = profiles
-    .filter((profile) => Boolean(profile.matchId) || goldMatchIdSet.has(profile.id))
-    .map((profile) => goldMatchIdSet.has(profile.id) && !profile.matchId ? { ...profile, matchId: `match_${profile.id}`, online: profile.online !== false } : profile);
+  const matchPool = profiles.filter((profile) => Boolean(profile.matchId));
   const onlineMatches = matchPool.filter((profile) => profile.online === true);
-  const orderedMatches = [
-    ...matchPool.filter((profile) => goldMatchIdSet.has(profile.id)),
-    ...onlineMatches.filter((profile) => !goldMatchIdSet.has(profile.id)),
-    ...matchPool.filter((profile) => profile.online !== true && !goldMatchIdSet.has(profile.id)),
-  ].filter((profile, index, all) => all.findIndex((item) => item.id === profile.id) === index);
+  const orderedMatches = [...onlineMatches, ...matchPool.filter((profile) => profile.online !== true)];
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
   const [threadMessages, setThreadMessages] = useState<Record<string, Array<{ id: string; from: 'You' | 'Them'; text: string; status: string }>>>({});
   const [contactWarnings, setContactWarnings] = useState<Record<string, boolean>>({});
   const [pendingContactText, setPendingContactText] = useState('');
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
-  const [blockedMatchIds, setBlockedMatchIds] = useState<string[]>([]);
-  const [safetyWarning, setSafetyWarning] = useState<{ text: string; categories: string[] } | null>(null);
   const selectedMatch = orderedMatches.find((profile) => profile.id === selectedMatchId) || null;
   const visibleThreads = orderedMatches.filter((profile) => `${profile.name} ${profile.city} ${profile.intent} ${profile.tags.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
   const promptChips = selectedMatch ? [`Ask ${selectedMatch.name} about ${selectedMatch.tags[0] || 'her vibe'}`, 'Coffee this weekend?', 'How has your day been?'] : [];
   const activePhoto = selectedMatch?.photos?.[0] ? { uri: resolveMediaUrl(selectedMatch.photos[0]) } : selectedMatch?.photo || require('../assets/icon.png');
   const selectedMessages = selectedMatch ? threadMessages[selectedMatch.id] || [] : [];
-  const selectedMatchBlocked = selectedMatch ? blockedMatchIds.includes(selectedMatch.id) : false;
 
   useEffect(() => {
     if (!initialProfileId) return;
@@ -2019,9 +1819,6 @@ function Chat({ profiles, sendMessage, getMessages, reportMessage, currentUserId
           )}
         </View>
 
-        {safetyWarning && <View style={styles.safetyBlockCard}><Icon name="shield-checkmark" size={18} color="#FFD700" /><Text style={styles.safetyBlockTitle}>Message blocked for community safety</Text><Text style={styles.safetyBlockText}>RomChat does not allow racial slurs, sexual abuse, threats, or harassment. Please rewrite your message respectfully.</Text><TouchableOpacity onPress={() => setSafetyWarning(null)}><Text style={styles.safetyBlockAction}>Edit message</Text></TouchableOpacity></View>}
-        {selectedMatchBlocked && <View style={styles.safetyBlockCard}><Text style={styles.safetyBlockTitle}>This match is blocked</Text><Text style={styles.safetyBlockText}>The reported message was sent to RomChat Safety. Admin can reinstate if an appeal proves the block was unfair.</Text></View>}
-
         <View style={styles.chatToolsSimple}>
           <View style={styles.promptRow}>
             {promptChips.map((prompt) => <TouchableOpacity key={prompt} onPress={() => sendChatText(prompt)}><Text style={styles.promptChip}>{prompt}</Text></TouchableOpacity>)}
@@ -2114,15 +1911,11 @@ function SuperLikesScreen({ paymentNotice, openGoldPlans, openPaymentPage }: {
       <View style={styles.superOfferStack}>
         {superLikeOffers.map((offer) => (
           <TouchableOpacity key={offer.id} onPress={() => setSelected(offer.id)} activeOpacity={0.9} style={[styles.superOffer, selected === offer.id && styles.superOfferActive]}>
-            <View style={styles.superOfferCopy}>
+            <View>
               {!!offer.badge && offer.id !== 'superlikes_15' && <Text style={styles.superOfferBadge}>{offer.badge}</Text>}
               <Text style={styles.superOfferCount}>{offer.count} Super Likes</Text>
-              <Text style={styles.superOfferHint}>KES {offer.total.toLocaleString()} total</Text>
             </View>
-            <View style={styles.superOfferPriceBox}>
-              <Text style={styles.superOfferPrice}>KES {offer.unit.toFixed(2)}</Text>
-              <Text style={styles.superOfferUnit}>per Super Like</Text>
-            </View>
+            <Text style={styles.superOfferPrice}>KES{offer.unit.toFixed(2)}/ea</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -2159,7 +1952,7 @@ function GoldPlansScreen({ paymentNotice, openPaymentPage }: {
           <TouchableOpacity key={option.id} onPress={() => setSelected(option.id)} activeOpacity={0.9} style={[styles.goldPlanOption, selected === option.id && styles.goldPlanOptionActive]}>
             <View style={styles.goldOptionTop}><Text style={styles.goldOptionBadge}>{option.badge}</Text>{selected === option.id && <Icon name="checkmark" size={28} color="#FFD700" />}</View>
             <Text style={styles.goldOptionLabel}>{option.label}</Text>
-            <Text style={styles.goldOptionPrice}>KES {option.unit}/wk</Text>
+            <Text style={styles.goldOptionPrice}>KES{option.unit}/wk</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -2347,36 +2140,29 @@ function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: Pa
       <View style={styles.paymentSheetBackdrop}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
         <AnimatedSalesPanel style={styles.paymentSheetCard}>
+          <View style={styles.paymentSheetHandle} />
+          <View style={styles.paymentSheetTop}>
+            <LinearGradient colors={isMpesa ? ['#00C853', '#13A538'] : ['#00B8FF', '#0066FF']} style={styles.paymentProviderIcon}>
+              <Icon name={isMpesa ? 'phone-portrait' : 'card'} size={28} color="#FFFFFF" />
+            </LinearGradient>
+            <TouchableOpacity onPress={onClose} style={styles.paymentCloseButton}><Icon name="close" size={22} color="#FFFFFF" /></TouchableOpacity>
+          </View>
+          <Text style={styles.paymentSheetEyebrow}>{isMpesa ? 'M-Pesa payment' : 'Paystack card checkout'}</Text>
+          <Text style={styles.paymentSheetTitle}>{sheet.title}</Text>
+          <Text style={styles.paymentSheetSubtitle}>{sheet.subtitle}</Text>
+          <View style={styles.paymentAmountCard}><Text style={styles.paymentAmountLabel}>Amount</Text><Text style={styles.paymentAmountValue}>KES {sheet.amountKes.toLocaleString()}</Text></View>
+          <View style={styles.paymentStatusRow}><ActivityIndicator color={isMpesa ? '#00E676' : '#60A5FA'} /><Text style={styles.paymentStatusText}>{isMpesa ? 'Waiting for provider confirmation' : 'Checkout ready'}</Text></View>
+          <Text style={styles.paymentInstructionText}>{sheet.instructions}</Text>
+          <Text style={styles.paymentReferenceText}>Payment ID: {sheet.paymentId}</Text>
           {isMpesa ? (
-            <>
-              <View style={styles.paymentSheetHandle} />
-              <View style={styles.paymentSheetTop}>
-                <LinearGradient colors={['#00C853', '#13A538']} style={styles.paymentProviderIcon}>
-                  <Icon name="phone-portrait" size={28} color="#FFFFFF" />
-                </LinearGradient>
-                <TouchableOpacity onPress={onClose} style={styles.paymentCloseButton}><Icon name="close" size={22} color="#FFFFFF" /></TouchableOpacity>
-              </View>
-              <Text style={styles.paymentSheetEyebrow}>M-Pesa payment</Text>
-              <Text style={styles.paymentSheetTitle}>{sheet.title}</Text>
-              <Text style={styles.paymentSheetSubtitle}>{sheet.subtitle}</Text>
-              <View style={styles.paymentAmountCard}><Text style={styles.paymentAmountLabel}>Amount</Text><Text style={styles.paymentAmountValue}>KES {sheet.amountKes.toLocaleString()}</Text></View>
-              <View style={styles.paymentStatusRow}><ActivityIndicator color="#00E676" /><Text style={styles.paymentStatusText}>Waiting for provider confirmation</Text></View>
-              <Text style={styles.paymentInstructionText}>{sheet.instructions}</Text>
-              <Text style={styles.paymentReferenceText}>Payment ID: {sheet.paymentId}</Text>
-              <View style={styles.paymentInfoBox}><Icon name="information-circle" size={18} color="#FFD700" /><Text style={styles.paymentInfoText}>Check your phone for the M-Pesa PIN prompt. If it does not arrive, confirm the phone number and backend STK logs.</Text></View>
-              <View style={styles.paymentActionsRow}>
-                <TouchableOpacity onPress={onRefresh} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Refresh status</Text></TouchableOpacity>
-                <TouchableOpacity onPress={onClose} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Done</Text></TouchableOpacity>
-              </View>
-            </>
+            <View style={styles.paymentInfoBox}><Icon name="information-circle" size={18} color="#FFD700" /><Text style={styles.paymentInfoText}>Check your phone for the M-Pesa PIN prompt. If it does not arrive, confirm the phone number and backend STK logs.</Text></View>
           ) : (
-            <View style={styles.paymentCardOnly}>
-              <TouchableOpacity disabled={!sheet.checkoutUrl} onPress={onOpenCheckout} style={[styles.paymentPrimaryButton, !sheet.checkoutUrl && styles.paymentPrimaryButtonDisabled]}>
-                <Icon name="card" size={20} color="#120914" />
-                <Text style={styles.paymentPrimaryText}>{sheet.checkoutUrl ? 'Pay with Card' : 'Checkout link not ready'}</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity disabled={!sheet.checkoutUrl} onPress={onOpenCheckout} style={[styles.paymentPrimaryButton, !sheet.checkoutUrl && styles.paymentPrimaryButtonDisabled]}><Text style={styles.paymentPrimaryText}>{sheet.checkoutUrl ? 'Open card checkout' : 'Checkout link not ready'}</Text></TouchableOpacity>
           )}
+          <View style={styles.paymentActionsRow}>
+            <TouchableOpacity onPress={onRefresh} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Refresh status</Text></TouchableOpacity>
+            <TouchableOpacity onPress={onClose} style={styles.paymentSecondaryButton}><Text style={styles.paymentSecondaryText}>Done</Text></TouchableOpacity>
+          </View>
         </AnimatedSalesPanel>
       </View>
     </Modal>
@@ -2460,7 +2246,7 @@ function resolveMediaUrl(url?: string) {
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, onDeleteAccount, onRequestDataDeletion, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; onDeleteAccount: () => Promise<void>; onRequestDataDeletion: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community') => void }) {
+function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community') => void }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
@@ -2474,12 +2260,8 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
   const [selectedInterests, setSelectedInterests] = useState<string[]>(profile?.interests?.length ? profile.interests : []);
   const [detailsNotice, setDetailsNotice] = useState('');
   const [promptAnswers, setPromptAnswers] = useState<RomChatPromptAnswer[]>(promptSeed);
-  const lastProfileSyncKey = useRef<string | null>(null);
   useEffect(() => { setPromptAnswers(promptSeed); }, [profile?.memberId, profile?.promptAnswers?.length]);
   useEffect(() => {
-    const syncKey = profile?.memberId || account?.id || account?.email || 'guest';
-    if (lastProfileSyncKey.current === syncKey) return;
-    lastProfileSyncKey.current = syncKey;
     setDisplayName(profile?.displayName || account?.name || '');
     setGender(profile?.gender || 'female');
     setCity(profile?.city || '');
@@ -2487,7 +2269,7 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
     setBio(profile?.bio || '');
     setSelectedInterests(profile?.interests?.length ? profile.interests : []);
     setDetailsNotice('');
-  }, [account?.email, account?.id, account?.name, profile?.memberId]);
+  }, [account?.name, profile?.memberId]);
   const toggleEditableInterest = (interest: string) => setSelectedInterests((current) => current.includes(interest) ? current.filter((item) => item !== interest) : [...current, interest]);
   function saveEditableDetails() {
     if (!displayName.trim()) return setDetailsNotice('Add a display name.');
@@ -2602,14 +2384,6 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
         <Text style={styles.kicker}>Dating prompts</Text>
         {promptAnswers.map((item, index) => <View key={item.prompt} style={styles.promptEditor}><Text style={styles.promptEditorLabel}>{item.prompt}</Text><TextInput value={item.answer} onChangeText={(answer) => setPromptAnswers((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, answer } : row))} placeholder="Write a charming answer" placeholderTextColor="rgba(255,255,255,0.42)" style={styles.promptEditorInput} multiline /></View>)}
         <TouchableOpacity disabled={busy} onPress={() => void onSavePrompts(promptAnswers)} style={styles.boostButton}><Text style={styles.boostText}>Save 7 profile prompts</Text></TouchableOpacity>
-      <View style={styles.dangerPanel}>
-        <Text style={styles.sectionLabel}>Account deletion</Text>
-        <Text style={styles.caption}>Request a data deletion review or remove your RomChat account immediately.</Text>
-        <View style={styles.dangerActionRow}>
-          <TouchableOpacity disabled={busy} onPress={() => void onRequestDataDeletion()} style={styles.dangerSoftButton}><Text style={styles.dangerSoftButtonText}>Request data deletion</Text></TouchableOpacity>
-          <TouchableOpacity disabled={busy} onPress={() => void onDeleteAccount()} style={styles.dangerButton}><Text style={styles.dangerButtonText}>Delete account</Text></TouchableOpacity>
-        </View>
-      </View>
       </View>
     </View>
   );
@@ -2710,6 +2484,7 @@ const styles = StyleSheet.create({
   pillRow: { flexDirection: 'row', gap: 6, marginBottom: 5 },
   verifiedBadge: { color: '#00F0FF', backgroundColor: 'rgba(0,240,255,0.12)', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5, fontWeight: '900', fontSize: 10 },
   cardBadge: { color: '#120914', backgroundColor: '#FFD700', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, fontWeight: '900', fontSize: 10 },
+  expandCardButton: { position: 'absolute', right: 18, bottom: 178, width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(0,0,0,0.64)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
   cardCopy: { paddingHorizontal: 18, paddingBottom: 118, paddingTop: 56 },
   cardTitle: { color: '#FFFFFF', fontSize: 31, fontWeight: '900' },
   cardAge: { color: '#FFFFFF', fontWeight: '700' },
@@ -2785,17 +2560,7 @@ const styles = StyleSheet.create({
   freeLikePill: { color: '#FFFFFF', backgroundColor: 'rgba(255,255,255,0.24)', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 18, paddingVertical: 9, fontWeight: '900', marginBottom: 12 },
   freeLikeTimer: { color: '#FFE9F1', fontSize: 40, fontWeight: '900', marginBottom: 10 },
   freeLikeCopy: { color: '#FFE9F1', fontSize: 15, fontWeight: '800', textAlign: 'center', lineHeight: 22 },
-  goldMatchTouch: { flex: 1 },
-  fullPhotoViewer: { flex: 1, backgroundColor: '#000000', alignItems: 'center', justifyContent: 'center' },
-  fullPhotoImage: { width: '100%', height: '100%' },
-  fullPhotoClose: { position: 'absolute', top: 42, left: 20, width: 48, height: 48, borderRadius: 24, backgroundColor: '#120914', alignItems: 'center', justifyContent: 'center' },
-  goldPhotoArrow: { position: 'absolute', top: '45%', width: 40, height: 40, borderRadius: 20, backgroundColor: '#120914', alignItems: 'center', justifyContent: 'center', zIndex: 3 },
-  goldPhotoArrowLeft: { left: 12 },
-  goldPhotoArrowRight: { right: 12 },
-  goldMatchShell: { marginBottom: 18 },
-  goldMatchShellExpanded: { marginBottom: 22 },
-  goldMatchCard: { height: 390, borderRadius: 28, overflow: 'hidden', backgroundColor: '#1E1222' },
-  goldMatchCardExpanded: { height: 570 },
+  goldMatchCard: { height: 390, borderRadius: 28, overflow: 'hidden', marginBottom: 18, backgroundColor: '#1E1222' },
   goldMatchImage: { borderRadius: 28 },
   goldMatchBadge: { position: 'absolute', top: 16, left: 16, flexDirection: 'row', gap: 6, alignItems: 'center', backgroundColor: '#FFD700', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
   goldMatchBadgeText: { color: '#120914', fontWeight: '900', fontSize: 12 },
@@ -2806,13 +2571,6 @@ const styles = StyleSheet.create({
   goldPassButton: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
   goldAcceptButton: { flex: 1, height: 56, borderRadius: 28, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   goldAcceptText: { color: '#120914', fontSize: 18, fontWeight: '900' },
-  goldAcceptIconButton: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  goldExpandedPanel: { backgroundColor: 'rgba(18,9,20,0.76)', borderRadius: 20, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
-  goldExpandedGallery: { gap: 9, paddingRight: 8 },
-  goldExpandedPhoto: { width: 82, height: 104, borderRadius: 16, backgroundColor: '#1E1222' },
-  goldExpandedBio: { color: '#FFFFFF', fontWeight: '800', lineHeight: 19, marginTop: 10 },
-  goldExpandedTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 },
-  goldExpandedTag: { color: '#120914', backgroundColor: '#FFFFFF', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 4, fontWeight: '900', fontSize: 11 },
   goldRevealButton: { height: 54, borderRadius: 27, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   goldRevealText: { color: '#120914', fontSize: 17, fontWeight: '900' },
   likesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
@@ -2879,12 +2637,6 @@ const styles = StyleSheet.create({
   chatTokenPill: { color: '#120914', backgroundColor: '#FFD700', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 11, paddingVertical: 7, fontWeight: '900' },
   safetyReminder: { flexDirection: 'row', gap: 9, alignItems: 'flex-start', backgroundColor: 'rgba(255,215,0,0.10)', borderWidth: 1, borderColor: 'rgba(255,215,0,0.22)', borderRadius: 18, padding: 12, marginBottom: 12 },
   safetyReminderText: { flex: 1, color: 'rgba(255,255,255,0.82)', fontWeight: '800', lineHeight: 19, fontSize: 12 },
-  safetyBlockCard: { backgroundColor: 'rgba(255,218,214,0.12)', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,111,97,0.34)', padding: 14, marginBottom: 12, gap: 7 },
-  safetyBlockTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 14 },
-  safetyBlockText: { color: 'rgba(255,255,255,0.72)', fontWeight: '800', lineHeight: 19, fontSize: 12 },
-  safetyBlockAction: { color: '#FFD700', fontWeight: '900', marginTop: 2 },
-  abuseReportButton: { marginTop: 8, alignSelf: 'flex-start', borderRadius: 999, backgroundColor: '#FF1493', paddingHorizontal: 10, paddingVertical: 6 },
-  abuseReportText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' },
   contactSheetBackdrop: { flex: 1, backgroundColor: 'rgba(6,2,8,0.72)', justifyContent: 'flex-end', paddingHorizontal: 16, paddingBottom: 18 },
   contactSheetCard: { backgroundColor: '#1E1222', borderRadius: 28, padding: 20, borderWidth: 1, borderColor: 'rgba(255,20,147,0.32)', shadowColor: '#FF1493', shadowOpacity: 0.32, shadowRadius: 24, shadowOffset: { width: 0, height: -8 }, elevation: 18 },
   contactSheetIcon: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
@@ -3013,8 +2765,6 @@ const styles = StyleSheet.create({
   paymentPrimaryButton: { minHeight: 56, borderRadius: 28, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 18 },
   paymentPrimaryButtonDisabled: { opacity: 0.5 },
   paymentPrimaryText: { color: '#111823', fontSize: 17, fontWeight: '900' },
-  superOfferCopy: { flex: 1 },
-  paymentCardOnly: { paddingTop: 12 },
   paymentActionsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   paymentSecondaryButton: { flex: 1, minHeight: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
   paymentSecondaryText: { color: '#FFFFFF', fontWeight: '900' },
@@ -3025,14 +2775,11 @@ const styles = StyleSheet.create({
   superTitleScript: { fontStyle: 'italic' },
   superCopy: { color: '#BFD3F8', fontSize: 20, lineHeight: 28, fontWeight: '800', textAlign: 'center', marginBottom: 24 },
   superOfferStack: { gap: 12 },
-  superOffer: { minHeight: 120, borderRadius: 22, padding: 18, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
+  superOffer: { minHeight: 112, borderRadius: 22, padding: 18, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   superOfferActive: { backgroundColor: '#9BC6FF', borderColor: '#9BC6FF' },
   superOfferBadge: { color: '#FFFFFF', fontWeight: '900', fontSize: 13, marginBottom: 12 },
-  superOfferCount: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', lineHeight: 29 },
-  superOfferHint: { color: 'rgba(255,255,255,0.72)', fontWeight: '800', marginTop: 5 },
-  superOfferPriceBox: { minWidth: 124, alignItems: 'flex-end' },
-  superOfferPrice: { color: '#FFFFFF', fontSize: 19, fontWeight: '900' },
-  superOfferUnit: { color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: '900', marginTop: 4, textAlign: 'right' },
+  superOfferCount: { color: '#FFFFFF', fontSize: 25, fontWeight: '900' },
+  superOfferPrice: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
   orText: { color: '#FFFFFF', fontSize: 28, fontStyle: 'italic', fontWeight: '900', textAlign: 'center', marginVertical: 18 },
   goldInlineCard: { minHeight: 92, borderRadius: 20, padding: 16, backgroundColor: '#0D111A', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   goldInlineTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
@@ -3048,12 +2795,12 @@ const styles = StyleSheet.create({
   goldHeroText: { color: '#FFFFFF', fontSize: 29, lineHeight: 36, fontWeight: '900', marginBottom: 22 },
   goldPlanLabel: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', marginBottom: 14 },
   goldPlanScroller: { gap: 14, paddingRight: 20, paddingBottom: 18 },
-  goldPlanOption: { width: 228, minHeight: 152, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', padding: 18, justifyContent: 'space-between', backgroundColor: '#111111' },
+  goldPlanOption: { width: 218, minHeight: 146, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', padding: 16, justifyContent: 'space-between', backgroundColor: '#111111' },
   goldPlanOptionActive: { borderColor: '#FFD700', borderWidth: 2 },
   goldOptionTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   goldOptionBadge: { color: '#FFD700', fontWeight: '900', fontSize: 16 },
-  goldOptionLabel: { color: '#FFFFFF', fontSize: 28, fontWeight: '900', lineHeight: 32 },
-  goldOptionPrice: { color: '#FFFFFF', fontSize: 17, fontWeight: '900', marginTop: 6 },
+  goldOptionLabel: { color: '#FFFFFF', fontSize: 28, fontWeight: '900' },
+  goldOptionPrice: { color: '#FFFFFF', fontSize: 17, fontWeight: '900' },
   goldIncludedCard: { borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', padding: 18, marginTop: 10 },
   goldIncludedPill: { alignSelf: 'center', color: 'rgba(255,255,255,0.62)', backgroundColor: '#111111', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 5, marginTop: -34, marginBottom: 14, fontWeight: '800' },
   goldBenefitRow: { flexDirection: 'row', alignItems: 'center', gap: 18, paddingVertical: 10 },
@@ -3083,12 +2830,6 @@ const styles = StyleSheet.create({
   textButton: { alignItems: 'center', paddingVertical: 12 },
   textButtonLabel: { color: '#FFD700', fontWeight: '900' },
   legalPanel: { backgroundColor: '#1E1222', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,215,0,0.18)', padding: 16, marginBottom: 14 },
-  dangerPanel: { backgroundColor: '#1E1222', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,111,97,0.28)', padding: 16, marginBottom: 14 },
-  dangerActionRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  dangerSoftButton: { flex: 1, minHeight: 50, borderRadius: 16, backgroundColor: 'rgba(255,111,97,0.1)', borderWidth: 1, borderColor: 'rgba(255,111,97,0.28)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
-  dangerSoftButtonText: { color: '#FFD7D2', fontWeight: '900', textAlign: 'center' },
-  dangerButton: { flex: 1, minHeight: 50, borderRadius: 16, backgroundColor: '#FF6F61', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
-  dangerButtonText: { color: '#120914', fontWeight: '900', textAlign: 'center' },
   legalLink: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   legalTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginBottom: 4 },
   policyScreen: { gap: 12 },
@@ -3144,4 +2885,5 @@ const styles = StyleSheet.create({
   promptEditorLabel: { color: '#FFD700', fontWeight: '900', marginBottom: 7 },
   promptEditorInput: { minHeight: 46, color: '#FFFFFF', fontWeight: '800', lineHeight: 20, textAlignVertical: 'top' },
 });
+
 
