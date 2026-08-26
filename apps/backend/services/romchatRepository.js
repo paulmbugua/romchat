@@ -168,6 +168,13 @@ async function ensureSchema() {
   if (schemaReady) return;
   await queryWithRetry(schemaSql);
   await queryWithRetry('CREATE TABLE IF NOT EXISTS romchat_moderation_appeals (id TEXT PRIMARY KEY, member_id TEXT NOT NULL, report_id TEXT, reason TEXT NOT NULL, status TEXT NOT NULL, details JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, reviewed_at TIMESTAMPTZ, reviewed_by TEXT)');
+  await queryWithRetry(`CREATE TABLE IF NOT EXISTS romchat_profile_blocks (
+    blocker_id TEXT NOT NULL,
+    blocked_id TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (blocker_id, blocked_id)
+  )`);
   await seedProfiles();
   schemaReady = true;
 }
@@ -353,6 +360,12 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
         AND ((active_match.actor_id = $1 AND active_match.profile_id = p.member_id)
           OR (active_match.profile_id = $1 AND active_match.actor_id = p.member_id))
        WHERE ($1::text IS NULL OR p.member_id <> $1)
+         AND NOT EXISTS (
+           SELECT 1 FROM romchat_profile_blocks pb
+           WHERE $1::text IS NOT NULL
+             AND ((pb.blocker_id = $1 AND pb.blocked_id = p.member_id)
+               OR (pb.blocked_id = $1 AND pb.blocker_id = p.member_id))
+         )
          AND ($2::boolean = false OR p.selfie_verified = true)
          AND ($3::text IS NULL OR lower(p.gender) = $3)
        GROUP BY p.member_id, active_match.id
@@ -381,6 +394,12 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
           AND ((active_match.actor_id = $1 AND active_match.profile_id = p.member_id)
             OR (active_match.profile_id = $1 AND active_match.actor_id = p.member_id))
          WHERE ($1::text IS NULL OR p.member_id <> $1)
+         AND NOT EXISTS (
+           SELECT 1 FROM romchat_profile_blocks pb
+           WHERE $1::text IS NOT NULL
+             AND ((pb.blocker_id = $1 AND pb.blocked_id = p.member_id)
+               OR (pb.blocked_id = $1 AND pb.blocker_id = p.member_id))
+         )
            AND ($2::text IS NULL OR lower(p.gender) = $2)
          GROUP BY p.member_id, active_match.id
          ORDER BY p.selfie_verified DESC, p.profile_strength DESC, p.updated_at DESC`,
@@ -638,7 +657,7 @@ export async function updatePrivacy(payload = {}) {
 export async function createReport(payload = {}) {
   const report = {
     id: id('rp'),
-    reporterId: 'me',
+    reporterId: payload.reporterId || payload.reporter_id || 'me',
     profileId: payload.profileId || null,
     type: payload.type || 'Safety report',
     severity: payload.severity || 'medium',
@@ -653,6 +672,19 @@ export async function createReport(payload = {}) {
     );
     return report;
   }, () => report);
+}
+
+export async function blockProfile(payload = {}) {
+  const blockerId = String(payload.blockerId || payload.blocker_id || '').trim();
+  const blockedId = String(payload.blockedId || payload.blocked_id || payload.profileId || '').trim();
+  const reason = String(payload.reason || '').trim();
+  if (!blockerId || !blockedId || blockerId === blockedId) { const error = new Error('A valid profile is required.'); error.status = 400; error.code = 'INVALID_PROFILE_BLOCK'; throw error; }
+  return withDb(async () => {
+    await queryWithRetry('INSERT INTO romchat_profile_blocks (blocker_id, blocked_id, reason) VALUES ($1,$2,$3) ON CONFLICT (blocker_id, blocked_id) DO UPDATE SET reason = EXCLUDED.reason, created_at = now()', [blockerId, blockedId, reason]);
+    await queryWithRetry("UPDATE romchat_matches SET status = 'blocked' WHERE (actor_id = $1 AND profile_id = $2) OR (actor_id = $2 AND profile_id = $1)", [blockerId, blockedId]);
+    console.info('[romchat-safety] profile:blocked', { blockerId, blockedId });
+    return { blockerId, blockedId, blocked: true };
+  }, () => ({ blockerId, blockedId, blocked: true }));
 }
 
 export async function createModerationAppeal(payload = {}) {

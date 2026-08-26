@@ -110,11 +110,16 @@ export const romchatAccountApi = {
       token,
       body: JSON.stringify(payload),
     }),
-  uploadMedia: (token: string, payload: { mediaType: 'image' | 'video' | 'voice' | 'selfie'; dataUri: string; contentType: string; fileName?: string }) =>
+  uploadMedia: (token: string, payload: { mediaType: 'image' | 'video' | 'voice' | 'selfie'; dataUri: string; contentType: string; fileName?: string; replaceMediaId?: string }) =>
     apiFetch<{ media: RomChatProfileMedia; profile: RomChatMemberProfile }>('/api/romchat/profile/media', {
       method: 'POST',
       token,
       body: JSON.stringify(payload),
+    }),
+  deleteMedia: (token: string, mediaId: string) =>
+    apiFetch<{ profile: RomChatMemberProfile }>('/api/romchat/profile/media/' + mediaId, {
+      method: 'DELETE',
+      token,
     }),
   setMainPhoto: (token: string, mediaId: string) =>
     apiFetch<{ media: RomChatProfileMedia; profile: RomChatMemberProfile }>('/api/romchat/profile/media/' + mediaId + '/main', {

@@ -2,6 +2,7 @@ import {
   activateBoost,
   addOns,
   boosts,
+  blockProfile,
   createReport,
   createSwipe,
   createVerification,
@@ -30,7 +31,7 @@ import {
 } from '../services/romchatRepository.js';
 import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
 import pool, { queryWithRetry } from '../config/db.js';
-import { getAuthState, loginWithGoogleToken, loginWithPassword, requestPasswordReset, requestSignupOtp, requireRomchatAccount, resetPasswordWithCode, setMainProfilePhoto, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
+import { getAuthState, loginWithGoogleToken, loginWithPassword, requestPasswordReset, requestSignupOtp, requireRomchatAccount, resetPasswordWithCode, setMainProfilePhoto, deleteMemberMedia, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
 
 function sendError(res, error) {
   console.error('[romchat-api] request:error', {
@@ -196,6 +197,14 @@ export function createRomchatController(io) {
         sendError(res, error);
       }
     },
+    async deleteProfileMedia(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        res.json(await deleteMemberMedia(user.id, req.params.mediaId));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
     async verifySelfie(req, res) {
       try {
         const user = await requireRomchatAccount(req);
@@ -287,9 +296,24 @@ export function createRomchatController(io) {
       res.json({ privacy });
     },
     async report(req, res) {
-      const report = await createReport(req.body || {});
-      io?.emit('romchat:report', report);
-      res.status(201).json({ report, message: 'Report received by RomChat safety.' });
+      try {
+        const user = await requireRomchatAccount(req);
+        const report = await createReport({ ...(req.body || {}), reporterId: user.id });
+        io?.emit('romchat:report', report);
+        res.status(201).json({ report, message: 'Report received by RomChat safety.' });
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async block(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        const block = await blockProfile({ blockerId: user.id, blockedId: req.body?.profileId, reason: req.body?.reason });
+        io?.to(`member:${user.id}`).emit('romchat:profile-blocked', block);
+        res.status(201).json({ block, message: 'Profile blocked.' });
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async verification(req, res) {
       const request = await createVerification(req.body || {});

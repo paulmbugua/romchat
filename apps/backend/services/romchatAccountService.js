@@ -5,7 +5,7 @@ import { OAuth2Client } from 'google-auth-library';
 import admin from 'firebase-admin';
 import { queryWithRetry } from '../config/db.js';
 import { sendNotification } from '../utils/sendNotification.js';
-import { putRomchatMedia } from './romchatMediaStorage.js';
+import { deleteRomchatMedia, putRomchatMedia } from './romchatMediaStorage.js';
 
 const googleClient = new OAuth2Client();
 const jwtSecret = process.env.JWT_SECRET || process.env.ROMCHAT_JWT_SECRET || 'romchat-local-dev-secret';
@@ -632,14 +632,64 @@ export async function upsertMemberProfile(memberId, payload = {}) {
 
 export async function uploadMemberMedia(memberId, payload = {}) {
   await ensureAccountSchema();
+  const requestedType = String(payload.mediaType || 'image').toLowerCase();
+  const replaceMediaId = String(payload.replaceMediaId || '').trim();
+  let mediaToReplace = null;
+
+  if (replaceMediaId) {
+    const selected = await queryWithRetry(
+      "SELECT * FROM romchat_profile_media WHERE id = $1 AND member_id = $2 AND media_type = 'image'",
+      [replaceMediaId, memberId]
+    );
+    mediaToReplace = selected.rows[0] || null;
+    if (!mediaToReplace) {
+      const error = new Error('Profile photo to replace was not found.');
+      error.status = 404;
+      throw error;
+    }
+    if (requestedType !== 'image') {
+      const error = new Error('A profile photo can only be replaced with another image.');
+      error.status = 400;
+      throw error;
+    }
+  } else if (requestedType === 'image') {
+    const imageCount = await queryWithRetry(
+      "SELECT COUNT(*)::int AS count FROM romchat_profile_media WHERE member_id = $1 AND media_type = 'image'",
+      [memberId]
+    );
+    if (Number(imageCount.rows[0]?.count || 0) >= 6) {
+      const error = new Error('Your profile can contain up to 6 photos. Replace an existing photo to add another.');
+      error.status = 400;
+      throw error;
+    }
+  }
+
   const uploaded = await putRomchatMedia({
     memberId,
-    mediaKind: payload.mediaType || 'image',
+    mediaKind: requestedType,
     contentType: payload.contentType,
     dataUri: payload.dataUri,
     base64: payload.base64,
     fileName: payload.fileName,
   });
+
+  if (mediaToReplace) {
+    const rows = await queryWithRetry(
+      `UPDATE romchat_profile_media
+       SET media_type = $3, url = $4, object_key = $5, bucket = $6, content_type = $7, moderation_status = 'pending'
+       WHERE id = $1 AND member_id = $2
+       RETURNING *`,
+      [replaceMediaId, memberId, uploaded.mediaType, uploaded.url, uploaded.key, uploaded.bucket, uploaded.contentType]
+    );
+    try {
+      await deleteRomchatMedia({ key: mediaToReplace.object_key, bucket: mediaToReplace.bucket, mediaKind: mediaToReplace.media_type });
+    } catch (error) {
+      console.warn('[romchat-media] replaced photo saved; old object cleanup failed', { mediaId: replaceMediaId, message: error?.message || String(error) });
+    }
+    const replacedMedia = mediaFromRow(rows.rows[0]);
+    return { media: replacedMedia, profile: await getMemberProfile(memberId), replaced: true };
+  }
+
   const count = await queryWithRetry('SELECT COUNT(*)::int AS count FROM romchat_profile_media WHERE member_id = $1', [memberId]);
   const position = Number(count.rows[0]?.count || 0);
   const mediaId = id('media');
@@ -656,8 +706,33 @@ export async function uploadMemberMedia(memberId, payload = {}) {
   if (insertedMedia.mediaType === 'selfie') {
     await queryWithRetry("UPDATE romchat_member_profiles SET selfie_media_url = $2, selfie_verified = false, verification_status = 'reviewing', updated_at = now() WHERE member_id = $1", [memberId, insertedMedia.url]);
   }
-  const profile = await getMemberProfile(memberId);
-  return { media: insertedMedia, profile };
+  return { media: insertedMedia, profile: await getMemberProfile(memberId), replaced: false };
+}
+
+export async function deleteMemberMedia(memberId, mediaId) {
+  await ensureAccountSchema();
+  const selected = await queryWithRetry('SELECT * FROM romchat_profile_media WHERE id = $1 AND member_id = $2', [mediaId, memberId]);
+  const media = selected.rows[0];
+  if (!media) {
+    const error = new Error('Profile photo not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (media.media_type === 'image') {
+    const count = await queryWithRetry("SELECT COUNT(*)::int AS count FROM romchat_profile_media WHERE member_id = $1 AND media_type = 'image'", [memberId]);
+    if (Number(count.rows[0]?.count || 0) <= 1) {
+      const error = new Error('Keep at least one profile photo.');
+      error.status = 400;
+      throw error;
+    }
+  }
+  await deleteRomchatMedia({ key: media.object_key, bucket: media.bucket, mediaKind: media.media_type });
+  await queryWithRetry('DELETE FROM romchat_profile_media WHERE id = $1 AND member_id = $2', [mediaId, memberId]);
+  await queryWithRetry(
+    "WITH ordered AS (SELECT id, ROW_NUMBER() OVER (ORDER BY position ASC, created_at ASC) - 1 AS next_position FROM romchat_profile_media WHERE member_id = $1) UPDATE romchat_profile_media media SET position = ordered.next_position FROM ordered WHERE media.id = ordered.id",
+    [memberId]
+  );
+  return { profile: await getMemberProfile(memberId) };
 }
 
 export async function setMainProfilePhoto(memberId, mediaId) {

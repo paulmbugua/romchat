@@ -32,7 +32,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { storage } from '../utils/storage';
 import { romchatAccountApi, romchatBackendHealth, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
 import { apiBaseUrl } from './lib/api';
-import { checkForAppUpdate } from './lib/appUpdates';
 import { ApiRequestError } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 import { ProfileDetailModal, type ProfileDetailData } from './components/ProfileDetailModal';
@@ -232,6 +231,7 @@ export default function App() {
   const [mpesaPhone, setMpesaPhone] = useState('');
   const [pendingPurchase, setPendingPurchase] = useState<PendingPurchase | null>(null);
   const [paymentSheet, setPaymentSheet] = useState<PaymentSheetState | null>(null);
+  const [rewindSheetVisible, setRewindSheetVisible] = useState(false);
   const [showMatch, setShowMatch] = useState(false);
   const [pendingChatProfileId, setPendingChatProfileId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -350,10 +350,6 @@ export default function App() {
       if (mounted) setAuthBooted(true);
     })();
     return () => { mounted = false; };
-  }, []);
-
-  useEffect(() => {
-    void checkForAppUpdate();
   }, []);
 
   useEffect(() => {
@@ -523,10 +519,7 @@ export default function App() {
 
   function previous() {
     if (!hasGoldAccess) {
-      Alert.alert('Rewind is premium', 'Free members cannot swipe back. Buy 100 tokens for KES 250 or upgrade to Gold to rewind.', [
-        { text: 'Later', style: 'cancel' },
-        { text: 'OK', onPress: () => { void startTokenPurchase('tokens_100', 'mpesa'); openTokenStore(); } },
-      ]);
+      setRewindSheetVisible(true);
       return;
     }
     clearMatchTimer();
@@ -712,7 +705,7 @@ export default function App() {
     finally { setAuthBusy(false); }
   }
 
-  async function uploadProfileImage() {
+  async function uploadProfileImage(replaceMediaId?: string) {
     if (!session?.token) return;
     setAuthBusy(true);
     setAuthError('');
@@ -726,7 +719,7 @@ export default function App() {
       if (!asset?.base64) throw new Error('Unable to read image data.');
       const contentType = asset.mimeType || 'image/jpeg';
       const dataUri = `data:${contentType};base64,${asset.base64}`;
-      const response = await romchatAccountApi.uploadMedia(session.token, { mediaType: 'image', dataUri, contentType, fileName: asset.fileName || 'profile.jpg' });
+      const response = await romchatAccountApi.uploadMedia(session.token, { mediaType: 'image', dataUri, contentType, fileName: asset.fileName || 'profile.jpg', replaceMediaId });
       if (response.profile) {
         const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
         await persistSession(next);
@@ -734,6 +727,18 @@ export default function App() {
         await refreshSession(session.token);
       }
     } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to upload image.'); }
+    finally { setAuthBusy(false); }
+  }
+
+  async function deleteProfileMedia(mediaId: string) {
+    if (!session?.token || !mediaId) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const response = await romchatAccountApi.deleteMedia(session.token, mediaId);
+      const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
+      await persistSession(next);
+    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to delete image.'); }
     finally { setAuthBusy(false); }
   }
 
@@ -915,7 +920,7 @@ export default function App() {
         />
       );
     }
-    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} openPolicy={(section) => setActiveSection(section)} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onDeletePhoto={deleteProfileMedia} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} openPolicy={(section) => setActiveSection(section)} />;
   }
 
   if (!authBooted) {
@@ -945,6 +950,7 @@ export default function App() {
           {renderSection(activeSection)}
         </ScrollView>
         <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
+  
         <FooterNav active={activeSection} setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} likesReceivedCount={visibleLikesReceivedCount} />
       </SafeAreaView>
     );
@@ -989,7 +995,9 @@ export default function App() {
               passProfile={animatedPassProfile}
               likeProfile={animatedLikeProfile}
               topProfile={superLikeProfile}
-              onFirstImpression={(offer) => openPaymentPage({ kind: 'firstImpressions', title: `${offer.count} First Impressions`, subtitle: 'Send thoughtful priority messages before a mutual match.', amountKes: offer.total, packageId: offer.id, accent: 'blue' })}
+              blockProfile={(profileId) => romchat.block(profileId)}
+              reportProfile={(profileId, reason) => romchat.report(profileId, reason)}
+              onFirstImpression={(offer, message) => openPaymentPage({ kind: 'firstImpressions', title: `${offer.count} First Impressions`, subtitle: message ? `Your note: “${message}”` : 'Send thoughtful priority messages before a mutual match.', amountKes: offer.total, packageId: offer.id, accent: 'blue' })}
               previous={previous}
               swipeHandlers={swipeHandlers}
               swipeCardStyle={swipeCardStyle}
@@ -1009,6 +1017,7 @@ export default function App() {
         )}
       </ScrollView>
       <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
+      <RewindPremiumSheet visible={rewindSheetVisible} onClose={() => setRewindSheetVisible(false)} onBuyTokens={() => { setRewindSheetVisible(false); void startTokenPurchase('tokens_100', 'mpesa'); openTokenStore(); }} onUpgrade={() => { setRewindSheetVisible(false); setActiveSection('premium'); }} />
       <FooterNav active="swipe" setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} likesReceivedCount={visibleLikesReceivedCount} />
     </SafeAreaView>
   );
@@ -1295,6 +1304,8 @@ function Discover({
   passProfile,
   likeProfile,
   topProfile,
+  blockProfile,
+  reportProfile,
   onFirstImpression,
   previous,
   swipeHandlers,
@@ -1309,7 +1320,9 @@ function Discover({
   passProfile: () => void;
   likeProfile: () => void;
   topProfile: () => void;
-  onFirstImpression: (offer: { id: string; count: number; total: number; unit: number; badge?: string }) => void;
+  blockProfile: (profileId: string) => Promise<void>;
+  reportProfile: (profileId: string, reason: string) => Promise<void>;
+  onFirstImpression: (offer: { id: string; count: number; total: number; unit: number; badge?: string }, message: string) => void;
   previous: () => void;
   swipeHandlers: GestureResponderHandlers;
   swipeCardStyle: object;
@@ -1374,13 +1387,10 @@ function Discover({
           <TouchableOpacity onPress={() => setDetailsOpen(true)} style={styles.expandCardButton} accessibilityLabel="Open full profile details"><Icon name="arrow-up" size={21} color="#FFFFFF" /></TouchableOpacity>
           <View style={styles.cardCopy}>
             <View style={styles.pillRow}>
-              <Text style={styles.cardBadge}>{profile.match}%</Text>
-              <Text style={styles.verifiedBadge}>Active</Text>
+              <Text style={styles.verifiedBadge}>{profile.online ? 'Active now' : 'Recently active'}</Text>
             </View>
-            <Text style={styles.cardTitle}>{profile.name} <Text style={styles.cardAge}>{profile.age}</Text></Text>
-            <Text style={styles.cardSub}>{profile.city} - Kenya{typeof profile.distanceKm === 'number' && profile.distanceKm > 0 ? ` - ${profile.distanceKm} km away` : ''}</Text>
-            <Text numberOfLines={2} style={styles.cardPrompt}>{profile.prompt}</Text>
-            <View style={styles.tagRow}>{profile.tags.slice(0, 3).map((tag) => <Text key={tag} style={styles.photoTag}>{tag}</Text>)}</View>
+            <Text style={styles.cardTitle}>{profile.name.split(' ')[0]} <Text style={styles.cardAge}>{profile.age}</Text></Text>
+            <Text style={styles.cardSub}><Icon name="location-outline" size={15} color="#FFFFFF" /> {typeof profile.distanceKm === 'number' && profile.distanceKm > 0 ? `${profile.distanceKm} km away` : 'Nearby in Kenya'}</Text>
           </View>
           <View style={styles.actionDock}>
             <View style={styles.actionItem}>
@@ -1402,7 +1412,17 @@ function Discover({
         </ImageBackground>
       </Animated.View>
 
-      <ProfileDetailModal profile={detailProfile} visible={detailsOpen} onClose={() => setDetailsOpen(false)} onPass={() => { setDetailsOpen(false); passProfile(); }} onLike={() => { setDetailsOpen(false); likeProfile(); }} onSuperLike={() => { setDetailsOpen(false); topProfile(); }} onFirstImpression={onFirstImpression} />
+      <ProfileDetailModal
+        profile={detailProfile}
+        visible={detailsOpen}
+        onClose={() => setDetailsOpen(false)}
+        onPass={() => { setDetailsOpen(false); passProfile(); }}
+        onLike={() => { setDetailsOpen(false); likeProfile(); }}
+        onSuperLike={() => { setDetailsOpen(false); topProfile(); }}
+        onBlock={blockProfile}
+        onReport={reportProfile}
+        onFirstImpression={onFirstImpression}
+      />
 
       {showMatch && (
         <Animated.View pointerEvents="box-none" style={[styles.matchPopOverlay, { opacity: popOpacity, transform: [{ scale: popScale }] }]}>
@@ -2169,6 +2189,22 @@ function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: Pa
   );
 }
 
+function RewindPremiumSheet({ visible, onClose, onBuyTokens, onUpgrade }: { visible: boolean; onClose: () => void; onBuyTokens: () => void; onUpgrade: () => void }) {
+  const insets = useSafeAreaInsets();
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <View style={styles.rewindSheetBackdrop}><TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+      <View style={[styles.rewindSheetCard, { paddingBottom: Math.max(insets.bottom, 18) }]}><View style={styles.paymentSheetHandle} />
+        <LinearGradient colors={["#FF1493", "#FF6F61"]} style={styles.rewindSheetIcon}><Icon name="return-up-back" size={28} color="#FFFFFF" /></LinearGradient>
+        <View style={styles.rewindSheetEyebrowRow}><Text style={styles.rewindSheetEyebrow}>A second chance</Text><View style={styles.rewindPremiumPill}><Icon name="diamond" size={13} color="#120914" /><Text style={styles.rewindPremiumPillText}>Premium</Text></View></View>
+        <Text style={styles.rewindSheetTitle}>Bring that connection back</Text><Text style={styles.rewindSheetBody}>Accidentally passed someone special? Rewind your last swipe and give the moment another chance.</Text>
+        <View style={styles.rewindOptionRow}><View style={styles.rewindOption}><Text style={styles.rewindOptionValue}>100</Text><Text style={styles.rewindOptionLabel}>tokens</Text></View><View style={styles.rewindOptionDivider} /><View style={styles.rewindOption}><Text style={styles.rewindOptionValue}>KES 250</Text><Text style={styles.rewindOptionLabel}>one-time pack</Text></View></View>
+        <TouchableOpacity onPress={onBuyTokens} style={styles.rewindPrimaryButton}><Icon name="diamond-outline" size={19} color="#FFFFFF" /><Text style={styles.rewindPrimaryText}>Get 100 tokens</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onUpgrade} style={styles.rewindSecondaryButton}><Text style={styles.rewindSecondaryText}>See Gold rewinds</Text><Icon name="arrow-forward" size={17} color="#FFD700" /></TouchableOpacity>
+        <TouchableOpacity onPress={onClose} style={styles.rewindLaterButton}><Text style={styles.rewindLaterText}>Maybe later</Text></TouchableOpacity>
+      </View></View>
+  </Modal>;
+}
+
 function ContactSafetySheet({ visible, matchName, onReview, onSend }: { visible: boolean; matchName: string; onReview: () => void; onSend: () => void }) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onReview}>
@@ -2246,7 +2282,7 @@ function resolveMediaUrl(url?: string) {
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: () => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community') => void }) {
+function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onDeletePhoto, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: (replaceMediaId?: string) => Promise<void>; onDeletePhoto: (mediaId: string) => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community') => void }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
@@ -2259,6 +2295,7 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
   const [bio, setBio] = useState(profile?.bio || '');
   const [selectedInterests, setSelectedInterests] = useState<string[]>(profile?.interests?.length ? profile.interests : []);
   const [detailsNotice, setDetailsNotice] = useState('');
+  const [photoMenuId, setPhotoMenuId] = useState<string | null>(null);
   const [promptAnswers, setPromptAnswers] = useState<RomChatPromptAnswer[]>(promptSeed);
   useEffect(() => { setPromptAnswers(promptSeed); }, [profile?.memberId, profile?.promptAnswers?.length]);
   useEffect(() => {
@@ -2350,11 +2387,12 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
           </View>
           <TouchableOpacity disabled={busy} onPress={() => void onSaveDiscoverySettings({ maxDistanceKm: distanceKm, minAge, maxAge, mapDiscoveryEnabled: mapEnabled })} style={styles.distanceSaveButton}><Text style={styles.distanceSaveText}>Apply discovery filters</Text></TouchableOpacity>
         </View>
+        <Text style={styles.distanceMeta}>Tap a photo to replace it. Press and hold for primary-photo and delete actions.</Text>
         <View style={styles.photoSlotGrid}>{Array.from({ length: 6 }).map((_, index) => {
           const media = photoMedia[index];
           const uri = resolveMediaUrl(media?.url);
           const isMain = Boolean(media && index === 0);
-          return <TouchableOpacity disabled={busy} onPress={() => media?.id ? void onSetMainPhoto(media.id) : void onUploadImage()} key={media?.id || index} style={[styles.photoSlot, isMain && styles.photoSlotMain]}>{uri ? <Image source={{ uri }} style={styles.photoThumb} /> : <Icon name={index < imageCount ? 'image' : 'add'} size={22} color={index < imageCount ? '#FFD700' : '#FF1493'} />}{!uri && <Text style={styles.photoSlotText}>Add</Text>}</TouchableOpacity>;
+          return <TouchableOpacity disabled={busy} onPress={() => { setPhotoMenuId(null); void (media?.id ? onUploadImage(media.id) : onUploadImage()); }} onLongPress={() => media?.id && setPhotoMenuId(media.id)} delayLongPress={380} key={media?.id || index} style={[styles.photoSlot, isMain && styles.photoSlotMain]}>{uri ? <Image source={{ uri }} style={styles.photoThumb} /> : <Icon name={index < imageCount ? 'image' : 'add'} size={22} color={index < imageCount ? '#FFD700' : '#FF1493'} />}{!uri && <Text style={styles.photoSlotText}>Add</Text>}{media?.id && photoMenuId === media.id && <View style={styles.photoSlotActions}><TouchableOpacity onPress={() => { setPhotoMenuId(null); void onSetMainPhoto(media.id); }} style={styles.photoSlotAction}><Icon name="star" size={16} color="#120914" /></TouchableOpacity><TouchableOpacity onPress={() => { setPhotoMenuId(null); void onDeletePhoto(media.id); }} style={[styles.photoSlotAction, styles.photoSlotActionDanger]}><Icon name="trash" size={16} color="#FFFFFF" /></TouchableOpacity></View>}</TouchableOpacity>;
         })}</View>
         {profileTasks.map(([item, detail]) => (
           <View key={item} style={styles.listItem}>
@@ -2744,6 +2782,14 @@ const styles = StyleSheet.create({
   cardDividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.12)' },
   cardDividerText: { color: 'rgba(255,255,255,0.58)', fontWeight: '900' },
   paymentNotice: { color: '#FFD700', fontWeight: '800', marginTop: 8, marginBottom: 12, textAlign: 'center' },
+  rewindSheetBackdrop: { flex: 1, backgroundColor: 'rgba(4,2,8,0.72)', justifyContent: 'flex-end' },
+  rewindSheetCard: { backgroundColor: '#1E1222', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 22, paddingTop: 14, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)' },
+  rewindSheetIcon: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginTop: 5 },
+  rewindSheetEyebrowRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 }, rewindSheetEyebrow: { color: '#FF6F61', fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
+  rewindPremiumPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: '#FFD700' }, rewindPremiumPillText: { color: '#120914', fontSize: 11, fontWeight: '900' },
+  rewindSheetTitle: { color: '#FFFFFF', fontSize: 25, fontWeight: '900', marginTop: 8 }, rewindSheetBody: { color: 'rgba(255,255,255,0.72)', fontSize: 15, lineHeight: 21, fontWeight: '600', marginTop: 8 },
+  rewindOptionRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginTop: 18 }, rewindOption: { flex: 1 }, rewindOptionValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' }, rewindOptionLabel: { color: 'rgba(255,255,255,0.56)', fontSize: 11, fontWeight: '800', marginTop: 3 }, rewindOptionDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.14)', marginHorizontal: 14 },
+  rewindPrimaryButton: { minHeight: 54, borderRadius: 18, backgroundColor: '#FF1493', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18 }, rewindPrimaryText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' }, rewindSecondaryButton: { minHeight: 48, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,215,0,0.35)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 }, rewindSecondaryText: { color: '#FFD700', fontSize: 14, fontWeight: '900' }, rewindLaterButton: { alignItems: 'center', paddingVertical: 14 }, rewindLaterText: { color: 'rgba(255,255,255,0.56)', fontSize: 13, fontWeight: '800' },
   paymentSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', justifyContent: 'flex-end' },
   paymentSheetCard: { backgroundColor: '#111823', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, paddingBottom: 30, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   paymentSheetHandle: { width: 48, height: 5, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.24)', alignSelf: 'center', marginBottom: 18 },
@@ -2877,6 +2923,9 @@ const styles = StyleSheet.create({
   photoSlotMain: { borderColor: '#FFD700', borderWidth: 2 },
   photoSlotText: { color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 12, position: 'absolute', left: 6, right: 6, bottom: 7, textAlign: 'center', backgroundColor: 'rgba(18,9,20,0.72)', borderRadius: 999, overflow: 'hidden', paddingVertical: 4 },
   photoThumb: { width: '100%', height: '100%', borderRadius: 12 },
+  photoSlotActions: { position: 'absolute', right: 7, top: 7, flexDirection: 'row', gap: 6, padding: 4, borderRadius: 999, backgroundColor: 'rgba(18,9,20,0.78)' },
+  photoSlotAction: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFD700' },
+  photoSlotActionDanger: { backgroundColor: '#FF4D67' },
   profileActionGrid: { flexDirection: 'row', gap: 8, marginTop: 8 },
   profileAction: { flex: 1, minHeight: 54, borderRadius: 18, backgroundColor: '#2A1A30', borderWidth: 1, borderColor: 'rgba(255,215,0,0.24)', alignItems: 'center', justifyContent: 'center', gap: 5 },
   profileActionText: { color: '#FFFFFF', fontWeight: '900', fontSize: 12, textAlign: 'center' },

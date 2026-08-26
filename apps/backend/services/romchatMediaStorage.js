@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client } from './r2.js';
 
 const imageBucket = process.env.R2_BUCKET_IMAGES || 'images-romchat';
@@ -82,4 +82,14 @@ export async function putRomchatMedia({ memberId, mediaKind = 'image', contentTy
     contentType: finalType,
     bytes: parsed.body.byteLength,
   };
+}
+
+export async function deleteRomchatMedia({ key, bucket, mediaKind = 'image' }) {
+  if (!key) return;
+  if (mediaDriver === 'local' || bucket === 'local-romchat-media') {
+    await fs.rm(path.join(localMediaRoot, key), { force: true });
+    return;
+  }
+  const storageBucket = bucket || (mediaKind === 'video' ? videoBucket : imageBucket);
+  await r2Client.send(new DeleteObjectCommand({ Bucket: storageBucket, Key: key }));
 }

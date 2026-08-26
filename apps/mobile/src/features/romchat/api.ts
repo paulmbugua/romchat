@@ -127,14 +127,22 @@ export const romchatApi = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),
-  report: (profileId: string, type = 'Safety report') =>
+  report: (profileId: string, type = 'Safety report', token?: string | null) =>
     apiFetch('/api/romchat/reports', {
       method: 'POST',
-      body: JSON.stringify({ profileId, type, severity: 'medium' }),
+      token,
+      body: JSON.stringify({ profileId, type, severity: 'medium', details: type }),
     }),
-  reportMessage: (payload: { profileId: string; reportedMemberId?: string; matchId?: string; messageId?: string; text?: string; senderId?: string; moderation?: unknown; reporterNote?: string }) =>
+  block: (profileId: string, token?: string | null) =>
+    apiFetch('/api/romchat/blocks', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ profileId, reason: 'Blocked from profile details' }),
+    }),
+  reportMessage: (payload: { profileId: string; reportedMemberId?: string; matchId?: string; messageId?: string; text?: string; senderId?: string; moderation?: unknown; reporterNote?: string }, token?: string | null) =>
     apiFetch('/api/romchat/reports', {
       method: 'POST',
+      token,
       body: JSON.stringify({
         profileId: payload.profileId,
         reportedMemberId: payload.reportedMemberId || payload.profileId,

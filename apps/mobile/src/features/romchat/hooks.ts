@@ -220,15 +220,19 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  const report = useCallback(async (profileId: string) => {
+  const block = useCallback(async (profileId: string) => {
+    setLastAction('Blocking profile');
+    await romchatApi.block(profileId, optionsToken);
+    setProfiles((current) => current.filter((profile) => profile.id !== profileId));
+    setLastAction('Profile blocked');
+  }, [optionsToken]);
+
+  const report = useCallback(async (profileId: string, reason = 'Safety report') => {
     setLastAction('Submitting report');
-    try {
-      await romchatApi.report(profileId);
-      setLastAction('Report submitted');
-    } catch {
-      setLastAction('Report queued locally');
-    }
-  }, []);
+    await romchatApi.report(profileId, reason, optionsToken);
+    setProfiles((current) => current.filter((profile) => profile.id !== profileId));
+    setLastAction('Report submitted');
+  }, [optionsToken]);
 
   const reportMessage = useCallback(
   async (payload: {
@@ -244,7 +248,7 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     setLastAction('Reporting message');
 
     try {
-      await romchatApi.reportMessage(payload);
+      await romchatApi.reportMessage(payload, optionsToken);
       setLastAction('Message reported and user blocked');
       return true;
     } catch (error) {
@@ -253,7 +257,7 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
       return false;
     }
   },
-  []
+  [optionsToken]
 );
 
   const verify = useCallback(async () => {
@@ -266,5 +270,5 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, report, reportMessage, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, block, report, reportMessage, verify };
 }

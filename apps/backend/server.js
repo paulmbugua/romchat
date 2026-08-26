@@ -38,7 +38,7 @@ const corsOptions = {
   origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
   credentials: true,
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Client-Platform'],
 };
 
 const io = new Server(server, {
@@ -213,6 +213,28 @@ app.get('/', (_req, res) => {
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'romchat-backend', time: now() });
+});
+
+app.get('/api/mobile/version', (req, res) => {
+  const platform = String(req.query.platform || req.get('x-client-platform') || '').toLowerCase();
+  const isIos = platform === 'ios';
+  const androidStoreUrl =
+    process.env.MOBILE_ANDROID_STORE_URL ||
+    process.env.APP_ANDROID_STORE_URL ||
+    'https://play.google.com/store/apps/details?id=com.paulmbugua2.romchat1';
+  const iosStoreUrl = process.env.MOBILE_IOS_STORE_URL || process.env.APP_IOS_STORE_URL || '';
+
+  res.json({
+    latestVersion: process.env.MOBILE_LATEST_VERSION || process.env.APP_LATEST_VERSION || '1.0.0',
+    minVersion: process.env.MOBILE_MIN_VERSION || process.env.APP_MIN_VERSION || '1.0.0',
+    required:
+      String(process.env.MOBILE_FORCE_UPDATE || process.env.APP_FORCE_UPDATE || 'false').toLowerCase() ===
+      'true',
+    message: process.env.MOBILE_UPDATE_MESSAGE || process.env.APP_UPDATE_MESSAGE || '',
+    storeUrl: isIos ? iosStoreUrl : androidStoreUrl,
+    androidStoreUrl,
+    iosStoreUrl,
+  });
 });
 
 app.get('/api/romchat/bootstrap', (_req, res) => {

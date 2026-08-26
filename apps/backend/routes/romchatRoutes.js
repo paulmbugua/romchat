@@ -18,6 +18,7 @@ export default function romchatRoutes(io) {
   router.patch('/profile', controller.saveProfile);
   router.post('/profile/media', controller.uploadProfileMedia);
   router.patch('/profile/media/:mediaId/main', controller.setMainProfilePhoto);
+  router.delete('/profile/media/:mediaId', controller.deleteProfileMedia);
   router.post('/profile/selfie-verification', controller.verifySelfie);
   router.get('/bootstrap', controller.bootstrap);
   router.get('/discovery', controller.discovery);
@@ -30,6 +31,7 @@ export default function romchatRoutes(io) {
   router.get('/privacy', controller.privacy);
   router.patch('/privacy', controller.updatePrivacy);
   router.post('/reports', controller.report);
+  router.post('/blocks', controller.block);
   router.post('/verification', controller.verification);
   router.get('/features', controller.features);
   router.get('/revenue', controller.revenue);
