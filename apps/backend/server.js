@@ -218,6 +218,18 @@ app.get('/health', (_req, res) => {
 app.get('/api/mobile/version', (req, res) => {
   const platform = String(req.query.platform || req.get('x-client-platform') || '').toLowerCase();
   const isIos = platform === 'ios';
+  const latestBuildNumber = Number.parseInt(
+    isIos
+      ? process.env.ROMCHAT_IOS_LATEST_BUILD_NUMBER || process.env.MOBILE_IOS_LATEST_BUILD_NUMBER || ''
+      : process.env.ROMCHAT_ANDROID_LATEST_BUILD_NUMBER || process.env.MOBILE_ANDROID_LATEST_BUILD_NUMBER || '',
+    10,
+  );
+  const minimumBuildNumber = Number.parseInt(
+    isIos
+      ? process.env.ROMCHAT_IOS_MIN_BUILD_NUMBER || process.env.MOBILE_IOS_MIN_BUILD_NUMBER || ''
+      : process.env.ROMCHAT_ANDROID_MIN_BUILD_NUMBER || process.env.MOBILE_ANDROID_MIN_BUILD_NUMBER || '',
+    10,
+  );
   const androidStoreUrl =
     process.env.MOBILE_ANDROID_STORE_URL ||
     process.env.APP_ANDROID_STORE_URL ||
@@ -231,6 +243,8 @@ app.get('/api/mobile/version', (req, res) => {
       String(process.env.MOBILE_FORCE_UPDATE || process.env.APP_FORCE_UPDATE || 'false').toLowerCase() ===
       'true',
     message: process.env.MOBILE_UPDATE_MESSAGE || process.env.APP_UPDATE_MESSAGE || '',
+    latestBuildNumber: Number.isFinite(latestBuildNumber) ? latestBuildNumber : null,
+    minimumBuildNumber: Number.isFinite(minimumBuildNumber) ? minimumBuildNumber : null,
     storeUrl: isIos ? iosStoreUrl : androidStoreUrl,
     androidStoreUrl,
     iosStoreUrl,

@@ -155,7 +155,7 @@ const lanBackendUrl = metroHost ? `http://${metroHost}:${lanBackendPort}` : '';
 const physicalAndroidBackendUrl = (
   explicitDeviceBackendUrl ||
   lanBackendUrl ||
-  'http://server.romchat.co.ke'
+  'https://server.romchat.co.ke'
 ).replace(/\/$/, '');
 
 const developmentDeviceBackendSelected =

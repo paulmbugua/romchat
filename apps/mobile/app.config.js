@@ -28,7 +28,7 @@ module.exports = function expoConfig({ config }) {
     config?.extra?.eas?.projectId ||
     'aaa9b53a-8fe8-4883-8033-cb972942ec37';
 
-  const BACKENDS = {
+  const DEVELOPMENT_BACKENDS = {
     androidEmu: 'http://10.0.2.2:4000',
     iosSim: 'http://localhost:4000',
     devDevice: process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL || process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.42.11.111:4009',
@@ -37,13 +37,20 @@ module.exports = function expoConfig({ config }) {
     prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://server.romchat.co.ke',
   };
 
+  // Never serialize LAN/emulator endpoints into a production manifest.
+  const BACKENDS = isProduction
+    ? { prod: DEVELOPMENT_BACKENDS.prod }
+    : DEVELOPMENT_BACKENDS;
+
   const DEFAULT_BACKEND =
-    process.env.EXPO_PUBLIC_DEFAULT_BACKEND || process.env.BACKEND || 'prod';
+    isProduction
+      ? 'prod'
+      : process.env.EXPO_PUBLIC_DEFAULT_BACKEND || process.env.BACKEND || 'prod';
   const RESOLVED_BACKEND_URL = BACKENDS[DEFAULT_BACKEND] || BACKENDS.prod;
   const usesCleartextTraffic = !isProduction && String(RESOLVED_BACKEND_URL).startsWith('http://');
   const ALLOW_ANDROID_EMULATOR_BACKEND = process.env.EXPO_PUBLIC_ALLOW_ANDROID_EMULATOR_BACKEND || '';
   const DEVICE_BACKEND_PORT = process.env.EXPO_PUBLIC_DEVICE_BACKEND_PORT || '4009';
-  const DEVICE_BACKEND_URL = process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL || '';
+  const DEVICE_BACKEND_URL = isProduction ? '' : process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL || '';
   const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_WEB || '';
   const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_ANDROID || '';
   const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_IOS || '';

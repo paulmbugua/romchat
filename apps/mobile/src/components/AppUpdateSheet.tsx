@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   AppState,
   Linking,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,6 +31,8 @@ type NativeVersionResponse = {
   storeUrl?: string;
   androidStoreUrl?: string;
   iosStoreUrl?: string;
+  latestBuildNumber?: number | string;
+  minimumBuildNumber?: number | string;
 };
 
 type SheetMode = 'native' | 'ota-available' | 'ota-downloading' | 'ota-ready' | 'ota-error';
@@ -40,6 +46,7 @@ type SheetState = {
 
 const VERSION_ENDPOINT = '/api/mobile/version';
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
+const FIRST_SESSION_KEY = '@romchat/update-first-session-complete';
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.paulmbugua2.romchat1';
 
 function normalizeVersion(value: unknown) {
@@ -67,6 +74,16 @@ function getCurrentVersion() {
   );
 }
 
+function getCurrentBuildNumber() {
+  const value = Number.parseInt(String(Constants.nativeBuildVersion || ''), 10);
+  return Number.isFinite(value) ? value : null;
+}
+
+function parseBuildNumber(value: unknown) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function pickStoreUrl(payload: NativeVersionResponse) {
   const platformUrl = Platform.OS === 'ios' ? payload.iosStoreUrl : payload.androidStoreUrl;
   return platformUrl || payload.storeUrl || (Platform.OS === 'android' ? PLAY_STORE_URL : '');
@@ -77,8 +94,10 @@ async function fetchNativeVersion() {
   if (!base) return null;
 
   const currentVersion = getCurrentVersion();
-  const url = `${base}${VERSION_ENDPOINT}?platform=${encodeURIComponent(Platform.OS)}&version=${encodeURIComponent(currentVersion)}`;
-  console.info('[romchat-update] native:check', { currentVersion, url });
+  const currentBuildNumber = getCurrentBuildNumber();
+  const buildQuery = currentBuildNumber === null ? '' : `&buildNumber=${encodeURIComponent(currentBuildNumber)}`;
+  const url = `${base}${VERSION_ENDPOINT}?platform=${encodeURIComponent(Platform.OS)}&version=${encodeURIComponent(currentVersion)}${buildQuery}`;
+  console.info('[romchat-update] native:check', { currentBuildNumber, currentVersion, url });
 
   const response = await fetch(url, {
     headers: { Accept: 'application/json', 'X-Client-Platform': Platform.OS },
@@ -93,11 +112,31 @@ export function AppUpdateSheet() {
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const checkingRef = useRef(false);
   const downloadingRef = useRef(false);
+  const firstSessionRef = useRef(false);
   const lastCheckRef = useRef(0);
+  const translateY = useRef(new Animated.Value(42)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
   const currentVersion = useMemo(() => getCurrentVersion(), []);
+  const currentBuildNumber = useMemo(() => getCurrentBuildNumber(), []);
 
   const sheetKey = sheet ? `${sheet.mode}:${sheet.storeUrl || ''}:${sheet.title}` : null;
-  const canDismiss = Boolean(sheet && !sheet.required && sheet.mode !== 'ota-downloading');
+  const canDismiss = Boolean(sheet && !sheet.required);
+
+  useEffect(() => {
+    if (!sheet) return;
+    translateY.setValue(42);
+    opacity.setValue(0);
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+      Animated.spring(translateY, {
+        toValue: 0,
+        damping: 22,
+        stiffness: 260,
+        mass: 0.8,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [opacity, sheet, translateY]);
 
   const showSheet = useCallback((next: SheetState) => {
     const key = `${next.mode}:${next.storeUrl || ''}:${next.title}`;
@@ -112,12 +151,26 @@ export function AppUpdateSheet() {
 
       const latestVersion = normalizeVersion(payload.latestVersion);
       const minimumVersion = normalizeVersion(payload.minVersion || payload.minimumVersion);
+      const latestBuildNumber = parseBuildNumber(payload.latestBuildNumber);
+      const minimumBuildNumber = parseBuildNumber(payload.minimumBuildNumber);
+      const buildAvailable = currentBuildNumber !== null && latestBuildNumber !== null &&
+        currentBuildNumber < latestBuildNumber;
+      const buildRequired = currentBuildNumber !== null && minimumBuildNumber !== null &&
+        currentBuildNumber < minimumBuildNumber;
       const required = Boolean(payload.required || payload.forceUpdate || payload.forced) ||
-        Boolean(minimumVersion && compareVersions(currentVersion, minimumVersion) < 0);
-      const available = Boolean(latestVersion && compareVersions(currentVersion, latestVersion) < 0);
+        Boolean(minimumVersion && compareVersions(currentVersion, minimumVersion) < 0) || buildRequired;
+      const available = Boolean(latestVersion && compareVersions(currentVersion, latestVersion) < 0) ||
+        buildAvailable || required;
 
       console.info('[romchat-update] native:result', {
-        available, currentVersion, latestVersion, minimumVersion, required,
+        available,
+        currentBuildNumber,
+        currentVersion,
+        latestBuildNumber,
+        latestVersion,
+        minimumBuildNumber,
+        minimumVersion,
+        required,
       });
       if (!required && !available) return false;
 
@@ -135,7 +188,34 @@ export function AppUpdateSheet() {
       console.warn('[romchat-update] native:failed', error);
       return false;
     }
-  }, [currentVersion, showSheet]);
+  }, [currentBuildNumber, currentVersion, showSheet]);
+
+  const silentlyPrepareFirstSessionOta = useCallback(async () => {
+    if (__DEV__ || !Updates.isEnabled) {
+      console.info('[romchat-update] first-session:ota-skipped', {
+        reason: __DEV__ ? 'development' : 'updates-disabled',
+      });
+      return;
+    }
+
+    try {
+      if (Updates.isUpdatePending) {
+        console.info('[romchat-update] first-session:ota-already-ready');
+        return;
+      }
+      console.info('[romchat-update] first-session:ota-check');
+      const update = await Updates.checkForUpdateAsync();
+      if (!update.isAvailable) {
+        console.info('[romchat-update] first-session:ota-current');
+        return;
+      }
+      console.info('[romchat-update] first-session:ota-download-start');
+      await Updates.fetchUpdateAsync();
+      console.info('[romchat-update] first-session:ota-download-success');
+    } catch (error) {
+      console.warn('[romchat-update] first-session:ota-failed', error);
+    }
+  }, []);
 
   const checkOtaUpdate = useCallback(async () => {
     if (__DEV__) return false;
@@ -185,12 +265,34 @@ export function AppUpdateSheet() {
   }, [checkNativeVersion, checkOtaUpdate]);
 
   useEffect(() => {
-    void runChecks(true);
+    let cancelled = false;
+
+    const initializeUpdates = async () => {
+      try {
+        const firstSessionComplete = await AsyncStorage.getItem(FIRST_SESSION_KEY);
+        if (cancelled) return;
+        if (!firstSessionComplete) {
+          firstSessionRef.current = true;
+          await AsyncStorage.setItem(FIRST_SESSION_KEY, '1');
+          console.info('[romchat-update] first-session:silent');
+          void silentlyPrepareFirstSessionOta();
+          return;
+        }
+      } catch (error) {
+        console.warn('[romchat-update] first-session:gate-failed', error);
+      }
+      if (!cancelled) void runChecks(true);
+    };
+
+    void initializeUpdates();
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void runChecks();
+      if (state === 'active' && !firstSessionRef.current) void runChecks();
     });
-    return () => subscription.remove();
-  }, [runChecks]);
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
+  }, [runChecks, silentlyPrepareFirstSessionOta]);
 
   const dismiss = useCallback(() => {
     if (!sheet || !canDismiss) return;
@@ -253,16 +355,27 @@ export function AppUpdateSheet() {
   const primaryAction = sheet.mode === 'native' ? openStore
     : sheet.mode === 'ota-ready' ? restartNow
       : sheet.mode === 'ota-error' || sheet.mode === 'ota-available' ? downloadOta : undefined;
+  const secondaryLabel = sheet.mode === 'ota-downloading' ? 'Keep using app' : 'Later';
+  const iconName = sheet.mode === 'native'
+    ? 'storefront-outline'
+    : sheet.mode === 'ota-ready'
+      ? 'checkmark-circle-outline'
+      : 'cloud-download-outline';
 
   return (
-    <View pointerEvents="box-none" style={[styles.overlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-      <View pointerEvents="auto" style={styles.sheet}>
+    <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={dismiss}>
+      <Pressable
+        onPress={dismiss}
+        style={[styles.backdrop, { paddingBottom: Math.max(insets.bottom, 14) + 10 }]}
+      >
+        <Animated.View style={{ opacity, transform: [{ translateY }] }}>
+          <Pressable onPress={(event) => event.stopPropagation()} style={styles.sheet}>
         <View style={styles.handle} />
         <View style={styles.contentRow}>
           <View style={styles.iconWrap}>
             {sheet.mode === 'ota-downloading'
               ? <ActivityIndicator color="#FFFFFF" size="small" />
-              : <Text style={styles.icon}>↑</Text>}
+              : <Ionicons name={iconName} color="#FFFFFF" size={26} />}
           </View>
           <View style={styles.copy}>
             <Text style={styles.eyebrow}>{sheet.mode === 'native' ? 'APP UPDATE' : 'ROMCHAT UPDATE'}</Text>
@@ -273,7 +386,7 @@ export function AppUpdateSheet() {
         <View style={styles.actions}>
           {canDismiss ? (
             <Pressable accessibilityRole="button" onPress={dismiss} style={styles.secondaryButton}>
-              <Text style={styles.secondaryText}>Later</Text>
+              <Text style={styles.secondaryText}>{secondaryLabel}</Text>
             </Pressable>
           ) : null}
           <Pressable
@@ -285,22 +398,24 @@ export function AppUpdateSheet() {
             <Text style={styles.primaryText}>{primaryLabel}</Text>
           </Pressable>
         </View>
-      </View>
-    </View>
+          </Pressable>
+        </Animated.View>
+      </Pressable>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    bottom: 0,
-    left: 0,
+  backdrop: {
+    backgroundColor: 'rgba(3, 1, 8, 0.52)',
+    flex: 1,
+    justifyContent: 'flex-end',
     paddingHorizontal: 12,
-    position: 'absolute',
-    right: 0,
-    zIndex: 2000,
   },
   sheet: {
     backgroundColor: colors.surfaceMatte,
+    borderBottomLeftRadius: 22,
+    borderBottomRightRadius: 22,
     borderColor: colors.borderSubtle,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -331,7 +446,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 34,
   },
-  icon: { color: '#FFFFFF', fontSize: 21, fontWeight: '900', lineHeight: 23 },
   copy: { flex: 1 },
   eyebrow: {
     color: colors.secondaryAccent,
