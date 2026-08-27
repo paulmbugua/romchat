@@ -173,7 +173,7 @@ module.exports = function expoConfig({ config }) {
           updates: {
             url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
             fallbackToCacheTimeout: 0,
-            checkAutomatically: 'ON_LOAD',
+            checkAutomatically: 'NEVER',
           },
         }
       : {}),

@@ -108,6 +108,7 @@ async function fetchNativeVersion() {
 
 export function AppUpdateSheet() {
   const insets = useSafeAreaInsets();
+  const { isUpdatePending } = Updates.useUpdates();
   const [sheet, setSheet] = useState<SheetState | null>(null);
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const checkingRef = useRef(false);
@@ -199,7 +200,7 @@ export function AppUpdateSheet() {
     }
 
     try {
-      if (Updates.isUpdatePending) {
+      if (isUpdatePending) {
         console.info('[romchat-update] first-session:ota-already-ready');
         return;
       }
@@ -215,12 +216,12 @@ export function AppUpdateSheet() {
     } catch (error) {
       console.warn('[romchat-update] first-session:ota-failed', error);
     }
-  }, []);
+  }, [isUpdatePending]);
 
   const checkOtaUpdate = useCallback(async () => {
     if (__DEV__) return false;
     try {
-      if (Updates.isUpdatePending) {
+      if (isUpdatePending) {
         console.info('[romchat-update] ota:already-downloaded');
         showSheet({
           mode: 'ota-ready',
@@ -247,7 +248,7 @@ export function AppUpdateSheet() {
       console.warn('[romchat-update] ota:check-failed', error);
       return false;
     }
-  }, [showSheet]);
+  }, [isUpdatePending, showSheet]);
 
   const runChecks = useCallback(async (force = false) => {
     const now = Date.now();

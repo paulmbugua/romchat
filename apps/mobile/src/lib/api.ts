@@ -96,6 +96,30 @@ type ExpoExtra = {
   DEFAULT_BACKEND?: string;
 };
 
+const PRODUCTION_API_BASE_URL = 'https://server.romchat.co.ke';
+
+function isUnsafeReleaseBackendUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    const privateIpv4 =
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+      /^127\./.test(hostname);
+    return (
+      url.protocol !== 'https:' ||
+      privateIpv4 ||
+      hostname === 'localhost' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname.endsWith('.local')
+    );
+  } catch {
+    return true;
+  }
+}
+
 const manifestExtra = (Constants.manifest as { extra?: unknown } | null | undefined)?.extra;
 const extra = (Constants.expoConfig?.extra || manifestExtra || {}) as ExpoExtra;
 const selectedBackendKey = extra.DEFAULT_BACKEND || 'direct';
@@ -120,7 +144,7 @@ const configuredApiBaseUrl = (
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   extra.EXPO_PUBLIC_PROD_BACKEND_URL ||
   process.env.EXPO_PUBLIC_PROD_BACKEND_URL ||
-  'https://server.romchat.co.ke'
+  PRODUCTION_API_BASE_URL
 ).replace(/\/$/, '');
 
 const allowAndroidEmulatorBackend =
@@ -155,7 +179,7 @@ const lanBackendUrl = metroHost ? `http://${metroHost}:${lanBackendPort}` : '';
 const physicalAndroidBackendUrl = (
   explicitDeviceBackendUrl ||
   lanBackendUrl ||
-  'https://server.romchat.co.ke'
+  PRODUCTION_API_BASE_URL
 ).replace(/\/$/, '');
 
 const developmentDeviceBackendSelected =
@@ -166,7 +190,12 @@ const developmentDeviceBackendSelected =
   !process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL &&
   !extra.EXPO_PUBLIC_DEVICE_BACKEND_URL;
 
-export const apiBaseUrl = androidEmulatorBackendSelected || developmentDeviceBackendSelected ? physicalAndroidBackendUrl : configuredApiBaseUrl;
+const selectedApiBaseUrl =
+  androidEmulatorBackendSelected || developmentDeviceBackendSelected ? physicalAndroidBackendUrl : configuredApiBaseUrl;
+const isReleaseRuntime = typeof __DEV__ !== 'undefined' && !__DEV__;
+const releaseBackendOverrideApplied = isReleaseRuntime && isUnsafeReleaseBackendUrl(selectedApiBaseUrl);
+
+export const apiBaseUrl = releaseBackendOverrideApplied ? PRODUCTION_API_BASE_URL : selectedApiBaseUrl;
 
 const apiDebugEnabled = typeof __DEV__ === 'undefined' ? true : __DEV__;
 
@@ -184,6 +213,7 @@ if (apiDebugEnabled) {
     lanBackendPort,
     metroHost,
     backendKey: selectedBackendKey,
+    releaseBackendOverrideApplied,
     androidEmulatorBackendSelected,
     developmentDeviceBackendSelected,
     explicitDeviceBackendUrl,
@@ -226,7 +256,7 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
       const isHtmlBlock = /text\/html/i.test(contentType) || /^<!DOCTYPE html>/i.test(rawSnippet || '');
       const detail = payload.message || rawSnippet || `Request failed: ${response.status}`;
       if (isHtmlBlock && response.status === 403) {
-        throw new Error(`RomChat backend is blocked at ${apiBaseUrl}. In development, start the backend on your PC and set EXPO_PUBLIC_DEVICE_BACKEND_URL to your PC LAN IP, for example http://10.42.11.111:4009, then restart Expo with -c.`);
+        throw new Error(`RomChat backend is blocked at ${apiBaseUrl}. In development, start the backend on your computer, set EXPO_PUBLIC_DEVICE_BACKEND_URL to its LAN address, and restart Expo with -c.`);
       }
       throw new ApiRequestError(`Request failed: ${response.status}. ${detail}`, { status: response.status, code: payload.code || null, payload });
     }
