@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client } from './r2.js';
 
 const imageBucket = process.env.R2_BUCKET_IMAGES || 'images-romchat';
@@ -16,6 +16,20 @@ const audioTypes = new Set(['audio/m4a', 'audio/mp4', 'audio/aac', 'audio/mpeg',
 const maxImageBytes = Number(process.env.R2_MAX_IMAGE_BYTES || 8 * 1024 * 1024);
 const maxVideoBytes = Number(process.env.R2_MAX_VIDEO_BYTES || 80 * 1024 * 1024);
 const maxAudioBytes = Number(process.env.ROMCHAT_MAX_AUDIO_BYTES || 8 * 1024 * 1024);
+
+function assertR2Ready() {
+  const missing = [
+    !process.env.R2_ENDPOINT && !process.env.R2_ACCOUNT_ID ? 'R2_ENDPOINT or R2_ACCOUNT_ID' : null,
+    !process.env.R2_ACCESS_KEY_ID ? 'R2_ACCESS_KEY_ID' : null,
+    !process.env.R2_SECRET_ACCESS_KEY ? 'R2_SECRET_ACCESS_KEY' : null,
+  ].filter(Boolean);
+  if (missing.length) {
+    const error = new Error(`RomChat media storage is not configured (${missing.join(', ')}).`);
+    error.status = 503;
+    error.code = 'ROMCHAT_MEDIA_STORAGE_NOT_CONFIGURED';
+    throw error;
+  }
+}
 
 function publicUrlFor(kind, key) {
   const base = kind === 'video' ? videoPublicBase : imagePublicBase;
@@ -67,6 +81,7 @@ export async function putRomchatMedia({ memberId, mediaKind = 'image', contentTy
     };
   }
 
+  assertR2Ready();
   await r2Client.send(new PutObjectCommand({
     Bucket: bucket,
     Key: key,
@@ -82,6 +97,26 @@ export async function putRomchatMedia({ memberId, mediaKind = 'image', contentTy
     contentType: finalType,
     bytes: parsed.body.byteLength,
   };
+}
+
+export async function getRomchatMedia({ key, bucket, mediaKind = 'image' }) {
+  if (!key) {
+    const error = new Error('Media object was not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (mediaDriver === 'local' || bucket === 'local-romchat-media') {
+    return fs.readFile(path.join(localMediaRoot, key));
+  }
+  assertR2Ready();
+  const storageBucket = bucket || (mediaKind === 'video' ? videoBucket : imageBucket);
+  const result = await r2Client.send(new GetObjectCommand({ Bucket: storageBucket, Key: key }));
+  if (!result.Body) {
+    const error = new Error('Media object was not found.');
+    error.status = 404;
+    throw error;
+  }
+  return Buffer.from(await result.Body.transformToByteArray());
 }
 
 export async function deleteRomchatMedia({ key, bucket, mediaKind = 'image' }) {

@@ -11,6 +11,23 @@ const isDev = process.env.NODE_ENV !== 'production';
 
 const normalizeUrl = (value?: string | null): string => String(value || '').trim().replace(/\/+$/, '');
 
+const isUnsafeProductionUrl = (value: string): boolean => {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    const isPrivate = host === 'localhost'
+      || host === '127.0.0.1'
+      || host === '10.0.2.2'
+      || /^10\./.test(host)
+      || /^192\.168\./.test(host)
+      || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+    return parsed.protocol !== 'https:' || isPrivate;
+  } catch {
+    return true;
+  }
+};
+
 const isProductionHostname = (hostname?: string): boolean => {
   const host = String(hostname || '').toLowerCase().trim();
   if (!host) return false;
@@ -19,7 +36,7 @@ const isProductionHostname = (hostname?: string): boolean => {
 
 export function resolveBackendUrl(envValue?: string | null): string {
   const envUrl = normalizeUrl(envValue);
-  if (envUrl) return envUrl;
+  if (envUrl && (isDev || !isUnsafeProductionUrl(envUrl))) return envUrl;
 
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
   if (isProductionHostname(hostname)) {

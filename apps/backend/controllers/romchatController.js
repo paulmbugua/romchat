@@ -31,7 +31,7 @@ import {
 } from '../services/romchatRepository.js';
 import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
 import pool, { queryWithRetry } from '../config/db.js';
-import { getAuthState, loginWithGoogleToken, loginWithPassword, requestPasswordReset, requestSignupOtp, requireRomchatAccount, resetPasswordWithCode, setMainProfilePhoto, deleteMemberMedia, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
+import { getAuthState, getMemberMediaContent, loginWithGoogleToken, loginWithPassword, requestPasswordReset, requestSignupOtp, requireRomchatAccount, resetPasswordWithCode, setMainProfilePhoto, deleteMemberMedia, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
 
 function sendError(res, error) {
   console.error('[romchat-api] request:error', {
@@ -192,7 +192,21 @@ export function createRomchatController(io) {
     async uploadProfileMedia(req, res) {
       try {
         const user = await requireRomchatAccount(req);
-        res.status(201).json(await uploadMemberMedia(user.id, req.body || {}));
+        console.info('[romchat-media] upload:start', { memberId: user.id, mediaType: req.body?.mediaType || 'image', replaceMediaId: req.body?.replaceMediaId || null });
+        const result = await uploadMemberMedia(user.id, req.body || {});
+        console.info('[romchat-media] upload:success', { memberId: user.id, mediaId: result.media?.id || null, replaced: Boolean(result.replaced) });
+        res.status(201).json(result);
+      } catch (error) {
+        console.error('[romchat-media] upload:failed', { code: error.code || null, message: error.message || String(error) });
+        sendError(res, error);
+      }
+    },
+    async profileMediaContent(req, res) {
+      try {
+        const media = await getMemberMediaContent(req.params.mediaId);
+        res.set('Content-Type', media.contentType);
+        res.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+        res.send(media.body);
       } catch (error) {
         sendError(res, error);
       }

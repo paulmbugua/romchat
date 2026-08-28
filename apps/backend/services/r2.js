@@ -6,7 +6,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-const endpoint = process.env.R2_ENDPOINT;
+const endpoint = process.env.R2_ENDPOINT || (process.env.R2_ACCOUNT_ID ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : undefined);
 const region = process.env.R2_REGION || 'auto';
 const bucket = process.env.R2_BUCKET_DOCS;
 const publicBase = (process.env.R2_PUBLIC_BASE_URL_DOCS || '').replace(/\/$/, '');

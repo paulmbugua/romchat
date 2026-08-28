@@ -5,7 +5,7 @@ import { OAuth2Client } from 'google-auth-library';
 import admin from 'firebase-admin';
 import { queryWithRetry } from '../config/db.js';
 import { sendNotification } from '../utils/sendNotification.js';
-import { deleteRomchatMedia, putRomchatMedia } from './romchatMediaStorage.js';
+import { deleteRomchatMedia, getRomchatMedia, putRomchatMedia } from './romchatMediaStorage.js';
 
 const googleClient = new OAuth2Client();
 const jwtSecret = process.env.JWT_SECRET || process.env.ROMCHAT_JWT_SECRET || 'romchat-local-dev-secret';
@@ -288,13 +288,28 @@ function mediaFromRow(row) {
     id: row.id,
     memberId: row.member_id,
     mediaType: row.media_type,
-    url: row.url,
+    url: row.object_key ? `/api/romchat/profile/media/${encodeURIComponent(row.id)}/content?v=${encodeURIComponent(row.object_key)}` : row.url,
     key: row.object_key,
     bucket: row.bucket,
     contentType: row.content_type,
     position: Number(row.position || 0),
     moderationStatus: row.moderation_status,
     createdAt: row.created_at,
+  };
+}
+
+export async function getMemberMediaContent(mediaId) {
+  await ensureAccountSchema();
+  const selected = await queryWithRetry("SELECT * FROM romchat_profile_media WHERE id = $1 AND media_type = 'image'", [mediaId]);
+  const media = selected.rows[0];
+  if (!media) {
+    const error = new Error('Profile photo was not found.');
+    error.status = 404;
+    throw error;
+  }
+  return {
+    body: await getRomchatMedia({ key: media.object_key, bucket: media.bucket, mediaKind: media.media_type }),
+    contentType: media.content_type || 'application/octet-stream',
   };
 }
 

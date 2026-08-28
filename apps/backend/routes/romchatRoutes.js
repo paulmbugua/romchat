@@ -17,6 +17,7 @@ export default function romchatRoutes(io) {
   router.post('/auth/account/deletion-request', controller.requestAccountDeletion);
   router.patch('/profile', controller.saveProfile);
   router.post('/profile/media', controller.uploadProfileMedia);
+  router.get('/profile/media/:mediaId/content', controller.profileMediaContent);
   router.patch('/profile/media/:mediaId/main', controller.setMainProfilePhoto);
   router.delete('/profile/media/:mediaId', controller.deleteProfileMedia);
   router.post('/profile/selfie-verification', controller.verifySelfie);

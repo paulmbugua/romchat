@@ -348,7 +348,7 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
            WHERE b.profile_id = p.member_id AND b.ends_at > now()
          ) AS boosted_now,
          COALESCE(
-           array_agg(m.url ORDER BY m.position ASC, m.created_at ASC)
+           array_agg(CASE WHEN m.object_key IS NOT NULL THEN '/api/romchat/profile/media/' || m.id || '/content?v=' || md5(m.object_key) ELSE m.url END ORDER BY m.position ASC, m.created_at ASC)
              FILTER (WHERE m.media_type = 'image'),
            '{}'
          ) AS photos
@@ -382,7 +382,7 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
              WHERE b.profile_id = p.member_id AND b.ends_at > now()
            ) AS boosted_now,
            COALESCE(
-             array_agg(m.url ORDER BY m.position ASC, m.created_at ASC)
+             array_agg(CASE WHEN m.object_key IS NOT NULL THEN '/api/romchat/profile/media/' || m.id || '/content?v=' || md5(m.object_key) ELSE m.url END ORDER BY m.position ASC, m.created_at ASC)
                FILTER (WHERE m.media_type = 'image'),
              '{}'
            ) AS photos
