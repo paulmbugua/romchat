@@ -12,6 +12,7 @@ import {
   getProfiles,
   getPrivacy,
   getRevenueCatalog,
+  getRomanceVibes,
   getVideoRequests,
   getWallet,
   gifts,
@@ -27,6 +28,7 @@ import {
   listModerationCases,
   reinstateModeratedMember,
   resolveModerationCase,
+  setRomanceVibeMembership,
   updatePrivacy,
 } from '../services/romchatRepository.js';
 import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
@@ -61,6 +63,7 @@ export function createRomchatController(io) {
         ['DELETE FROM romchat_verification_requests WHERE member_id = $1', [memberId]],
         ['DELETE FROM romchat_video_requests WHERE sender_profile_id = $1 OR match_id IN (' + matchSubquery + ')', [memberId]],
         ['DELETE FROM romchat_privacy_settings WHERE member_id = $1', [memberId]],
+        ['DELETE FROM romchat_vibe_memberships WHERE member_id = $1', [memberId]],
         ['DELETE FROM romchat_swipes WHERE actor_id = $1 OR profile_id = $1', [memberId]],
         ['DELETE FROM romchat_matches WHERE actor_id = $1 OR profile_id = $1', [memberId]],
         ['DELETE FROM romchat_profile_media WHERE member_id = $1', [memberId]],
@@ -238,6 +241,25 @@ export function createRomchatController(io) {
     async bootstrap(req, res) {
       const state = await authStateFor(req);
       res.json(await getBootstrap({ catalogueAccess: state?.onboarding?.catalogueAccess || 1, viewerId: state?.user?.id || null }));
+    },
+    async romanceVibes(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        res.json({ vibes: await getRomanceVibes(user.id) });
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async romanceVibeMembership(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        const joined = req.body?.joined !== false;
+        const result = await setRomanceVibeMembership({ memberId: user.id, vibeId: req.params.vibeId, joined });
+        console.info('[romchat-vibes] membership:update', { memberId: user.id, vibeId: req.params.vibeId, joined });
+        res.json(result);
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async discovery(req, res) {
       const verifiedOnly = String(req.query.verifiedOnly ?? 'true') !== 'false';

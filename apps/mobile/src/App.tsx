@@ -34,6 +34,7 @@ import { romchatAccountApi, romchatBackendHealth, type RomChatAccount, type RomC
 import { apiBaseUrl } from './lib/api';
 import { ApiRequestError } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
+import type { RomanceVibe } from './features/romchat/api';
 import { ProfileDetailModal, type ProfileDetailData } from './components/ProfileDetailModal';
 
 type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'payment' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
@@ -77,6 +78,7 @@ type ProfileSeed = {
   gender?: 'female' | 'male' | string;
   photo: ImageSourcePropType;
   matchId?: string | null;
+  sharedVibeIds?: string[];
   lastSeenAt?: string | null;
   online?: boolean;
   verified?: boolean;
@@ -219,6 +221,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [session, setSession] = useState<SessionState | null>(null);
   const [activeSection, setActiveSection] = useState<Section | null>(null);
+  const [activeVibeId, setActiveVibeId] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [verifiedOnly, setVerifiedOnly] = useState(true);
   const [incognito, setIncognito] = useState(true);
@@ -251,10 +254,17 @@ export default function App() {
   const swipeCardStyle = { transform: [{ translateX: swipePosition.x }, { translateY: Animated.add(swipePosition.y, swipeLift) }, { rotate: swipeRotation }] };
   const viewerGender = String(session?.profile?.gender || '').toLowerCase();
   const desiredDiscoveryGender = viewerGender === 'female' ? 'male' : viewerGender === 'male' ? 'female' : '';
-  const profiles = useMemo(() => {
+  const baseProfiles = useMemo(() => {
     const liveProfiles = romchat.profiles as ProfileSeed[];
     return desiredDiscoveryGender ? liveProfiles.filter((item) => String(item.gender || '').toLowerCase() === desiredDiscoveryGender) : liveProfiles;
   }, [desiredDiscoveryGender, romchat.profiles]);
+  const romanceVibes = romchat.bootstrap?.vibes || [];
+  const activeVibe = romanceVibes.find((item) => item.id === activeVibeId) || null;
+  const profiles = useMemo(() => {
+    if (!activeVibeId || !activeVibe) return baseProfiles;
+    const members = new Set(activeVibe.profileIds || []);
+    return baseProfiles.filter((item) => members.has(item.id));
+  }, [activeVibe, activeVibeId, baseProfiles]);
   const profile = profiles.length ? profiles[index % profiles.length]! : null;
   const firstUploadedImageUrl = resolveMediaUrl([...(session?.profile?.media || [])].sort((a, b) => (a.position || 0) - (b.position || 0)).find((item) => item.mediaType === 'image')?.url);
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
@@ -844,22 +854,43 @@ export default function App() {
     } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to save distance settings.'); }
     finally { setAuthBusy(false); }
   }
+  async function toggleRomanceVibe(vibe: RomanceVibe, joined: boolean) {
+    setAuthError('');
+    try {
+      return await romchat.setVibeMembership(vibe.id, joined);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update this romance vibe.';
+      setAuthError(message);
+      throw error;
+    }
+  }
+
+  async function browseRomanceVibe(vibe: RomanceVibe) {
+    let selected = vibe;
+    if (!vibe.joined) selected = await toggleRomanceVibe(vibe, true);
+    setActiveVibeId(selected.id);
+    setIndex(0);
+    setActiveSection(null);
+  }
+
   function openSwipeDeck() {
+    setActiveVibeId(null);
+    setIndex(0);
     setActiveSection(null);
     if (appReady) void romchat.refresh();
   }
 
   function renderSection(section: Section) {
     if (section === 'explore') {
-      return <ExploreScreen openLikes={() => setActiveSection('likes')} />;
+      return <ExploreScreen vibes={romanceVibes} profiles={baseProfiles} onToggle={toggleRomanceVibe} onBrowse={browseRomanceVibe} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={profiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} onAllLikesSeenChange={setLikesFeedViewed} />;
+      return <LikesScreen profiles={baseProfiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} onAllLikesSeenChange={setLikesFeedViewed} />;
     }
     if (section === 'chat') {
       return (
         <Chat
-          profiles={profiles}
+          profiles={baseProfiles}
           sendMessage={romchat.sendMessage}
           getMessages={romchat.getMessages}
           currentUserId={session?.user?.id || 'me'}
@@ -988,6 +1019,8 @@ export default function App() {
           </View>
         </View>
 
+        {activeVibe ? <ActiveVibeBar vibe={activeVibe} onClear={() => { setActiveVibeId(null); setIndex(0); }} /> : null}
+
         {profile ? (
           <>
             <Discover
@@ -1009,11 +1042,11 @@ export default function App() {
                 setActiveSection('chat');
               }}
               profiles={profiles}
-              cardHeight={swipeCardHeight}
+              cardHeight={Math.max(460, swipeCardHeight - (activeVibe ? 54 : 0))}
             />
           </>
         ) : (
-          <EmptyDiscovery openProfile={() => setActiveSection('profile')} status={romchat.lastAction} />
+          <EmptyDiscovery openProfile={() => activeVibe ? setActiveVibeId(null) : setActiveSection('profile')} status={activeVibe ? `No more profiles in ${activeVibe.title} yet. Check another vibe or browse everyone.` : romchat.lastAction} />
         )}
       </ScrollView>
       <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
@@ -1487,28 +1520,65 @@ function FooterNav({ active, setActiveSection, openSwipeDeck, bottomInset, chatB
   );
 }
 
-function ExploreScreen({ openLikes }: { openLikes: () => void }) {
-  const tiles: Array<[string, string, string, string]> = [
-    ['Long-term partner', 'rose', '1K', '#FF1493'],
-    ['Serious commitment', 'diamond', '614', '#F472B6'],
-    ['Binge watchers', 'tv', '334', '#FF6F61'],
-    ['Sporty', 'fitness', '299', '#60A5FA'],
-    ['Coast weekends', 'sunny', '528', '#FFD700'],
-    ['Soft romance', 'moon', '487', '#9BC6FF'],
-  ];
+function ActiveVibeBar({ vibe, onClear }: { vibe: RomanceVibe; onClear: () => void }) {
+  return (
+    <View style={styles.activeVibeBar}>
+      <View style={styles.activeVibeIdentity}>
+        <View style={[styles.activeVibeIcon, { backgroundColor: vibe.accent }]}><Icon name={vibe.icon} size={16} color="#120914" /></View>
+        <View><Text style={styles.activeVibeEyebrow}>Browsing vibe</Text><Text style={styles.activeVibeName}>{vibe.title}</Text></View>
+      </View>
+      <TouchableOpacity onPress={onClear} style={styles.activeVibeClear} accessibilityLabel="Browse all profiles"><Icon name="close" size={20} color="#FFFFFF" /></TouchableOpacity>
+    </View>
+  );
+}
+
+function ExploreScreen({ vibes, profiles, onToggle, onBrowse }: { vibes: RomanceVibe[]; profiles: ProfileSeed[]; onToggle: (vibe: RomanceVibe, joined: boolean) => Promise<RomanceVibe>; onBrowse: (vibe: RomanceVibe) => Promise<void> }) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [notice, setNotice] = useState('');
+  const availableIds = useMemo(() => new Set(profiles.map((profile) => profile.id)), [profiles]);
+  const joinedCount = vibes.filter((vibe) => vibe.joined).length;
+  async function update(vibe: RomanceVibe, joined: boolean) {
+    setBusyId(vibe.id);
+    setNotice('');
+    try { await onToggle(vibe, joined); setNotice(joined ? 'You joined ' + vibe.title + '.' : 'You left ' + vibe.title + '.'); }
+    catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to update this vibe.'); }
+    finally { setBusyId(null); }
+  }
+  async function browse(vibe: RomanceVibe) {
+    setBusyId(vibe.id);
+    setNotice('');
+    try { await onBrowse(vibe); }
+    catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to browse this vibe.'); setBusyId(null); }
+  }
   return (
     <View>
-      <Text style={styles.exploreTitle}>Explore romance vibes</Text>
+      <View style={styles.exploreHero}>
+        <Text style={styles.exploreKicker}>{joinedCount ? joinedCount + ' joined' : 'Find your people'}</Text>
+        <Text style={styles.exploreTitle}>Explore romance vibes</Text>
+        <Text style={styles.exploreSubtitle}>Meet people who want the same kind of connection.</Text>
+      </View>
+      {!!notice && <Text style={styles.exploreNotice}>{notice}</Text>}
       <View style={styles.exploreGrid}>
-        {tiles.map(([label, icon, count, color]) => (
-          <TouchableOpacity key={label} onPress={openLikes} style={styles.exploreTile}>
-            <Icon name={icon} size={44} color={color} />
-            <View style={styles.exploreTileFooter}>
-              <Text style={styles.exploreTileTitle}>{label}</Text>
-              <Text style={styles.exploreTileCount}>{count}</Text>
+        {vibes.map((vibe) => {
+          const liveProfiles = vibe.profileIds.filter((id) => availableIds.has(id)).length;
+          const busy = busyId === vibe.id;
+          return (
+            <View key={vibe.id} style={[styles.exploreTile, vibe.joined && { borderColor: vibe.accent }]}>
+              <View style={styles.exploreTileTop}>
+                <View style={[styles.exploreIconWell, { backgroundColor: vibe.accent + '22' }]}><Icon name={vibe.icon} size={30} color={vibe.accent} /></View>
+                <TouchableOpacity disabled={busy} onPress={() => void update(vibe, !vibe.joined)} style={[styles.vibeJoinButton, vibe.joined && { backgroundColor: vibe.accent }]} accessibilityLabel={vibe.joined ? 'Leave ' + vibe.title : 'Join ' + vibe.title}>
+                  {busy ? <ActivityIndicator size="small" color={vibe.joined ? '#120914' : vibe.accent} /> : <Icon name={vibe.joined ? 'checkmark' : 'add'} size={21} color={vibe.joined ? '#120914' : '#FFFFFF'} />}
+                </TouchableOpacity>
+              </View>
+              <View style={styles.exploreTileFooter}>
+                <Text style={styles.exploreTileTitle}>{vibe.title}</Text>
+                <Text style={styles.exploreTileSubtitle}>{vibe.subtitle}</Text>
+                <Text style={styles.exploreTileCount}>{vibe.memberCount} members · {liveProfiles} nearby</Text>
+                <TouchableOpacity disabled={busy} onPress={() => void browse(vibe)} style={styles.vibeBrowseButton}><Text style={styles.vibeBrowseText}>Browse</Text><Icon name="arrow-forward" size={16} color="#FFFFFF" /></TouchableOpacity>
+              </View>
             </View>
-          </TouchableOpacity>
-        ))}
+          );
+        })}
       </View>
     </View>
   );
@@ -1683,12 +1753,13 @@ function TopPickCard({ profile, locked, onPress }: { profile: ProfileSeed; locke
 }
 
 function EmptyDiscovery({ openProfile, status }: { openProfile: () => void; status: string }) {
+  const vibeEmpty = status.startsWith('No more profiles in ');
   return (
     <View style={styles.emptyDiscovery}>
-      <Icon name="heart-circle" size={52} color="#FF1493" />
-      <Text style={styles.emptyDiscoveryTitle}>Finding Kenyan profiles</Text>
-      <Text style={styles.emptyDiscoveryText}>{status === 'Live API connected' || status === 'Distance preferences applied' ? 'No profiles match your current filters yet. Open your profile, widen distance, or refresh after more members upload photos.' : 'Refreshing the RomChat backend. If this stays here, check the backend URL and try again.'}</Text>
-      <TouchableOpacity onPress={openProfile} style={styles.emptyDiscoveryButton}><Text style={styles.emptyDiscoveryButtonText}>Improve my profile</Text></TouchableOpacity>
+      <Icon name={vibeEmpty ? 'people-circle' : 'heart-circle'} size={52} color="#FF1493" />
+      <Text style={styles.emptyDiscoveryTitle}>{vibeEmpty ? 'This vibe is growing' : 'Finding Kenyan profiles'}</Text>
+      <Text style={styles.emptyDiscoveryText}>{vibeEmpty ? status : status === 'Live API connected' || status === 'Distance preferences applied' ? 'No profiles match your current filters yet. Open your profile, widen distance, or refresh after more members upload photos.' : 'Refreshing the RomChat backend. If this stays here, check the backend URL and try again.'}</Text>
+      <TouchableOpacity onPress={openProfile} style={styles.emptyDiscoveryButton}><Text style={styles.emptyDiscoveryButtonText}>{vibeEmpty ? 'Browse everyone' : 'Improve my profile'}</Text></TouchableOpacity>
     </View>
   );
 }
@@ -2574,12 +2645,28 @@ const styles = StyleSheet.create({
   footerLabel: { color: 'rgba(255,255,255,0.62)', fontSize: 10, fontWeight: '800' },
   footerLabelActive: { color: '#FFFFFF', fontWeight: '900' },
   footerBadge: { position: 'absolute', top: -7, right: -15, minWidth: 26, color: '#FFFFFF', backgroundColor: '#FF1200', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1, textAlign: 'center', fontSize: 9, fontWeight: '900' },
-  exploreTitle: { color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginBottom: 16 },
-  exploreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  exploreTile: { width: '47.8%', aspectRatio: 0.78, borderRadius: 22, backgroundColor: '#211B1F', padding: 18, justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  exploreTileFooter: { gap: 4 },
+  activeVibeBar: { minHeight: 48, marginBottom: 8, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  activeVibeIdentity: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  activeVibeIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  activeVibeEyebrow: { color: 'rgba(255,255,255,0.52)', fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
+  activeVibeName: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  activeVibeClear: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center' },
+  exploreHero: { paddingBottom: 18 },
+  exploreKicker: { color: '#FF8FC8', fontWeight: '900', fontSize: 12, textTransform: 'uppercase', marginBottom: 6 },
+  exploreTitle: { color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginBottom: 7 },
+  exploreSubtitle: { color: 'rgba(255,255,255,0.65)', fontSize: 15, lineHeight: 21, fontWeight: '700' },
+  exploreNotice: { color: '#FFD7EB', backgroundColor: '#21111F', borderRadius: 12, overflow: 'hidden', padding: 11, marginBottom: 14, fontWeight: '800' },
+  exploreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  exploreTile: { width: '48%', minHeight: 260, borderRadius: 8, backgroundColor: '#181317', padding: 14, justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  exploreTileTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  exploreIconWell: { width: 54, height: 54, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  vibeJoinButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  exploreTileFooter: { gap: 5 },
   exploreTileTitle: { color: '#FFFFFF', fontSize: 18, lineHeight: 22, fontWeight: '900' },
-  exploreTileCount: { color: 'rgba(255,255,255,0.62)', fontSize: 16, fontWeight: '900' },
+  exploreTileSubtitle: { color: 'rgba(255,255,255,0.62)', fontSize: 12, lineHeight: 17, fontWeight: '700', minHeight: 34 },
+  exploreTileCount: { color: 'rgba(255,255,255,0.48)', fontSize: 11, fontWeight: '900' },
+  vibeBrowseButton: { marginTop: 7, height: 38, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.10)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  vibeBrowseText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
   likesTabs: { flexDirection: 'row', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.10)', marginBottom: 20 },
   likesTabButton: { flex: 1, alignItems: 'center' },
   likesTab: { flex: 1, textAlign: 'center', color: 'rgba(255,255,255,0.58)', paddingBottom: 14, fontWeight: '900' },

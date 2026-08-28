@@ -260,6 +260,15 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
   [optionsToken]
 );
 
+  const setVibeMembership = useCallback(async (vibeId: string, joined: boolean) => {
+    setLastAction(joined ? 'Joining romance vibe' : 'Leaving romance vibe');
+    const result = await romchatApi.setVibeMembership(vibeId, joined, optionsToken);
+    setBootstrap((current) => current ? { ...current, vibes: result.vibes } : current);
+    setApiOnline(true);
+    setLastAction(joined ? `Joined ${result.vibe.title}` : `Left ${result.vibe.title}`);
+    return result.vibe;
+  }, [optionsToken]);
+
   const verify = useCallback(async () => {
     setLastAction('Submitting verification');
     try {
@@ -270,5 +279,5 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, block, report, reportMessage, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, block, report, reportMessage, setVibeMembership, verify };
 }

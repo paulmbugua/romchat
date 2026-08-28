@@ -7,6 +7,7 @@ import {
   BadgeCheck,
   Camera,
   Check,
+  Compass,
   CreditCard,
   Flag,
   Heart,
@@ -14,6 +15,7 @@ import {
   LogOut,
   Lock,
   Map,
+  Plus,
   Images,
   MessageCircle,
   Shield,
@@ -28,13 +30,25 @@ import {
 import { resolveBackendUrl } from '../lib/backendUrl';
 import CustomGoogleButtonLogin from './auth/CustomGoogleButtonLogin';
 
-type AppSection = 'swipe' | 'likes' | 'chat' | 'tokens' | 'safety' | 'profile';
+type AppSection = 'swipe' | 'explore' | 'likes' | 'chat' | 'tokens' | 'safety' | 'profile';
 type Mode = 'app' | 'profile' | 'messages';
 
 type Session = {
   user?: { id?: string; email?: string; name?: string; displayName?: string };
   profile?: Record<string, any> | null;
   onboarding?: { catalogueAccess?: number };
+};
+
+type RomanceVibe = {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: string;
+  accent: string;
+  joined: boolean;
+  memberCount: number;
+  freshCount: number;
+  profileIds: string[];
 };
 
 type Profile = {
@@ -162,6 +176,9 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
   const [token, setToken] = useState('');
   const [session, setSession] = useState<Session | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [vibes, setVibes] = useState<RomanceVibe[]>([]);
+  const [activeVibeId, setActiveVibeId] = useState('');
+  const [vibeBusyId, setVibeBusyId] = useState('');
   const [profileIndex, setProfileIndex] = useState(0);
   const [messages, setMessages] = useState<any[]>([]);
   const [matchId, setMatchId] = useState('');
@@ -190,6 +207,7 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
       ]);
       setSession((me || bootstrap) as Session);
       setProfiles((discovery?.profiles || bootstrap?.profiles || []).filter(Boolean));
+      setVibes((bootstrap?.vibes || []).filter(Boolean));
       const firstMatch = bootstrap?.matches?.[0]?.id || discovery?.matches?.[0]?.id || '';
       if (firstMatch) setMatchId(firstMatch);
     } finally {
@@ -197,9 +215,38 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
     }
   }
 
-  const visibleProfiles = profiles.filter((profile) => !blockedProfileIds.includes(profile.id));
+  const activeVibe = vibes.find((vibe) => vibe.id === activeVibeId) || null;
+  const visibleProfiles = profiles.filter((profile) => !blockedProfileIds.includes(profile.id) && (!activeVibe || activeVibe.profileIds.includes(profile.id)));
   const activeProfile = visibleProfiles[profileIndex] || null;
   const signedIn = Boolean(token && session?.user);
+
+  async function setVibeMembership(vibe: RomanceVibe, joined: boolean) {
+    if (!signedIn) {
+      setSection('profile');
+      setToast('Login to join romance vibes.');
+      return null;
+    }
+    setVibeBusyId(vibe.id);
+    try {
+      const result = await apiJson('/api/romchat/vibes/' + encodeURIComponent(vibe.id) + '/membership', { method: 'PATCH', body: JSON.stringify({ joined }) }, token);
+      setVibes(result.vibes || []);
+      setToast(joined ? 'Joined ' + result.vibe.title + '.' : 'Left ' + result.vibe.title + '.');
+      return result.vibe as RomanceVibe;
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Unable to update this vibe.');
+      return null;
+    } finally {
+      setVibeBusyId('');
+    }
+  }
+
+  async function browseVibe(vibe: RomanceVibe) {
+    const selected = vibe.joined ? vibe : await setVibeMembership(vibe, true);
+    if (!selected) return;
+    setActiveVibeId(selected.id);
+    setProfileIndex(0);
+    setSection('swipe');
+  }
 
   async function handleSwipe(action: 'pass' | 'like' | 'super_like') {
     if (!activeProfile) return;
@@ -315,7 +362,8 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
         <section className="min-w-0">
           {toast ? <button onClick={() => setToast('')} className="mb-4 w-full rounded-3xl border border-[#ff1493]/30 bg-[#210d1d] px-5 py-3 text-left text-sm font-bold text-[#ffd7eb]">{toast}</button> : null}
           {loading ? <LoadingCard /> : null}
-          {!loading && section === 'swipe' ? <SwipeScreen profile={activeProfile} onSwipe={handleSwipe} onReport={reportActiveProfile} /> : null}
+          {!loading && section === 'swipe' ? <SwipeScreen profile={activeProfile} onSwipe={handleSwipe} onReport={reportActiveProfile} activeVibe={activeVibe} onClearVibe={() => { setActiveVibeId(''); setProfileIndex(0); }} /> : null}
+          {!loading && section === 'explore' ? <ExploreVibesScreen vibes={vibes} profiles={profiles} busyId={vibeBusyId} onToggle={setVibeMembership} onBrowse={browseVibe} /> : null}
           {!loading && section === 'likes' ? <LikesScreen profiles={visibleProfiles} onPick={(profile) => { setProfileIndex(Math.max(0, visibleProfiles.findIndex((item) => item.id === profile.id))); setSection('swipe'); }} /> : null}
           {!loading && section === 'chat' ? <ChatScreen messages={messages} text={messageText} setText={setMessageText} sendChat={sendChat} loadMessages={loadMessages} matchId={matchId} setMatchId={setMatchId} /> : null}
           {!loading && section === 'tokens' ? <TokenScreen token={token} setToast={setToast} /> : null}
@@ -360,6 +408,7 @@ function AppHeader({ signedIn, onLogin, onLogout }: { signedIn: boolean; onLogin
 function SideNav({ section, setSection }: { section: AppSection; setSection: (value: AppSection) => void }) {
   const items: Array<[AppSection, any, string]> = [
     ['swipe', Heart, 'Swipe'],
+    ['explore', Compass, 'Explore'],
     ['likes', Star, 'Likes'],
     ['chat', MessageCircle, 'Chat'],
     ['tokens', WalletCards, 'Tokens'],
@@ -370,14 +419,14 @@ function SideNav({ section, setSection }: { section: AppSection; setSection: (va
 }
 
 function FooterNav({ section, setSection }: { section: AppSection; setSection: (value: AppSection) => void }) {
-  const items: Array<[AppSection, any, string]> = [['swipe', Heart, 'Swipe'], ['likes', Star, 'Likes'], ['chat', MessageCircle, 'Chat'], ['tokens', WalletCards, 'Tokens'], ['profile', UserRound, 'Me']];
+  const items: Array<[AppSection, any, string]> = [['swipe', Heart, 'Swipe'], ['explore', Compass, 'Explore'], ['likes', Star, 'Likes'], ['chat', MessageCircle, 'Chat'], ['profile', UserRound, 'Me']];
   return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-black/90 px-2 pb-4 pt-2 backdrop-blur-xl lg:hidden"><div className="mx-auto flex max-w-xl justify-between">{items.map(([key, Icon, label]) => <button key={key} onClick={() => setSection(key)} className={'grid min-w-14 place-items-center rounded-2xl px-2 py-2 text-xs font-black ' + (section === key ? 'text-white' : 'text-white/50')}><Icon fill={section === key ? 'currentColor' : 'none'} size={22} />{label}</button>)}</div></nav>;
 }
 
-function SwipeScreen({ profile, onSwipe, onReport }: { profile: Profile | null; onSwipe: (action: 'pass' | 'like' | 'super_like') => void; onReport: () => void }) {
-  if (!profile) return <EmptyState title="No live profiles yet" body="Complete your profile and refresh to load real RomChat members from the backend." />;
+function SwipeScreen({ profile, onSwipe, onReport, activeVibe, onClearVibe }: { profile: Profile | null; onSwipe: (action: 'pass' | 'like' | 'super_like') => void; onReport: () => void; activeVibe: RomanceVibe | null; onClearVibe: () => void }) {
+  if (!profile) return <div>{activeVibe ? <VibeFilter vibe={activeVibe} onClear={onClearVibe} /> : null}<EmptyState title={activeVibe ? 'No more profiles in this vibe' : 'No live profiles yet'} body={activeVibe ? 'Try another romance vibe or browse everyone.' : 'Complete your profile and refresh to load real RomChat members from the backend.'} /></div>;
   return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_320px]">
+    <div>{activeVibe ? <VibeFilter vibe={activeVibe} onClear={onClearVibe} /> : null}<section className="grid gap-5 xl:grid-cols-[1fr_320px]">
       <article className="relative min-h-[720px] overflow-hidden rounded-[36px] border border-[#ff1493]/20 bg-[#180a16]">
         <img src={imageFor(profile)} alt={nameFor(profile)} className="absolute inset-0 h-full w-full object-cover brightness-110 contrast-105" />
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
@@ -400,8 +449,18 @@ function SwipeScreen({ profile, onSwipe, onReport }: { profile: Profile | null; 
         <InfoCard icon={Shield} title="Safer romance" body="Report or block suspicious members, and abusive chat is filtered before it damages the community." />
         <InfoCard icon={WalletCards} title="Tokens and premium" body="Buy KES token bundles for Super Likes, profile boosts, and premium discovery perks." />
       </aside>
-    </section>
+    </section></div>
   );
+}
+
+function VibeFilter({ vibe, onClear }: { vibe: RomanceVibe; onClear: () => void }) {
+  return <div className="mb-4 flex items-center justify-between border-b border-white/10 pb-3"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-lg text-black" style={{ backgroundColor: vibe.accent }}><Compass size={19} /></span><div><p className="text-[10px] font-black uppercase text-white/45">Browsing vibe</p><p className="font-black">{vibe.title}</p></div></div><button onClick={onClear} aria-label="Browse all profiles" className="grid h-10 w-10 place-items-center rounded-full bg-white/10"><X size={18} /></button></div>;
+}
+
+function ExploreVibesScreen({ vibes, profiles, busyId, onToggle, onBrowse }: { vibes: RomanceVibe[]; profiles: Profile[]; busyId: string; onToggle: (vibe: RomanceVibe, joined: boolean) => Promise<RomanceVibe | null>; onBrowse: (vibe: RomanceVibe) => Promise<void> }) {
+  const available = new Set(profiles.map((profile) => profile.id));
+  const joined = vibes.filter((vibe) => vibe.joined).length;
+  return <section><header className="mb-6 border-b border-white/10 pb-6"><p className="text-xs font-black uppercase text-[#ff8fc8]">{joined ? joined + ' joined' : 'Find your people'}</p><h1 className="mt-2 text-4xl font-black sm:text-5xl">Explore romance vibes</h1><p className="mt-2 text-white/60">Meet people who want the same kind of connection.</p></header><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{vibes.map((vibe) => { const nearby = vibe.profileIds.filter((id) => available.has(id)).length; const busy = busyId === vibe.id; return <article key={vibe.id} className="flex min-h-64 flex-col justify-between rounded-lg border bg-white/[0.035] p-5" style={{ borderColor: vibe.joined ? vibe.accent : 'rgba(255,255,255,.1)' }}><div className="flex items-start justify-between"><span className="grid h-14 w-14 place-items-center rounded-lg" style={{ color: vibe.accent, backgroundColor: vibe.accent + '22' }}><Compass size={28} /></span><button disabled={busy} onClick={() => void onToggle(vibe, !vibe.joined)} aria-label={vibe.joined ? 'Leave ' + vibe.title : 'Join ' + vibe.title} className="grid h-11 w-11 place-items-center rounded-full border border-white/10 disabled:opacity-50" style={{ backgroundColor: vibe.joined ? vibe.accent : 'rgba(255,255,255,.08)', color: vibe.joined ? '#120914' : '#fff' }}>{vibe.joined ? <Check size={20} /> : <Plus size={20} />}</button></div><div className="mt-8"><h2 className="text-2xl font-black">{vibe.title}</h2><p className="mt-2 min-h-12 text-sm leading-6 text-white/60">{vibe.subtitle}</p><p className="mt-3 text-xs font-black text-white/40">{vibe.memberCount} members · {nearby} nearby</p><button disabled={busy} onClick={() => void onBrowse(vibe)} className="mt-5 w-full rounded-lg bg-white/10 px-4 py-3 font-black hover:bg-white/15 disabled:opacity-50">Browse</button></div></article>; })}</div></section>;
 }
 
 function LikesScreen({ profiles, onPick }: { profiles: Profile[]; onPick: (profile: Profile) => void }) {

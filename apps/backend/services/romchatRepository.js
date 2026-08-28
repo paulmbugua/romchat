@@ -8,6 +8,17 @@ const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
 const FREE_DAILY_LIKE_LIMIT = 30;
 
+export const romanceVibeCatalog = [
+  { id: 'serious-love', title: 'Serious love', subtitle: 'Marriage-minded and ready to build', icon: 'heart', accent: '#FF1493' },
+  { id: 'slow-burn', title: 'Slow-burn romance', subtitle: 'Friendship, consistency, then sparks', icon: 'time', accent: '#F472B6' },
+  { id: 'coffee-dates', title: 'Coffee dates', subtitle: 'Easy conversation around the city', icon: 'cafe', accent: '#F59E0B' },
+  { id: 'coast-weekends', title: 'Coast weekends', subtitle: 'Sun, Swahili food, and ocean plans', icon: 'sunny', accent: '#FFD700' },
+  { id: 'faith-values', title: 'Faith & values', subtitle: 'Purpose-led connection and family', icon: 'people', accent: '#34D399' },
+  { id: 'adventure-duo', title: 'Adventure duo', subtitle: 'Hikes, road trips, and new places', icon: 'compass', accent: '#60A5FA' },
+  { id: 'creative-hearts', title: 'Creative hearts', subtitle: 'Music, art, stories, and big ideas', icon: 'musical-notes', accent: '#A78BFA' },
+  { id: 'homebody-love', title: 'Homebody love', subtitle: 'Cooking, films, and cosy Sundays', icon: 'home', accent: '#FB7185' },
+];
+
 export const premiumPlans = [
   { id: 'free', name: 'Free', priceKes: 0, billing: 'monthly', perks: ['Verified browsing', 'Limited daily likes', 'Safety hub'], features: { canRewind: false, canSeeLikesSent: false, canSeeTopPicks: false, unlimitedLikes: false } },
   { id: 'gold', name: 'Gold', priceKes: 1000, billing: 'monthly', perks: ['Unlimited likes', 'See admirers', 'Undo swipes', 'Read receipts', 'Likes Sent', 'Top Picks'], features: { canRewind: true, canSeeLikesSent: true, canSeeTopPicks: true, unlimitedLikes: true }, priorityLikes: 5 },
@@ -175,6 +186,32 @@ async function ensureSchema() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (blocker_id, blocked_id)
   )`);
+  await queryWithRetry(`CREATE TABLE IF NOT EXISTS romchat_romance_vibes (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    subtitle TEXT NOT NULL DEFAULT '',
+    icon TEXT NOT NULL DEFAULT 'heart',
+    accent TEXT NOT NULL DEFAULT '#FF1493',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`);
+  await queryWithRetry(`CREATE TABLE IF NOT EXISTS romchat_vibe_memberships (
+    member_id TEXT NOT NULL,
+    vibe_id TEXT NOT NULL REFERENCES romchat_romance_vibes(id) ON DELETE CASCADE,
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (member_id, vibe_id)
+  )`);
+  await queryWithRetry('CREATE INDEX IF NOT EXISTS idx_romchat_vibe_memberships_vibe_joined ON romchat_vibe_memberships(vibe_id, joined_at DESC)');
+  for (const [sortOrder, vibe] of romanceVibeCatalog.entries()) {
+    await queryWithRetry(
+      `INSERT INTO romchat_romance_vibes (id, title, subtitle, icon, accent, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, subtitle = EXCLUDED.subtitle, icon = EXCLUDED.icon, accent = EXCLUDED.accent, sort_order = EXCLUDED.sort_order, is_active = true, updated_at = now()`,
+      [vibe.id, vibe.title, vibe.subtitle, vibe.icon, vibe.accent, sortOrder]
+    );
+  }
   await seedProfiles();
   schemaReady = true;
 }
@@ -213,7 +250,8 @@ function fromMemberProfileRow(row, catalogueAccess = 1) {
     name: row.display_name,
     age: Number(row.age),
     city: row.city,
-    match: romanticMatchScore(row),
+    match: Math.min(99, romanticMatchScore(row) + Math.min(6, Number(row.shared_vibe_ids?.length || 0) * 2)),
+    sharedVibeIds: Array.isArray(row.shared_vibe_ids) ? row.shared_vibe_ids : [],
     intent: row.intent || 'Intentional Kenyan connection',
     prompt: row.bio || answers[0] || 'Ready for a real Kenyan romance with warm conversation.',
     videoPrompt: 'Video vibe check after a mutual match.',
@@ -406,11 +444,27 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
         [viewerId, desiredGender]
       );
     }
+    if (viewerId && result.rows.length) {
+      const candidateIds = result.rows.map((row) => row.member_id).filter(Boolean);
+      const memberships = await queryWithRetry(
+        `SELECT member_id, array_agg(vibe_id ORDER BY vibe_id) AS vibe_ids
+           FROM romchat_vibe_memberships
+          WHERE member_id = $1 OR member_id = ANY($2::text[])
+          GROUP BY member_id`,
+        [viewerId, candidateIds]
+      );
+      const vibeIdsByMember = new Map(memberships.rows.map((row) => [row.member_id, row.vibe_ids || []]));
+      const viewerVibes = new Set(vibeIdsByMember.get(viewerId) || []);
+      result.rows = result.rows.map((row) => ({
+        ...row,
+        shared_vibe_ids: (vibeIdsByMember.get(row.member_id) || []).filter((vibeId) => viewerVibes.has(vibeId)),
+      }));
+    }
     return result.rows
       .map((row) => ({ ...row, distance_km: viewerCoordinates ? haversineKm(viewerCoordinates, rowCoordinates(row)) : 0 }))
       .filter((row) => !viewerCoordinates || !mapDiscoveryEnabled || Number(row.distance_km || 0) <= maxDistanceKm)
       .filter((row) => Number(row.age || 0) >= minAge && Number(row.age || 0) <= maxAge)
-      .sort((a, b) => Number(Boolean(b.boosted_now)) - Number(Boolean(a.boosted_now)) || Number(a.distance_km || 0) - Number(b.distance_km || 0) || Number(b.profile_strength || 0) - Number(a.profile_strength || 0))
+      .sort((a, b) => Number(Boolean(b.boosted_now)) - Number(Boolean(a.boosted_now)) || Number(b.shared_vibe_ids?.length || 0) - Number(a.shared_vibe_ids?.length || 0) || Number(a.distance_km || 0) - Number(b.distance_km || 0) || Number(b.profile_strength || 0) - Number(a.profile_strength || 0))
       .map((row) => fromMemberProfileRow(row, access));
   }, () => []);
 }
@@ -475,14 +529,66 @@ export async function getLikesSummary(memberId = null) {
   }, () => ({ receivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] }));
 }
 
+export async function getRomanceVibes(memberId = null) {
+  return withDb(async () => {
+    const result = await queryWithRetry(
+      `SELECT v.id, v.title, v.subtitle, v.icon, v.accent, v.sort_order,
+              COUNT(m.member_id)::int AS member_count,
+              COUNT(m.member_id) FILTER (WHERE m.joined_at >= now() - interval '24 hours')::int AS fresh_count,
+              COALESCE(array_agg(m.member_id ORDER BY m.joined_at DESC) FILTER (WHERE m.member_id IS NOT NULL AND ($1::text IS NULL OR m.member_id <> $1)), '{}') AS profile_ids,
+              COALESCE(bool_or(m.member_id = $1), false) AS joined
+         FROM romchat_romance_vibes v
+         LEFT JOIN romchat_vibe_memberships m ON m.vibe_id = v.id
+        WHERE v.is_active = true
+        GROUP BY v.id
+        ORDER BY v.sort_order, v.title`,
+      [memberId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      subtitle: row.subtitle,
+      icon: row.icon,
+      accent: row.accent,
+      joined: Boolean(row.joined),
+      memberCount: Number(row.member_count || 0),
+      freshCount: Number(row.fresh_count || 0),
+      profileIds: Array.isArray(row.profile_ids) ? row.profile_ids : [],
+    }));
+  }, () => romanceVibeCatalog.map((vibe) => ({ ...vibe, joined: false, memberCount: 0, freshCount: 0, profileIds: [] })));
+}
+
+export async function setRomanceVibeMembership({ memberId, vibeId, joined = true }) {
+  if (!memberId || !vibeId) {
+    const error = new Error('A signed-in member and romance vibe are required.');
+    error.status = 400;
+    throw error;
+  }
+  await ensureSchema();
+  const exists = await queryWithRetry('SELECT id FROM romchat_romance_vibes WHERE id = $1 AND is_active = true', [vibeId]);
+  if (!exists.rows[0]) {
+    const error = new Error('This romance vibe is no longer available.');
+    error.status = 404;
+    throw error;
+  }
+  if (joined) {
+    await queryWithRetry('INSERT INTO romchat_vibe_memberships (member_id, vibe_id) VALUES ($1,$2) ON CONFLICT (member_id, vibe_id) DO NOTHING', [memberId, vibeId]);
+  } else {
+    await queryWithRetry('DELETE FROM romchat_vibe_memberships WHERE member_id = $1 AND vibe_id = $2', [memberId, vibeId]);
+  }
+  const vibes = await getRomanceVibes(memberId);
+  return { vibe: vibes.find((item) => item.id === vibeId), vibes };
+}
+
 export async function getBootstrap({ catalogueAccess = 1, viewerId = null, verifiedOnly = false } = {}) {
-  const [profiles, messages, privacy, wallet, likes, activeSubscription] = await Promise.all([
+  const [profiles, messages, privacy, wallet, likes, activeSubscription, vibes] = await Promise.all([
     getProfiles({ verifiedOnly, catalogueAccess, viewerId }),
     getMessages('match_elena'),
     getPrivacy(),
     getWallet(),
     getLikesSummary(viewerId),
     getActiveSubscription(viewerId),
+    getRomanceVibes(viewerId),
   ]);
   return {
     app: { name: 'RomChat', tagline: 'Kenyan singles. Real vibes. Safer chats.', mode: process.env.ROMCHAT_MODE || 'demo' },
@@ -491,6 +597,7 @@ export async function getBootstrap({ catalogueAccess = 1, viewerId = null, verif
     messages,
     wallet,
     likes,
+    vibes,
     safety: {
       verifiedOnlyDefault: true,
       screenshotWarnings: privacy.screenshotsBlocked,

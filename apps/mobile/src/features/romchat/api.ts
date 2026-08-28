@@ -29,6 +29,18 @@ export type RomChatProfile = {
   distanceKm?: number;
 };
 
+export type RomanceVibe = {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: string;
+  accent: string;
+  joined: boolean;
+  memberCount: number;
+  freshCount: number;
+  profileIds: string[];
+};
+
 export type RomChatMessage = {
   id: string;
   matchId: string;
@@ -61,6 +73,7 @@ export type RomChatVideoRequest = {
 export type RomChatBootstrap = {
   profiles: RomChatProfile[];
   messages: RomChatMessage[];
+  vibes?: RomanceVibe[];
   wallet?: { balance: number; currency: string };
   likes?: { receivedCount: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] };
   privacy?: {
@@ -76,6 +89,12 @@ export type RomChatBootstrap = {
 export const romchatApi = {
   bootstrap: (token?: string | null) => apiFetch<RomChatBootstrap>('/api/romchat/bootstrap', { token }),
   discovery: (verifiedOnly = true, token?: string | null) => apiFetch<{ profiles: RomChatProfile[] }>(`/api/romchat/discovery?verifiedOnly=${verifiedOnly ? 'true' : 'false'}`, { token }),
+  setVibeMembership: (vibeId: string, joined: boolean, token?: string | null) =>
+    apiFetch<{ vibe: RomanceVibe; vibes: RomanceVibe[] }>(`/api/romchat/vibes/${encodeURIComponent(vibeId)}/membership`, {
+      method: 'PATCH',
+      token,
+      body: JSON.stringify({ joined }),
+    }),
   swipe: (profileId: string, action: 'pass' | 'like' | 'super_like', token?: string | null, options: { forceMatch?: boolean } = {}) =>
     apiFetch<{ id: string; matched: boolean; matchId: string | null; message: string; limit?: number; remaining?: number; retryAt?: string | null }>('/api/romchat/swipes', {
       method: 'POST',

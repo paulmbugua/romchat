@@ -22,6 +22,8 @@ export default function romchatRoutes(io) {
   router.delete('/profile/media/:mediaId', controller.deleteProfileMedia);
   router.post('/profile/selfie-verification', controller.verifySelfie);
   router.get('/bootstrap', controller.bootstrap);
+  router.get('/vibes', controller.romanceVibes);
+  router.patch('/vibes/:vibeId/membership', controller.romanceVibeMembership);
   router.get('/discovery', controller.discovery);
   router.post('/swipes', controller.swipe);
   router.get('/messages/:matchId', controller.messages);
