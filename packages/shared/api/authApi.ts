@@ -19,12 +19,24 @@ function client(backendUrl: string, token?: string) {
   });
 }
 
-const toMessage = (err: any) =>
-  err?.response?.data?.message ||
-  err?.response?.data?.error ||
-  (typeof err?.response?.data === 'string' ? err.response.data : '') ||
-  err?.message ||
-  'Request failed';
+const technicalErrorPattern = /(?:\[[a-z0-9_-]+:[a-z0-9_:-]+\]|\b(?:backend|console|stack|sql|postgres|database|firebase|audience mismatch|localhost|network request failed|request failed with status)\b|https?:\/\/|\*{2,}[^\s]*@)/i;
+
+const toMessage = (err: any) => {
+  const status = Number(err?.response?.status || 0);
+  const raw = err?.response?.data?.message || err?.response?.data?.error || (typeof err?.response?.data === 'string' ? err.response.data : '') || err?.message || '';
+  const message = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
+  if (/google|oauth|firebase|audience/i.test(message)) return 'Google sign-in could not be completed. Please try again or use email login.';
+  if (/invalid (?:email|credentials)|email or password|incorrect password/i.test(message)) return 'The email or password you entered is incorrect.';
+  if (/network|failed to fetch|connection|timeout/i.test(message)) return 'We could not connect right now. Check your internet connection and try again.';
+  if (message && message.length <= 220 && !technicalErrorPattern.test(message)) return message;
+  if (status === 401) return 'Your session has expired. Please sign in again.';
+  if (status === 403) return 'You do not have permission to complete this action.';
+  if (status === 404) return 'We could not find what you were looking for.';
+  if (status === 409) return 'This information is already in use.';
+  if (status === 429) return 'Too many attempts. Please wait a moment and try again.';
+  if (status >= 500) return 'Something went wrong on our side. Please try again shortly.';
+  return 'Something went wrong. Please try again.';
+};
 
 // --- Google login stays mostly same but add withCredentials for cookies
 export const exchangeGoogleAuthCode = async (

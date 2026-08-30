@@ -28,6 +28,7 @@ import {
   X,
 } from 'lucide-react';
 import { resolveBackendUrl } from '../lib/backendUrl';
+import { googleSignInErrorMessage, userFacingErrorMessage } from '../lib/publicError';
 import CustomGoogleButtonLogin from './auth/CustomGoogleButtonLogin';
 
 type AppSection = 'swipe' | 'explore' | 'likes' | 'chat' | 'tokens' | 'safety' | 'profile';
@@ -103,17 +104,21 @@ const nameFor = (profile?: Profile | null) => first(profile?.displayName, profil
 const interestsFor = (profile?: Profile | null) => (profile?.interests?.length ? profile.interests : profile?.tags || []).slice(0, 5);
 
 async function apiJson(path: string, init: RequestInit = {}, token = '') {
-  const response = await fetch(apiBase() + path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: 'Bearer ' + token } : {}),
-      ...(init.headers || {}),
-    },
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.message || 'Request failed with status ' + response.status);
-  return data;
+  try {
+    const response = await fetch(apiBase() + path, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        ...(init.headers || {}),
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw Object.assign(new Error(data?.message || ''), { status: response.status, code: data?.code });
+    return data;
+  } catch (error) {
+    throw new Error(userFacingErrorMessage(error));
+  }
 }
 
 function getStoredToken() {
@@ -233,7 +238,7 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
       setToast(joined ? 'Joined ' + result.vibe.title + '.' : 'Left ' + result.vibe.title + '.');
       return result.vibe as RomanceVibe;
     } catch (error) {
-      setToast(error instanceof Error ? error.message : 'Unable to update this vibe.');
+      setToast(userFacingErrorMessage(error, 'Unable to update this vibe.'));
       return null;
     } finally {
       setVibeBusyId('');
@@ -269,7 +274,7 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
       }
       setProfileIndex((value) => Math.min(value + 1, Math.max(0, visibleProfiles.length - 1)));
     } catch (error) {
-      setToast(error instanceof Error ? error.message : 'Swipe failed.');
+      setToast(userFacingErrorMessage(error, 'Swipe failed.'));
     }
   }
 
@@ -279,7 +284,7 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
       const data = await apiJson('/api/romchat/messages/' + encodeURIComponent(id), {}, token);
       setMessages(data?.messages || []);
     } catch (error) {
-      setToast(error instanceof Error ? error.message : 'Unable to load messages.');
+      setToast(userFacingErrorMessage(error, 'Unable to load messages.'));
     }
   }
 
@@ -294,7 +299,7 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
       setMessages((items) => [...items, data.message]);
       setMessageText('');
     } catch (error) {
-      setToast(error instanceof Error ? error.message : 'Message not sent.');
+      setToast(userFacingErrorMessage(error, 'Message not sent.'));
     }
   }
 
@@ -348,7 +353,7 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
       setReportDetails('');
       await load(token);
     } catch (error) {
-      setToast(error instanceof Error ? error.message : 'Unable to submit the safety report.');
+      setToast(userFacingErrorMessage(error, 'Unable to submit the safety report.'));
     } finally {
       setReportBusy(false);
     }
@@ -480,7 +485,7 @@ function TokenScreen({ token, setToast }: { token: string; setToast: (value: str
       if (payment?.payment?.checkoutUrl) window.open(payment.payment.checkoutUrl, '_blank', 'noopener,noreferrer');
       setToast(payment?.payment?.instructions || 'Payment started.');
     } catch (error) {
-      setToast(error instanceof Error ? error.message : 'Payment failed.');
+      setToast(userFacingErrorMessage(error, 'Payment failed.'));
     }
   }
   return <section className="rounded-[32px] border border-white/10 bg-white/[0.04] p-5"><h1 className="text-4xl font-black">Buy tokens</h1><p className="mt-2 text-white/60">KES payments via M-Pesa or card checkout.</p><div className="mt-5 flex flex-wrap gap-3"><button onClick={() => setProvider('mpesa')} className={'rounded-full px-5 py-3 font-black ' + (provider === 'mpesa' ? 'bg-[#12c55b] text-black' : 'bg-white/10')}>M-Pesa</button><button onClick={() => setProvider('paystack')} className={'inline-flex items-center gap-2 rounded-full px-5 py-3 font-black ' + (provider === 'paystack' ? 'bg-white text-black' : 'bg-white/10')}><CreditCard size={18} /> Card</button><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="M-Pesa phone" className="rounded-full border border-white/10 bg-white/5 px-5 py-3 outline-none" /></div><div className="mt-6 grid gap-4 md:grid-cols-3">{[['tokens_100','100 tokens','KES 250'],['superlikes_15','15 Super Likes','KES 3,000'],['superlikes_30','30 Super Likes','KES 4,500']].map(([id,title,price]) => <div key={id} className="rounded-[28px] border border-white/10 bg-black/30 p-5"><p className="text-2xl font-black">{title}</p><p className="mt-2 text-[#ffd700]">{price}</p><button onClick={() => buy(id)} className="mt-5 w-full rounded-full bg-[#ff1493] px-5 py-3 font-black">Select</button></div>)}</div><div className="mt-4 rounded-[28px] border border-[#ffd700]/30 bg-[#ffd700]/10 p-5"><h2 className="text-2xl font-black text-[#ffd700]">RomChat Platinum</h2><p className="mt-2 text-white/70">KES 2,400/month for unlimited likes, priority discovery, Top Picks, and premium visibility.</p><button onClick={() => buy('tokens_100', 'subscription', 'platinum')} className="mt-5 rounded-full bg-white px-6 py-3 font-black text-black">Choose Platinum</button></div></section>;
@@ -628,7 +633,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
     const authCode = params.get('authCode') || params.get('code');
     const authError = params.get('authError');
     if (authError) {
-      setStatus('Google sign-in failed: ' + authError);
+      setStatus(googleSignInErrorMessage(authError));
       return;
     }
     if (!authCode || token) return;
@@ -643,7 +648,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
         window.history.replaceState({}, '', '/profile');
         await reload(data.token);
       } catch (error) {
-        if (!cancelled) setStatus(error instanceof Error ? error.message : 'Google login failed.');
+        if (!cancelled) setStatus(userFacingErrorMessage(error, 'Google login failed.'));
       }
     }
     void exchangeGoogleCode();
@@ -671,7 +676,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
         storeToken(data.token); setToken(data.token); setStatus('Password reset.'); await reload(data.token);
       }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Action failed.');
+      setStatus(userFacingErrorMessage(error, 'Action failed.'));
     } finally {
       setBusy(false);
     }
@@ -749,7 +754,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       setStatus('Profile saved.');
       await reload(token);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Profile save failed.');
+      setStatus(userFacingErrorMessage(error, 'Profile save failed.'));
     } finally {
       setBusy(false);
     }
@@ -766,7 +771,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       setStatus('Distance preferences applied.');
       await reload(token);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Unable to save distance settings.');
+      setStatus(userFacingErrorMessage(error, 'Unable to save distance settings.'));
     } finally { setBusy(false); }
   }
 
@@ -781,7 +786,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       setStatus('7 profile prompts saved.');
       await reload(token);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Unable to save prompts.');
+      setStatus(userFacingErrorMessage(error, 'Unable to save prompts.'));
     } finally { setBusy(false); }
   }
 
@@ -793,7 +798,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       setStatus('Main profile photo updated.');
       await reload(token);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Unable to update main photo.');
+      setStatus(userFacingErrorMessage(error, 'Unable to update main photo.'));
     } finally { setBusy(false); }
   }
 
@@ -811,7 +816,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       setStatus('Selfie verification submitted.');
       await reload(token);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Unable to verify selfie.');
+      setStatus(userFacingErrorMessage(error, 'Unable to verify selfie.'));
     } finally { setBusy(false); }
   }
 
@@ -820,7 +825,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       setBusy(true);
       await apiJson('/api/romchat/auth/account/deletion-request', { method: 'POST', body: JSON.stringify({ reason: 'Requested from RomChat web.' }) }, token);
       setStatus('Data deletion request submitted.');
-    } catch (error) { setStatus(error instanceof Error ? error.message : 'Unable to request deletion.'); }
+    } catch (error) { setStatus(userFacingErrorMessage(error, 'Unable to request deletion.')); }
     finally { setBusy(false); }
   }
 
@@ -830,7 +835,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       setBusy(true);
       await apiJson('/api/romchat/auth/account', { method: 'DELETE' }, token);
       clearStoredSession(); setToken(''); setStatus('Account deleted.'); location.href = '/login?deleted=1';
-    } catch (error) { setStatus(error instanceof Error ? error.message : 'Unable to delete account.'); }
+    } catch (error) { setStatus(userFacingErrorMessage(error, 'Unable to delete account.')); }
     finally { setBusy(false); }
   }
 

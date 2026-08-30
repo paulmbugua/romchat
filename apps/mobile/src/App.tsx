@@ -31,8 +31,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { storage } from '../utils/storage';
 import { romchatAccountApi, romchatBackendHealth, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
-import { apiBaseUrl } from './lib/api';
-import { ApiRequestError } from './lib/api';
+import { apiBaseUrl, ApiRequestError, userFacingErrorMessage } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 import type { RomanceVibe } from './features/romchat/api';
 import { ProfileDetailModal, type ProfileDetailData } from './components/ProfileDetailModal';
@@ -321,7 +320,7 @@ export default function App() {
     try {
       await refreshSession(session.token);
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Unable to refresh RomChat.');
+      setAuthError(userFacingErrorMessage(error, 'Unable to refresh RomChat.'));
     } finally {
       setRefreshing(false);
     }
@@ -352,7 +351,7 @@ export default function App() {
         } catch (error) {
           console.warn('[romchat-auth] boot refresh failed', error instanceof Error ? error.message : String(error));
           if (mounted) {
-            setAuthError(error instanceof Error ? error.message : 'Please sign in again.');
+            setAuthError(userFacingErrorMessage(error, 'Please sign in again.'));
             await persistSession(null);
           }
         }
@@ -440,7 +439,7 @@ export default function App() {
     try {
       await WebBrowser.openBrowserAsync(paymentSheet.checkoutUrl);
     } catch (error) {
-      setPaymentNotice(error instanceof Error ? error.message : 'Unable to open card checkout.');
+      setPaymentNotice(userFacingErrorMessage(error, 'Unable to open card checkout.'));
     }
   }
 
@@ -458,7 +457,7 @@ export default function App() {
       if (!payment) throw new Error('Payment could not start.');
       setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for KES ${payment.amountKes}. Tokens activate automatically after payment confirmation.` : `Paystack card checkout prepared for KES ${payment.amountKes}. Tokens activate after card confirmation.`);
       showPaymentSheet(payment, provider, 'Token Wallet', `${payment.tokens || 0} RomChat tokens`);
-    } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start token payment.'); }
+    } catch (error) { setPaymentNotice(userFacingErrorMessage(error, 'Unable to start token payment.')); }
   }
 
   async function startPlanPurchase(planId: 'gold' | 'platinum', provider: 'mpesa' | 'paystack' = 'mpesa') {
@@ -470,7 +469,7 @@ export default function App() {
       const plan = plans.find((item) => item.id === planId);
       setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates automatically after payment confirmation.` : `Paystack card checkout prepared for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates after card confirmation.`);
       showPaymentSheet(payment, provider, `${plan?.name || 'Premium'} plan`, 'Unlimited likes and premium discovery benefits');
-    } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start subscription payment.'); }
+    } catch (error) { setPaymentNotice(userFacingErrorMessage(error, 'Unable to start subscription payment.')); }
   }
 
   async function startSuperLikePurchase(packageId: 'superlikes_15' | 'superlikes_30', provider: 'mpesa' | 'paystack' = 'mpesa') {
@@ -482,7 +481,7 @@ export default function App() {
       if (!payment) throw new Error('Payment could not start.');
       setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after payment confirmation.` : `Paystack checkout prepared for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after card confirmation.`);
       showPaymentSheet(payment, provider, 'Super Likes', `${count} priority Super Likes`);
-    } catch (error) { setPaymentNotice(error instanceof Error ? error.message : 'Unable to start Super Likes payment.'); }
+    } catch (error) { setPaymentNotice(userFacingErrorMessage(error, 'Unable to start Super Likes payment.')); }
   }
 
   function openMatchedChatSoon() {
@@ -615,7 +614,7 @@ export default function App() {
     setAuthBusy(true);
     setAuthError('');
     try { await applyAuth(await romchatAccountApi.login({ email, password })); }
-    catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to login.'); }
+    catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to login.')); }
     finally { setAuthBusy(false); }
   }
 
@@ -623,7 +622,7 @@ export default function App() {
     setAuthBusy(true);
     setAuthError('');
     try { await romchatAccountApi.requestOtp({ name, email, password }); }
-    catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to send verification code.'); throw error; }
+    catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to send verification code.')); throw error; }
     finally { setAuthBusy(false); }
   }
 
@@ -631,7 +630,7 @@ export default function App() {
     setAuthBusy(true);
     setAuthError('');
     try { await applyAuth(await romchatAccountApi.verifyOtp({ email, otp })); }
-    catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to verify code.'); }
+    catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to verify code.')); }
     finally { setAuthBusy(false); }
   }
 
@@ -643,7 +642,7 @@ export default function App() {
       const devCode = response.developmentCode ? ' Dev code: ' + response.developmentCode : '';
       return (response.message || 'Reset code sent. Check your email.') + devCode;
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Unable to send reset email.');
+      setAuthError(userFacingErrorMessage(error, 'Unable to send reset email.'));
       throw error;
     } finally {
       setAuthBusy(false);
@@ -654,7 +653,7 @@ export default function App() {
     setAuthBusy(true);
     setAuthError('');
     try { await applyAuth(await romchatAccountApi.resetPassword({ email, code, password })); }
-    catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to reset password.'); throw error; }
+    catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to reset password.')); throw error; }
     finally { setAuthBusy(false); }
   }
 
@@ -668,7 +667,7 @@ export default function App() {
     }
     catch (error) {
       console.warn('[romchat-google] token-login:failed', error);
-      setAuthError(error instanceof Error ? error.message : 'Google login failed.');
+      setAuthError(userFacingErrorMessage(error, 'Google login failed.'));
     }
     finally { setAuthBusy(false); }
   }
@@ -700,7 +699,7 @@ export default function App() {
       if (code === statusCodes.SIGN_IN_CANCELLED) setAuthError('Google sign-in cancelled.');
       else if (code === statusCodes.IN_PROGRESS) setAuthError('Google sign-in is already in progress.');
       else if (code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) setAuthError('Google Play Services is unavailable or needs an update.');
-      else setAuthError(error instanceof Error ? error.message : 'Google login failed.');
+      else setAuthError(userFacingErrorMessage(error, 'Google login failed.'));
     } finally { setAuthBusy(false); }
   }
 
@@ -711,7 +710,7 @@ export default function App() {
     try {
       await romchatAccountApi.saveProfile(session.token, payload);
       await refreshSession(session.token);
-    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to save profile.'); }
+    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to save profile.')); }
     finally { setAuthBusy(false); }
   }
 
@@ -736,7 +735,7 @@ export default function App() {
       } else {
         await refreshSession(session.token);
       }
-    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to upload image.'); }
+    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to upload image.')); }
     finally { setAuthBusy(false); }
   }
 
@@ -748,7 +747,7 @@ export default function App() {
       const response = await romchatAccountApi.deleteMedia(session.token, mediaId);
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
-    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to delete image.'); }
+    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to delete image.')); }
     finally { setAuthBusy(false); }
   }
 
@@ -760,7 +759,7 @@ export default function App() {
       const response = await romchatAccountApi.setMainPhoto(session.token, mediaId);
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
-    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to update main photo.'); }
+    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to update main photo.')); }
     finally { setAuthBusy(false); }
   }
 
@@ -779,7 +778,7 @@ export default function App() {
       const response = await romchatAccountApi.verifySelfie(session.token, { dataUri: `data:${contentType};base64,${asset.base64}`, contentType, fileName: asset.fileName || 'selfie-verification.jpg' });
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
-    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to verify selfie.'); }
+    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to verify selfie.')); }
     finally { setAuthBusy(false); }
   }
 
@@ -800,7 +799,7 @@ export default function App() {
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
       await romchat.refresh();
-    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to save profile details.'); }
+    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to save profile details.')); }
     finally { setAuthBusy(false); }
   }
 
@@ -825,7 +824,7 @@ export default function App() {
       });
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
-    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to save prompts.'); }
+    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to save prompts.')); }
     finally { setAuthBusy(false); }
   }
 
@@ -851,7 +850,7 @@ export default function App() {
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
       await romchat.refresh();
-    } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to save distance settings.'); }
+    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to save distance settings.')); }
     finally { setAuthBusy(false); }
   }
   async function toggleRomanceVibe(vibe: RomanceVibe, joined: boolean) {
@@ -859,7 +858,7 @@ export default function App() {
     try {
       return await romchat.setVibeMembership(vibe.id, joined);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to update this romance vibe.';
+      const message = userFacingErrorMessage(error, 'Unable to update this romance vibe.');
       setAuthError(message);
       throw error;
     }
@@ -1541,14 +1540,14 @@ function ExploreScreen({ vibes, profiles, onToggle, onBrowse }: { vibes: Romance
     setBusyId(vibe.id);
     setNotice('');
     try { await onToggle(vibe, joined); setNotice(joined ? 'You joined ' + vibe.title + '.' : 'You left ' + vibe.title + '.'); }
-    catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to update this vibe.'); }
+    catch (error) { setNotice(userFacingErrorMessage(error, 'Unable to update this vibe.')); }
     finally { setBusyId(null); }
   }
   async function browse(vibe: RomanceVibe) {
     setBusyId(vibe.id);
     setNotice('');
     try { await onBrowse(vibe); }
-    catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to browse this vibe.'); setBusyId(null); }
+    catch (error) { setNotice(userFacingErrorMessage(error, 'Unable to browse this vibe.')); setBusyId(null); }
   }
   return (
     <View>
@@ -1758,7 +1757,7 @@ function EmptyDiscovery({ openProfile, status }: { openProfile: () => void; stat
     <View style={styles.emptyDiscovery}>
       <Icon name={vibeEmpty ? 'people-circle' : 'heart-circle'} size={52} color="#FF1493" />
       <Text style={styles.emptyDiscoveryTitle}>{vibeEmpty ? 'This vibe is growing' : 'Finding Kenyan profiles'}</Text>
-      <Text style={styles.emptyDiscoveryText}>{vibeEmpty ? status : status === 'Live API connected' || status === 'Distance preferences applied' ? 'No profiles match your current filters yet. Open your profile, widen distance, or refresh after more members upload photos.' : 'Refreshing the RomChat backend. If this stays here, check the backend URL and try again.'}</Text>
+      <Text style={styles.emptyDiscoveryText}>{vibeEmpty ? status : status === 'Live API connected' || status === 'Distance preferences applied' ? 'No profiles match your current filters yet. Open your profile, widen distance, or refresh after more members upload photos.' : 'We could not refresh profiles just now. Check your connection and try again.'}</Text>
       <TouchableOpacity onPress={openProfile} style={styles.emptyDiscoveryButton}><Text style={styles.emptyDiscoveryButtonText}>{vibeEmpty ? 'Browse everyone' : 'Improve my profile'}</Text></TouchableOpacity>
     </View>
   );

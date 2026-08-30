@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import romchatRoutes from './routes/romchatRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import { localMediaRoot } from './services/romchatMediaStorage.js';
+import { publicErrorMessage, sanitizeErrorPayload, shouldExposeTechnicalErrors } from './utils/publicError.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -50,6 +51,12 @@ app.options('*', cors(corsOptions));
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '24mb' }));
+app.use((req, res, next) => {
+  if (shouldExposeTechnicalErrors()) return next();
+  const sendJson = res.json.bind(res);
+  res.json = (payload) => sendJson(req.originalUrl.startsWith('/api/') ? sanitizeErrorPayload(payload, res.statusCode) : payload);
+  return next();
+});
 app.use('/api/romchat/media-local', express.static(localMediaRoot, { fallthrough: false, maxAge: '1h' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/romchat', romchatRoutes(io));
@@ -511,6 +518,13 @@ app.patch('/api/admin/romchat/reports/:id', (req, res) => {
   if (!report) return res.status(404).json({ message: 'Report not found.' });
   report.status = req.body?.status || 'resolved';
   res.json({ report, message: 'Report updated.' });
+});
+
+app.use((error, req, res, next) => {
+  console.error('[api] unhandled request error', { method: req.method, path: req.originalUrl, message: error?.message || String(error), stack: error?.stack });
+  if (res.headersSent) return next(error);
+  const status = Number(error?.status) >= 400 && Number(error?.status) < 600 ? Number(error.status) : 500;
+  return res.status(status).json({ message: publicErrorMessage(error, status), code: error?.code });
 });
 
 io.on('connection', (socket) => {

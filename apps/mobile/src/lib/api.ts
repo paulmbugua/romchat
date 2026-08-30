@@ -83,6 +83,27 @@ export type SellerDashboard = {
   promotions?: Array<{ id: string; productId: string; packageCode: string; status: string; expiresAt?: string }>;
 };
 
+const TECHNICAL_ERROR_PATTERN = /(?:\[[a-z0-9_-]+:[a-z0-9_:-]+\]|\b(?:backend|console|stack|sql|postgres|database|firebase|audience mismatch|environment variable|certificate|localhost|network request failed|request failed with status)\b|https?:\/\/|\b(?:10|127|192\.168)\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?|\*{2,}[^\s]*@|(?:check|see)\s+(?:the\s+)?(?:backend|server|console))/i;
+
+export function userFacingErrorMessage(error: unknown, fallback = 'Something went wrong. Please try again.') {
+  const source = error as { message?: unknown; status?: number; code?: string } | null;
+  const status = source?.status;
+  const message = typeof source?.message === 'string' ? source.message.replace(/\s+/g, ' ').trim() : typeof error === 'string' ? error.replace(/\s+/g, ' ').trim() : '';
+  const code = String(source?.code || '');
+  if (/google|oauth|firebase|audience/i.test(code + ' ' + message)) return 'Google sign-in could not be completed. Please try again or use email login.';
+  if (/invalid (?:email|credentials)|email or password|incorrect password/i.test(message)) return 'The email or password you entered is incorrect.';
+  if (/network|failed to fetch|connection|timeout|timed out/i.test(message)) return 'We could not connect right now. Check your internet connection and try again.';
+  if (message && message.length <= 220 && !TECHNICAL_ERROR_PATTERN.test(message)) return message;
+  if (status === 400 || status === 422) return 'Please review your information and try again.';
+  if (status === 401) return 'Your session has expired. Please sign in again.';
+  if (status === 403) return 'You do not have permission to complete this action.';
+  if (status === 404) return 'We could not find what you were looking for.';
+  if (status === 409) return 'This information is already in use.';
+  if (status === 429) return 'Too many attempts. Please wait a moment and try again.';
+  if (status && status >= 500) return 'Something went wrong on our side. Please try again shortly.';
+  return fallback;
+}
+
 type ApiOptions = RequestInit & { token?: string | null };
 type ExpoExtra = {
   EXPO_PUBLIC_ALLOW_ANDROID_EMULATOR_BACKEND?: string;
@@ -253,21 +274,15 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
       });
     }
     if (!response.ok) {
-      const isHtmlBlock = /text\/html/i.test(contentType) || /^<!DOCTYPE html>/i.test(rawSnippet || '');
-      const detail = payload.message || rawSnippet || `Request failed: ${response.status}`;
-      if (isHtmlBlock && response.status === 403) {
-        throw new Error(`RomChat backend is blocked at ${apiBaseUrl}. In development, start the backend on your computer, set EXPO_PUBLIC_DEVICE_BACKEND_URL to its LAN address, and restart Expo with -c.`);
-      }
-      throw new ApiRequestError(`Request failed: ${response.status}. ${detail}`, { status: response.status, code: payload.code || null, payload });
+      const unsafeError = Object.assign(new Error(payload.message || rawSnippet || ''), { status: response.status, code: payload.code || null });
+      throw new ApiRequestError(userFacingErrorMessage(unsafeError), { status: response.status, code: payload.code || null, payload });
     }
     return payload as T;
   } catch (error) {
     const details = describeApiError(error);
     console.warn('[romchat-api] request:failed', { requestId, method, url, ...details });
-    if (details.message.includes('Network request failed')) {
-      throw new Error(`Network request failed while contacting RomChat backend at ${apiBaseUrl}. Check that this URL is reachable from the phone and that HTTPS certificates are trusted.`);
-    }
-    throw error instanceof Error ? error : new Error(String(error));
+    if (error instanceof ApiRequestError) throw error;
+    throw new Error(userFacingErrorMessage(error));
   }
 }
 

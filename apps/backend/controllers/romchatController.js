@@ -34,14 +34,16 @@ import {
 import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
 import pool, { queryWithRetry } from '../config/db.js';
 import { getAuthState, getMemberMediaContent, loginWithGoogleToken, loginWithPassword, requestPasswordReset, requestSignupOtp, requireRomchatAccount, resetPasswordWithCode, setMainProfilePhoto, deleteMemberMedia, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
+import { publicErrorMessage } from '../utils/publicError.js';
 
 function sendError(res, error) {
+  const status = error.status || 500;
   console.error('[romchat-api] request:error', {
-    status: error.status || 500,
+    status,
     message: error.message || 'RomChat request failed.',
     code: error.code || null,
   });
-  res.status(error.status || 500).json({ message: error.message || 'RomChat request failed.', code: error.code || null, limit: error.limit || null, remaining: error.remaining ?? null, retryAt: error.retryAt || null });
+  res.status(status).json({ message: publicErrorMessage(error, status), code: error.code || null, limit: error.limit || null, remaining: error.remaining ?? null, retryAt: error.retryAt || null });
 }
 
 export function createRomchatController(io) {

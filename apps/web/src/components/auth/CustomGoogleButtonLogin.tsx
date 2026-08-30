@@ -5,6 +5,7 @@ import { FcGoogle } from 'react-icons/fc';
 import { getIdToken } from 'firebase/auth';
 
 import { signInGooglePopup } from '@/lib/firebaseAuthWeb';
+import { userFacingErrorMessage } from '@/lib/publicError';
 
 type Props = {
   className?: string;
@@ -64,7 +65,7 @@ export default function CustomGoogleButtonLogin({
         return;
       }
 
-      alert(error?.message || 'Google sign-in failed. Please try again.');
+      alert(userFacingErrorMessage(error, 'Google sign-in could not be completed. Please try again or use email login.'));
     } finally {
       setLoading(false);
     }
