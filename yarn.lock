@@ -8125,7 +8125,7 @@ __metadata:
     react-native: "npm:0.81.5"
     react-native-config: "npm:1.5.5"
     react-native-gesture-handler: "npm:~2.28.0"
-    react-native-google-mobile-ads: "npm:^16.5.0"
+    react-native-google-mobile-ads: "npm:16.3.4"
     react-native-intersection-observer: "npm:^0.2.1"
     react-native-markdown-display: "npm:^7.0.2"
     react-native-math-view: "npm:^3.9.5"
@@ -23363,9 +23363,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-google-mobile-ads@npm:^16.5.0":
-  version: 16.5.0
-  resolution: "react-native-google-mobile-ads@npm:16.5.0"
+"react-native-google-mobile-ads@npm:16.3.4":
+  version: 16.3.4
+  resolution: "react-native-google-mobile-ads@npm:16.3.4"
   dependencies:
     "@iabtcf/core": "npm:^1.5.6"
     use-deep-compare-effect: "npm:^1.8.1"
@@ -23374,7 +23374,7 @@ __metadata:
   peerDependenciesMeta:
     expo:
       optional: true
-  checksum: 10c0/b2ca84a51aa5db536e8027ba4c7b938870c4dccf8da588169d2c516bd2a0d447540c7fe56122f8b034510fbb20d602491043f6164e4653fe0c5fc7b2b7c9d10d
+  checksum: 10c0/d73693a1cd1d903f83122f673ba197dcc32a1006128ea68d1af422b2fd83273b1d97260644c13c25fecf157f7a55d4d6a2c06a5a729af1c5032154828fe85ccb
   languageName: node
   linkType: hard
 
