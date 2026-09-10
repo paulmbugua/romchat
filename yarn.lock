@@ -5789,6 +5789,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@iabtcf/core@npm:^1.5.6":
+  version: 1.5.6
+  resolution: "@iabtcf/core@npm:1.5.6"
+  checksum: 10c0/e7bb104fab82c5c2a051986b51bf31577f6cc9ca84b5561612d649d4503aa7db21113e667c241cb9ec93c8fe9ce65e1266396174e2f64dd1105f91a097ffa85c
+  languageName: node
+  linkType: hard
+
 "@ide/backoff@npm:^1.0.0":
   version: 1.0.0
   resolution: "@ide/backoff@npm:1.0.0"
@@ -8118,6 +8125,7 @@ __metadata:
     react-native: "npm:0.81.5"
     react-native-config: "npm:1.5.5"
     react-native-gesture-handler: "npm:~2.28.0"
+    react-native-google-mobile-ads: "npm:^16.5.0"
     react-native-intersection-observer: "npm:^0.2.1"
     react-native-markdown-display: "npm:^7.0.2"
     react-native-math-view: "npm:^3.9.5"
@@ -13543,7 +13551,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dequal@npm:^2.0.0, dequal@npm:^2.0.3":
+"dequal@npm:^2.0.0, dequal@npm:^2.0.2, dequal@npm:^2.0.3":
   version: 2.0.3
   resolution: "dequal@npm:2.0.3"
   checksum: 10c0/f98860cdf58b64991ae10205137c0e97d384c3a4edc7f807603887b7c4b850af1224a33d88012009f150861cbee4fa2d322c4cc04b9313bee312e47f6ecaa888
@@ -23355,6 +23363,21 @@ __metadata:
   languageName: node
   linkType: hard
 
+"react-native-google-mobile-ads@npm:^16.5.0":
+  version: 16.5.0
+  resolution: "react-native-google-mobile-ads@npm:16.5.0"
+  dependencies:
+    "@iabtcf/core": "npm:^1.5.6"
+    use-deep-compare-effect: "npm:^1.8.1"
+  peerDependencies:
+    expo: ">=47.0.0"
+  peerDependenciesMeta:
+    expo:
+      optional: true
+  checksum: 10c0/b2ca84a51aa5db536e8027ba4c7b938870c4dccf8da588169d2c516bd2a0d447540c7fe56122f8b034510fbb20d602491043f6164e4653fe0c5fc7b2b7c9d10d
+  languageName: node
+  linkType: hard
+
 "react-native-intersection-observer@npm:^0.2.1":
   version: 0.2.1
   resolution: "react-native-intersection-observer@npm:0.2.1"
@@ -27011,6 +27034,18 @@ __metadata:
     "@types/react":
       optional: true
   checksum: 10c0/f887488c6e6075cdad4962979da1714b217bcb1ee009a9e57ce9a844bcfc4c3a99e93983dfc2e5af9e0913824d24e730090ff255e902c516dcb58d2d3837e01c
+  languageName: node
+  linkType: hard
+
+"use-deep-compare-effect@npm:^1.8.1":
+  version: 1.8.1
+  resolution: "use-deep-compare-effect@npm:1.8.1"
+  dependencies:
+    "@babel/runtime": "npm:^7.12.5"
+    dequal: "npm:^2.0.2"
+  peerDependencies:
+    react: ">=16.13"
+  checksum: 10c0/f21f4239d774182e5389172321f00db487b415a97f5835abbe99d228eec45e3fd97803a52a25db6216ae6e1e1203b3f523336d94695dc683c661bad36a318891
   languageName: node
   linkType: hard
 

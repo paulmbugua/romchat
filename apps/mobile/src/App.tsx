@@ -35,6 +35,9 @@ import { apiBaseUrl, ApiRequestError, userFacingErrorMessage } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 import type { RomanceVibe } from './features/romchat/api';
 import { ProfileDetailModal, type ProfileDetailData } from './components/ProfileDetailModal';
+import { DiscoveryAdCard } from './components/DiscoveryAdCard';
+import { discoveryAdCadence } from './features/ads/config';
+import { useMobileAds } from './features/ads/useMobileAds';
 
 type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'payment' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
 type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
@@ -239,6 +242,9 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [likesFeedViewed, setLikesFeedViewed] = useState(false);
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
+  const adsReady = useMobileAds();
+  const [showDiscoveryAd, setShowDiscoveryAd] = useState(false);
+  const swipeDecisionsSinceAd = useRef(0);
   const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipePosition = useRef(new Animated.ValueXY()).current;
@@ -273,6 +279,10 @@ export default function App() {
   const visibleLikesReceivedCount = likesFeedViewed ? 0 : likesReceivedCount;
   const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
   const hasPlatinumAccess = activePlan === 'Platinum';
+
+  useEffect(() => {
+    if (activePlan !== 'Free') setShowDiscoveryAd(false);
+  }, [activePlan]);
 
   function normalizeSession(payload: RomChatSessionPayload | (Omit<RomChatSessionPayload, 'token'> & { token?: string }), tokenFallback?: string | null): SessionState {
     const raw = (payload || {}) as Partial<RomChatSessionPayload> & { token?: string; message?: string; routes?: unknown };
@@ -495,6 +505,13 @@ export default function App() {
 
   function advanceProfile() {
     setIndex((value) => profiles.length ? (value + 1) % profiles.length : 0);
+    if (activePlan === 'Free' && adsReady) {
+      swipeDecisionsSinceAd.current += 1;
+      if (swipeDecisionsSinceAd.current >= discoveryAdCadence) {
+        swipeDecisionsSinceAd.current = 0;
+        setShowDiscoveryAd(true);
+      }
+    }
   }
 
   function passProfile() {
@@ -1020,7 +1037,12 @@ export default function App() {
 
         {activeVibe ? <ActiveVibeBar vibe={activeVibe} onClear={() => { setActiveVibeId(null); setIndex(0); }} /> : null}
 
-        {profile ? (
+        {showDiscoveryAd && activePlan === 'Free' && adsReady ? (
+          <DiscoveryAdCard
+            height={Math.max(460, swipeCardHeight - (activeVibe ? 54 : 0))}
+            onDismiss={() => setShowDiscoveryAd(false)}
+          />
+        ) : profile ? (
           <>
             <Discover
               profile={profile}
@@ -2310,6 +2332,7 @@ function PolicyScreen({ section }: { section: 'privacy' | 'terms' | 'community' 
         ['Profile data', 'We use your profile details, photos, preferences, interests, and location settings to show relevant Kenyan matches and improve safety.'],
         ['Chats', 'Messages are used to deliver conversations, support moderation, detect abuse, and help with reports. Keep sensitive details on-app until trust is earned.'],
         ['Media', 'Photos and verification selfies are used for profile display, gallery access, moderation, and authenticity checks.'],
+        ['Advertising', 'Free members may see ads supplied by Google. Ad delivery can use device identifiers, IP address, coarse location, and app activity. RomChat requests non-personalized ads and does not use dating preferences to personalize advertising.'],
         ['Controls', 'You can update profile details, manage privacy settings, block/report accounts, and sign out from your profile.'],
       ],
     },
@@ -3020,5 +3043,3 @@ const styles = StyleSheet.create({
   promptEditorLabel: { color: '#FFD700', fontWeight: '900', marginBottom: 7 },
   promptEditorInput: { minHeight: 46, color: '#FFFFFF', fontWeight: '800', lineHeight: 20, textAlignVertical: 'top' },
 });
-
-

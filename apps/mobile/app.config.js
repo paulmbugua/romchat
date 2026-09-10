@@ -55,6 +55,13 @@ module.exports = function expoConfig({ config }) {
   const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_ANDROID || '';
   const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_IOS || '';
   const GOOGLE_REVERSED_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID || process.env.GOOGLE_REVERSED_CLIENT_ID || '';
+  const CONFIGURED_ADMOB_ANDROID_APP_ID = process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID || '';
+  const CONFIGURED_ADMOB_IOS_APP_ID = process.env.EXPO_PUBLIC_ADMOB_IOS_APP_ID || '';
+  const ADMOB_ANDROID_APP_ID = CONFIGURED_ADMOB_ANDROID_APP_ID || 'ca-app-pub-3940256099942544~3347511713';
+  const ADMOB_IOS_APP_ID = CONFIGURED_ADMOB_IOS_APP_ID || 'ca-app-pub-3940256099942544~1458002511';
+  const ADMOB_NATIVE_AD_UNIT_ID = process.env.EXPO_PUBLIC_ADMOB_NATIVE_AD_UNIT_ID || '';
+  const configuredAdCadence = Number(process.env.EXPO_PUBLIC_ADS_EVERY_N_SWIPES || 6);
+  const ADS_EVERY_N_SWIPES = Number.isFinite(configuredAdCadence) ? Math.max(4, Math.floor(configuredAdCadence)) : 6;
 
   return {
     ...config,
@@ -127,6 +134,14 @@ module.exports = function expoConfig({ config }) {
       'expo-notifications',
       'expo-web-browser',
       'expo-asset',
+      [
+        'react-native-google-mobile-ads',
+        {
+          androidAppId: ADMOB_ANDROID_APP_ID,
+          iosAppId: ADMOB_IOS_APP_ID,
+          delayAppMeasurementInit: true,
+        },
+      ],
       GOOGLE_WEB_CLIENT_ID && [
         '@react-native-google-signin/google-signin',
         {
@@ -147,6 +162,7 @@ module.exports = function expoConfig({ config }) {
             compileSdkVersion: 36,
             targetSdkVersion: 36,
             javaVersion: 17,
+            extraProguardRules: '-keep class com.google.android.gms.internal.consent_sdk.** { *; }',
           },
           ios: { deploymentTarget: '15.1' },
         },
@@ -164,6 +180,10 @@ module.exports = function expoConfig({ config }) {
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: GOOGLE_ANDROID_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: GOOGLE_IOS_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID: GOOGLE_REVERSED_CLIENT_ID,
+      EXPO_PUBLIC_ADMOB_NATIVE_AD_UNIT_ID: ADMOB_NATIVE_AD_UNIT_ID,
+      EXPO_PUBLIC_ADMOB_ANDROID_CONFIGURED: Boolean(CONFIGURED_ADMOB_ANDROID_APP_ID && ADMOB_NATIVE_AD_UNIT_ID),
+      EXPO_PUBLIC_ADMOB_IOS_CONFIGURED: Boolean(CONFIGURED_ADMOB_IOS_APP_ID && ADMOB_NATIVE_AD_UNIT_ID),
+      EXPO_PUBLIC_ADS_EVERY_N_SWIPES: ADS_EVERY_N_SWIPES,
       ...(EAS_PROJECT_ID ? { EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID, eas: { projectId: EAS_PROJECT_ID } } : {}),
       BACKENDS,
       DEFAULT_BACKEND,

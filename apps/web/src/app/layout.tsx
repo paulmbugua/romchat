@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import '../index.css';
 
 export const metadata: Metadata = {
-  title: 'RomChat | Intentional Dating and Chat',
-  description: 'RomChat is a premium dating and chatting app with verified discovery, real-time messaging, events, wallet, calls, and safety tools.',
+  title: 'RomChat | Meet Someone Who Gets Your World',
+  description: 'RomChat is a Kenya-first dating app for local discovery, expressive profiles, thoughtful conversations, and stronger safety controls.',
   applicationName: 'RomChat',
   icons: {
     icon: '/assets/romchat/favicon.png',
