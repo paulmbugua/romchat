@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GestureResponderHandlers, ImageSourcePropType, LayoutChangeEvent } from 'react-native';
 import {
   Image,
@@ -240,7 +240,6 @@ export default function App() {
   const [showMatch, setShowMatch] = useState(false);
   const [pendingChatProfileId, setPendingChatProfileId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [likesFeedViewed, setLikesFeedViewed] = useState(false);
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
   const adsReady = useMobileAds();
   const [showDiscoveryAd, setShowDiscoveryAd] = useState(false);
@@ -276,7 +275,8 @@ export default function App() {
   const activePlan: PlanName = boosted ? 'Platinum' : subscriptionTier;
   const likesSummary = romchat.bootstrap?.likes || { receivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] };
   const likesReceivedCount = Math.max(0, Number(likesSummary.receivedCount || 0));
-  const visibleLikesReceivedCount = likesFeedViewed ? 0 : likesReceivedCount;
+  const visibleLikesReceivedCount = Math.max(0, Number(likesSummary.unreadReceivedCount ?? likesReceivedCount));
+  const acknowledgeLikes = useCallback(() => { void romchat.markLikesSeen(); }, [romchat.markLikesSeen]);
   const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
   const hasPlatinumAccess = activePlan === 'Platinum';
 
@@ -901,7 +901,7 @@ export default function App() {
       return <ExploreScreen vibes={romanceVibes} profiles={baseProfiles} onToggle={toggleRomanceVibe} onBrowse={browseRomanceVibe} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={baseProfiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} onAllLikesSeenChange={setLikesFeedViewed} />;
+      return <LikesScreen profiles={baseProfiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} onAllLikesSeenChange={acknowledgeLikes} />;
     }
     if (section === 'chat') {
       return (
@@ -1605,8 +1605,8 @@ function ExploreScreen({ vibes, profiles, onToggle, onBrowse }: { vibes: Romance
   );
 }
 
-function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, openSuperLikes, openChat, acceptLikeAndOpenChat, passLikeProfile, likeProfile, passProfile }: {
-  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openSuperLikes: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; passLikeProfile: (profileId: string) => void; likeProfile: () => void; passProfile: () => void; onAllLikesSeenChange?: (seen: boolean) => void }) {
+function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, openSuperLikes, openChat, acceptLikeAndOpenChat, passLikeProfile, likeProfile, passProfile, onAllLikesSeenChange }: {
+  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openSuperLikes: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; passLikeProfile: (profileId: string) => void; likeProfile: () => void; passProfile: () => void; onAllLikesSeenChange?: () => void }) {
   const [tab, setTab] = useState<'received' | 'sent' | 'top'>('received');
   const [revealedLikeId, setRevealedLikeId] = useState<string | null>(null);
   const [nextDropCountdown, setNextDropCountdown] = useState(() => formatNextLikeDropCountdown());
@@ -1624,9 +1624,10 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
   const tabText = tab === 'received' ? `${likesLabel} Likes` : tab === 'sent' ? 'Likes Sent' : 'Top Picks';
 
   useEffect(() => {
+    onAllLikesSeenChange?.();
     const timer = setInterval(() => setNextDropCountdown(formatNextLikeDropCountdown()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [onAllLikesSeenChange]);
 
   function revealDailyLike() {
     if (revealedLikeId || hasGoldAccess) return openPremium();

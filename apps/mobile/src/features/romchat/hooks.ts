@@ -101,6 +101,15 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     setLastAction('Distance preferences applied');
     setPaidMessages((payload.messages || []).filter((message) => message.locked));
   }, [localProfiles, options.enabled, options.token]);
+  const markLikesSeen = useCallback(async () => {
+    setBootstrap((current) => current?.likes ? { ...current, likes: { ...current.likes, unreadReceivedCount: 0 } } : current);
+    try {
+      await romchatApi.markLikesSeen(options.token);
+      await refresh();
+    } catch {
+      setLastAction('Likes viewed');
+    }
+  }, [options.token, refresh]);
   const swipe = useCallback(async (profileId: string, action: 'pass' | 'like' | 'super_like', swipeOptions: { forceMatch?: boolean } = {}) => {
     setLastAction(action === 'pass' ? 'Passed' : action === 'super_like' ? 'Priority like sent' : swipeOptions.forceMatch ? 'Match accepted' : 'Like sent');
     try {
@@ -279,5 +288,5 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, block, report, reportMessage, setVibeMembership, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, markLikesSeen, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, createPayment, updatePrivacy, block, report, reportMessage, setVibeMembership, verify };
 }

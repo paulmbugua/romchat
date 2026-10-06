@@ -75,7 +75,7 @@ export type RomChatBootstrap = {
   messages: RomChatMessage[];
   vibes?: RomanceVibe[];
   wallet?: { balance: number; currency: string };
-  likes?: { receivedCount: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] };
+  likes?: { receivedCount: number; unreadReceivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] };
   privacy?: {
     incognito: boolean;
     screenshotsBlocked: boolean;
@@ -88,6 +88,7 @@ export type RomChatBootstrap = {
 
 export const romchatApi = {
   bootstrap: (token?: string | null) => apiFetch<RomChatBootstrap>('/api/romchat/bootstrap', { token }),
+  markLikesSeen: (token?: string | null) => apiFetch<{ success: boolean }>('/api/romchat/likes/seen', { method: 'POST', token, body: JSON.stringify({}) }),
   discovery: (verifiedOnly = true, token?: string | null) => apiFetch<{ profiles: RomChatProfile[] }>(`/api/romchat/discovery?verifiedOnly=${verifiedOnly ? 'true' : 'false'}`, { token }),
   setVibeMembership: (vibeId: string, joined: boolean, token?: string | null) =>
     apiFetch<{ vibe: RomanceVibe; vibes: RomanceVibe[] }>(`/api/romchat/vibes/${encodeURIComponent(vibeId)}/membership`, {

@@ -178,6 +178,10 @@ let schemaReady = false;
 async function ensureSchema() {
   if (schemaReady) return;
   await queryWithRetry(schemaSql);
+  await queryWithRetry(`CREATE TABLE IF NOT EXISTS romchat_likes_read_state (
+    member_id TEXT PRIMARY KEY,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`);
   await queryWithRetry('CREATE TABLE IF NOT EXISTS romchat_moderation_appeals (id TEXT PRIMARY KEY, member_id TEXT NOT NULL, report_id TEXT, reason TEXT NOT NULL, status TEXT NOT NULL, details JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, reviewed_at TIMESTAMPTZ, reviewed_by TEXT)');
   await queryWithRetry(`CREATE TABLE IF NOT EXISTS romchat_profile_blocks (
     blocker_id TEXT NOT NULL,
@@ -507,9 +511,14 @@ export async function getWallet() {
 
 export async function getLikesSummary(memberId = null) {
   return withDb(async () => {
-    if (!memberId) return { receivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] };
-    const [received, sent, topPicks] = await Promise.all([
+    if (!memberId) return { receivedCount: 0, unreadReceivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] };
+    const [received, unreadReceived, sent, topPicks] = await Promise.all([
       queryWithRetry("SELECT COUNT(DISTINCT actor_id)::int AS received_count FROM romchat_swipes WHERE profile_id = $1 AND action IN ('like', 'super_like')", [memberId]),
+      queryWithRetry(`SELECT COUNT(DISTINCT s.actor_id)::int AS unread_count
+        FROM romchat_swipes s
+        LEFT JOIN romchat_likes_read_state r ON r.member_id = $1
+        WHERE s.profile_id = $1 AND s.action IN ('like', 'super_like')
+          AND s.created_at > COALESCE(r.last_seen_at, '-infinity'::timestamptz)`, [memberId]),
       queryWithRetry("SELECT DISTINCT profile_id FROM romchat_swipes WHERE actor_id = $1 AND action IN ('like', 'super_like') ORDER BY profile_id", [memberId]),
       queryWithRetry(`SELECT candidate.member_id
          FROM romchat_member_profiles candidate
@@ -525,8 +534,16 @@ export async function getLikesSummary(memberId = null) {
     ]);
     const sentProfileIds = sent.rows.map((row) => row.profile_id).filter(Boolean);
     const topPickProfileIds = topPicks.rows.map((row) => row.member_id).filter(Boolean);
-    return { receivedCount: Number(received.rows[0]?.received_count || 0), sentCount: sentProfileIds.length, sentProfileIds, topPickProfileIds };
-  }, () => ({ receivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] }));
+    return { receivedCount: Number(received.rows[0]?.received_count || 0), unreadReceivedCount: Number(unreadReceived.rows[0]?.unread_count || 0), sentCount: sentProfileIds.length, sentProfileIds, topPickProfileIds };
+  }, () => ({ receivedCount: 0, unreadReceivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] }));
+}
+
+export async function markLikesSeen(memberId) {
+  await ensureSchema();
+  await queryWithRetry(`INSERT INTO romchat_likes_read_state (member_id, last_seen_at)
+    VALUES ($1, now())
+    ON CONFLICT (member_id) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at`, [memberId]);
+  return { success: true };
 }
 
 export async function getRomanceVibes(memberId = null) {

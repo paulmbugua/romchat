@@ -9,6 +9,7 @@ import {
   createVideoRequest as createVideoVibeRequest,
   getBootstrap,
   getMessages,
+  markLikesSeen,
   getProfiles,
   getPrivacy,
   getRevenueCatalog,
@@ -243,6 +244,14 @@ export function createRomchatController(io) {
     async bootstrap(req, res) {
       const state = await authStateFor(req);
       res.json(await getBootstrap({ catalogueAccess: state?.onboarding?.catalogueAccess || 1, viewerId: state?.user?.id || null }));
+    },
+    async markLikesSeen(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        res.json(await markLikesSeen(user.id));
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async romanceVibes(req, res) {
       try {
@@ -485,5 +494,4 @@ export function createRomchatController(io) {
     },
   };
 }
-
 
