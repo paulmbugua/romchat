@@ -2496,12 +2496,6 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
         <View style={styles.profileActionGrid}><TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} style={styles.profileAction}><Icon name="images" size={18} color="#FFD700" /><Text style={styles.profileActionText}>Add photo</Text></TouchableOpacity><TouchableOpacity disabled={busy || !imageCount} onPress={() => void onVerifySelfie()} style={[styles.profileAction, !imageCount && styles.profileActionDisabled]}><Icon name="shield-checkmark" size={18} color="#FFD700" /><Text style={styles.profileActionText}>{profile?.selfieVerified ? 'Verified' : 'Verify selfie'}</Text></TouchableOpacity></View>{!!error && <Text style={styles.authError}>{error}</Text>}
         <TouchableOpacity onPress={() => void onSignOut()} style={styles.textButton}><Text style={styles.textButtonLabel}>Sign out</Text></TouchableOpacity>
       </View>
-      <View style={styles.legalPanel}>
-        <Text style={styles.sectionLabel}>Legal and privacy</Text>
-        <TouchableOpacity onPress={() => openPolicy('privacy')} style={styles.legalLink}><Text style={styles.legalTitle}>Privacy Policy</Text><Text style={styles.caption}>How RomChat handles profile, chat, photo, location, and safety data.</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => openPolicy('terms')} style={styles.legalLink}><Text style={styles.legalTitle}>Terms of Use</Text><Text style={styles.caption}>Account rules, subscriptions, tokens, acceptable use, and service limits.</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => openPolicy('community')} style={styles.legalLink}><Text style={styles.legalTitle}>Community Guidelines</Text><Text style={styles.caption}>Dating safety, respectful messaging, reporting, blocking, and contact-sharing guidance.</Text></TouchableOpacity>
-      </View>
       <View style={styles.panel}>
         <Text style={styles.kicker}>Bio assistant</Text>
         <Text style={styles.insight}>{bio || profile?.bio || 'One-tap Kenyan bio: I am looking for something warm, honest, and intentional around real dates.'}</Text>
@@ -2515,6 +2509,12 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
         <Text style={styles.kicker}>Dating prompts</Text>
         {promptAnswers.map((item, index) => <View key={item.prompt} style={styles.promptEditor}><Text style={styles.promptEditorLabel}>{item.prompt}</Text><TextInput value={item.answer} onChangeText={(answer) => setPromptAnswers((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, answer } : row))} placeholder="Write a charming answer" placeholderTextColor="rgba(255,255,255,0.42)" style={styles.promptEditorInput} multiline /></View>)}
         <TouchableOpacity disabled={busy} onPress={() => void onSavePrompts(promptAnswers)} style={styles.boostButton}><Text style={styles.boostText}>Save 7 profile prompts</Text></TouchableOpacity>
+      </View>
+      <View style={styles.legalPanel}>
+        <Text style={styles.sectionLabel}>Legal and privacy</Text>
+        <TouchableOpacity onPress={() => openPolicy('privacy')} style={styles.legalLink}><Text style={styles.legalTitle}>Privacy Policy</Text><Text style={styles.caption}>How RomChat handles profile, chat, photo, location, and safety data.</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => openPolicy('terms')} style={styles.legalLink}><Text style={styles.legalTitle}>Terms of Use</Text><Text style={styles.caption}>Account rules, subscriptions, tokens, acceptable use, and service limits.</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => openPolicy('community')} style={styles.legalLink}><Text style={styles.legalTitle}>Community Guidelines</Text><Text style={styles.caption}>Dating safety, respectful messaging, reporting, blocking, and contact-sharing guidance.</Text></TouchableOpacity>
       </View>
     </View>
   );

@@ -927,11 +927,6 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
         <button type="button" onClick={signOut} className="mt-3 w-full py-2 text-center text-sm font-black text-[#ffd700]">Sign out</button>
       </div>
 
-      <div className="rounded-[24px] border border-white/10 bg-[#1E1222] p-[18px]">
-        <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-[#ffd700]">Legal and privacy</p>
-        {[['/privacy','Privacy Policy','How RomChat handles profile, chat, photo, location, and safety data.'],['/terms','Terms of Use','Account rules, subscriptions, tokens, acceptable use, and service limits.'],['/policies','Community Guidelines','Dating safety, respectful messaging, reporting, blocking, and contact-sharing guidance.']].map(([href,title,copy]) => <Link href={href} key={href} className="block border-t border-white/10 py-4 first:border-t-0"><p className="font-black">{title}</p><p className="mt-1 text-sm font-bold leading-5 text-white/55">{copy}</p></Link>)}
-      </div>
-
       <div className="rounded-[24px] border border-[#ff1493]/20 bg-[#1E1222] p-[18px]">
         <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-[#ff1493]">Bio assistant</p>
         <div className="rounded-[16px] bg-[#2A1A30] p-3 font-bold leading-6">{bio || profile?.bio || 'One-tap Kenyan bio: I am looking for something warm, honest, and intentional around real dates.'}</div>
@@ -951,6 +946,11 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
           <p className="text-sm font-bold leading-5 text-white/65">Request a data deletion review or remove your RomChat account immediately.</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2"><button type="button" disabled={busy} onClick={() => void requestDeletion()} className="rounded-[16px] border border-white/10 bg-white/5 px-4 py-3 font-black">Request data deletion</button><button type="button" disabled={busy} onClick={() => void deleteAccount()} className="inline-flex items-center justify-center gap-2 rounded-[16px] bg-[#ff6f61] px-4 py-3 font-black"><Trash2 size={18} />Delete account</button></div>
         </div>
+      </div>
+
+      <div className="rounded-[24px] border border-white/10 bg-[#1E1222] p-[18px]">
+        <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-[#ffd700]">Legal and privacy</p>
+        {[['/privacy','Privacy Policy','How RomChat handles profile, chat, photo, location, and safety data.'],['/terms','Terms of Use','Account rules, subscriptions, tokens, acceptable use, and service limits.'],['/policies','Community Guidelines','Dating safety, respectful messaging, reporting, blocking, and contact-sharing guidance.']].map(([href,title,copy]) => <Link href={href} key={href} className="block border-t border-white/10 py-4 first:border-t-0"><p className="font-black">{title}</p><p className="mt-1 text-sm font-bold leading-5 text-white/55">{copy}</p></Link>)}
       </div>
     </section>
   );
