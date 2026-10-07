@@ -4,6 +4,7 @@ import { TestIds } from 'react-native-google-mobile-ads';
 
 const extra = (Constants.expoConfig?.extra || {}) as Record<string, unknown>;
 const appEnvironment = String(extra.EXPO_PUBLIC_APP_ENV || 'development').toLowerCase();
+const admobApproved = extra.EXPO_PUBLIC_ADMOB_APPROVED === true;
 const configuredNativeUnitId = String(extra.EXPO_PUBLIC_ADMOB_NATIVE_AD_UNIT_ID || '').trim();
 const platformConfigured = Platform.OS === 'android'
   ? extra.EXPO_PUBLIC_ADMOB_ANDROID_CONFIGURED === true
@@ -11,7 +12,7 @@ const platformConfigured = Platform.OS === 'android'
 
 export const isProductionAdsBuild = appEnvironment === 'production';
 export const discoveryAdUnitId = isProductionAdsBuild ? configuredNativeUnitId : TestIds.NATIVE;
-export const discoveryAdsEnabled = Platform.OS !== 'web' && (!isProductionAdsBuild || platformConfigured) && Boolean(discoveryAdUnitId);
+export const discoveryAdsEnabled = admobApproved && Platform.OS !== 'web' && platformConfigured && Boolean(discoveryAdUnitId);
 const configuredCadence = Number(extra.EXPO_PUBLIC_ADS_EVERY_N_SWIPES || 6);
 export const discoveryAdCadence = Number.isFinite(configuredCadence) ? Math.max(4, Math.floor(configuredCadence)) : 6;
 
