@@ -1,10 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Image,
   ImageBackground,
+  InteractionManager,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   Share,
   StyleSheet,
@@ -59,23 +62,31 @@ const offers: FirstImpressionOffer[] = [
   { id: 'first_impressions_50', count: 50, total: 6500, unit: 130, badge: 'Best value' },
 ];
 
-export function ProfileDetailModal({ profile, visible, onClose, onPass, onLike, onSuperLike, onBlock, onReport, onFirstImpression }: Props) {
+export const ProfileDetailModal = memo(function ProfileDetailModal({ profile, visible, onClose, onPass, onLike, onSuperLike, onBlock, onReport, onFirstImpression }: Props) {
   const insets = useSafeAreaInsets();
   const [showComposer, setShowComposer] = useState(false);
   const [showOffers, setShowOffers] = useState(false);
   const [draft, setDraft] = useState('');
   const [safetyAction, setSafetyAction] = useState<SafetyAction>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [secondaryMediaReady, setSecondaryMediaReady] = useState(false);
+  const entrance = useRef(new Animated.Value(0)).current;
   const photoSources = useMemo(() => profile ? (profile.photos.length ? profile.photos : [profile.photo]) : [], [profile]);
 
   useEffect(() => {
-    if (!visible) {
+    if (visible) {
+      entrance.setValue(0);
+      setSecondaryMediaReady(false);
+      Animated.timing(entrance, { toValue: 1, duration: 170, useNativeDriver: true }).start();
+      const task = InteractionManager.runAfterInteractions(() => setSecondaryMediaReady(true));
+      return () => task.cancel();
+    } else {
       setShowComposer(false);
       setShowOffers(false);
       setSafetyAction(null);
       setDraft('');
     }
-  }, [visible]);
+  }, [entrance, visible]);
 
   if (!profile) return null;
   const firstName = profile.name.trim().split(/\s+/)[0] || profile.name;
@@ -107,8 +118,8 @@ export function ProfileDetailModal({ profile, visible, onClose, onPass, onLike, 
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.root}>
+    <Modal visible={visible} animationType="none" hardwareAccelerated presentationStyle="fullScreen" onRequestClose={onClose} statusBarTranslucent>
+      <Animated.View style={[styles.root, { opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }] }]}>
         <View style={[styles.colorHeader, { backgroundColor: profile.color, paddingTop: insets.top + 8 }]}>
           <TouchableOpacity onPress={onClose} style={styles.headerButton} accessibilityLabel="Close profile details">
             <Icon name="chevron-back" size={25} color="#FFFFFF" />
@@ -120,7 +131,14 @@ export function ProfileDetailModal({ profile, visible, onClose, onPass, onLike, 
           {profile.verified ? <Icon name="checkmark-circle" size={25} color="#FFFFFF" /> : <View style={styles.headerSpacer} />}
         </View>
 
-        <ScrollView contentContainerStyle={[styles.detailContent, { paddingBottom: 184 + insets.bottom }]} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.detailContent, { paddingBottom: 232 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="always"
+          nestedScrollEnabled
+          removeClippedSubviews={false}
+          scrollIndicatorInsets={{ bottom: 116 + insets.bottom }}
+        >
           <ImageBackground source={photoSources[0]} style={styles.hero} imageStyle={styles.heroImage}>
             <LinearGradient colors={['transparent', 'rgba(8,7,10,0.92)']} style={StyleSheet.absoluteFill} />
             <View style={styles.heroCopy}>
@@ -130,7 +148,7 @@ export function ProfileDetailModal({ profile, visible, onClose, onPass, onLike, 
             </View>
           </ImageBackground>
 
-          {photoSources.length > 1 ? (
+          {secondaryMediaReady && photoSources.length > 1 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoStrip}>
               {photoSources.slice(1).map((source, index) => <Image key={`${profile.id}-photo-${index}`} source={source} style={styles.stripPhoto} />)}
             </ScrollView>
@@ -144,9 +162,17 @@ export function ProfileDetailModal({ profile, visible, onClose, onPass, onLike, 
           <DetailSection title="What friends would say" icon="quote-outline"><Text style={styles.quote}>{profile.quote}</Text></DetailSection>
           {!!profile.answers.length && <DetailSection title="More about me" icon="sparkles-outline"><View style={styles.answerList}>{profile.answers.map((answer) => <Text key={`${profile.id}-${answer}`} style={styles.detailValue}>• {answer}</Text>)}</View></DetailSection>}
 
-          <TouchableOpacity onPress={() => void shareProfile()} style={styles.safetyRow}><Icon name="share-social-outline" size={21} color="#FFFFFF" /><Text style={styles.safetyText}>Share this profile</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => setSafetyAction('block')} style={styles.safetyRow}><Icon name="ban-outline" size={21} color="#FFFFFF" /><Text style={styles.safetyText}>Block {firstName}</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => setSafetyAction('report')} style={[styles.safetyRow, styles.reportRow]}><Icon name="flag-outline" size={21} color="#FF718C" /><Text style={[styles.safetyText, styles.reportText]}>Report profile</Text></TouchableOpacity>
+          <View style={styles.safetySection}>
+            <Pressable onPress={() => void shareProfile()} hitSlop={6} pressRetentionOffset={18} style={({ pressed }) => [styles.safetyRow, pressed && styles.safetyRowPressed]} accessibilityRole="button" accessibilityLabel="Share this profile" testID="share-profile">
+              <Icon name="share-social-outline" size={21} color="#FFFFFF" /><Text style={styles.safetyText}>Share this profile</Text><Icon name="chevron-forward" size={19} color="#8E8792" />
+            </Pressable>
+            <Pressable onPress={() => setSafetyAction('block')} hitSlop={6} pressRetentionOffset={18} style={({ pressed }) => [styles.safetyRow, pressed && styles.safetyRowPressed]} accessibilityRole="button" accessibilityLabel={`Block ${firstName}`} testID="block-profile">
+              <Icon name="ban-outline" size={21} color="#FFFFFF" /><Text style={styles.safetyText}>Block {firstName}</Text><Icon name="chevron-forward" size={19} color="#8E8792" />
+            </Pressable>
+            <Pressable onPress={() => setSafetyAction('report')} hitSlop={6} pressRetentionOffset={18} style={({ pressed }) => [styles.safetyRow, styles.reportRow, pressed && styles.safetyRowPressed]} accessibilityRole="button" accessibilityLabel="Report profile" testID="report-profile">
+              <Icon name="flag-outline" size={21} color="#FF718C" /><Text style={[styles.safetyText, styles.reportText]}>Report profile</Text><Icon name="chevron-forward" size={19} color="#FF718C" />
+            </Pressable>
+          </View>
         </ScrollView>
 
         <TouchableOpacity onPress={() => setShowComposer(true)} style={[styles.stickyReply, { bottom: 94 + Math.max(insets.bottom, 12) }]} accessibilityLabel="Send a first impression">
@@ -161,10 +187,10 @@ export function ProfileDetailModal({ profile, visible, onClose, onPass, onLike, 
         <FirstImpressionComposer visible={showComposer} profile={profile} photos={photoSources} draft={draft} setDraft={setDraft} onClose={() => setShowComposer(false)} onContinue={() => setShowOffers(true)} />
         <OfferSheet visible={showOffers} onClose={() => setShowOffers(false)} onChoose={(offer) => { setShowOffers(false); setShowComposer(false); onFirstImpression(offer, draft.trim()); }} />
         <SafetySheet action={safetyAction} firstName={firstName} busy={actionBusy} onClose={() => setSafetyAction(null)} onConfirm={() => void confirmSafetyAction()} />
-      </View>
+      </Animated.View>
     </Modal>
   );
-}
+});
 
 function FirstImpressionComposer({ visible, profile, photos, draft, setDraft, onClose, onContinue }: {
   visible: boolean; profile: ProfileDetailData; photos: ImageSourcePropType[]; draft: string; setDraft: (value: string) => void; onClose: () => void; onContinue: () => void;
@@ -231,5 +257,5 @@ function ActionButton({ icon, label, onPress, style }: { icon: string; label: st
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#08070A' }, colorHeader: { minHeight: 92, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }, headerButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.28)', alignItems: 'center', justifyContent: 'center' }, headerIdentity: { flex: 1 }, headerName: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' }, headerDistance: { color: 'rgba(255,255,255,0.82)', fontSize: 13, fontWeight: '700', marginTop: 2 }, headerSpacer: { width: 25 }, detailContent: { backgroundColor: '#08070A' }, hero: { height: 540, justifyContent: 'flex-end', overflow: 'hidden' }, heroImage: { resizeMode: 'cover' }, heroCopy: { padding: 22, gap: 7 }, statusPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFFFFF', borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8 }, statusDot: { width: 9, height: 9, borderRadius: 5 }, statusText: { color: '#17131A', fontWeight: '900', fontSize: 13 }, heroName: { color: '#FFFFFF', fontSize: 34, fontWeight: '900' }, heroAge: { fontWeight: '500' }, heroDistance: { color: '#FFFFFF', fontSize: 17, fontWeight: '800' }, photoStrip: { gap: 10, padding: 10 }, stripPhoto: { width: 210, height: 280, borderRadius: 8, resizeMode: 'cover' }, detailSection: { marginTop: 10, marginHorizontal: 10, padding: 22, borderRadius: 8, backgroundColor: '#151317', gap: 14 }, sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 12 }, sectionTitle: { color: '#D8D1DB', fontSize: 18, fontWeight: '900' }, detailValue: { color: '#FFFFFF', fontSize: 20, lineHeight: 29, fontWeight: '700' }, detailMuted: { color: 'rgba(255,255,255,0.56)', fontSize: 15, fontWeight: '700' }, tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 }, tag: { color: '#FFFFFF', backgroundColor: '#050407', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, fontSize: 14, fontWeight: '800' }, quote: { color: '#FFFFFF', fontSize: 19, lineHeight: 28, fontWeight: '700' }, answerList: { gap: 8 }, safetyRow: { marginTop: 10, marginHorizontal: 10, minHeight: 66, borderRadius: 8, backgroundColor: '#151317', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10 }, safetyText: { color: '#FFFFFF', fontSize: 17, fontWeight: '900' }, reportRow: { marginBottom: 12 }, reportText: { color: '#FF718C' }, stickyReply: { position: 'absolute', right: 18, zIndex: 30, elevation: 20, backgroundColor: '#FFFFFF', borderRadius: 999, paddingHorizontal: 19, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 8, shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } }, replyText: { color: '#17131A', fontWeight: '900', fontSize: 16 }, floatingActions: { position: 'absolute', zIndex: 25, elevation: 18, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,7,10,0.95)', flexDirection: 'row', justifyContent: 'center', gap: 22, paddingTop: 12 }, actionButton: { width: 66, height: 66, borderRadius: 33, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }, pass: { backgroundColor: '#29262A' }, super: { backgroundColor: '#252A3D' }, like: { backgroundColor: '#F21C2F' }, composerRoot: { flex: 1, backgroundColor: '#1A2230' }, composerSafe: { flex: 1 }, composerTop: { paddingHorizontal: 20, paddingTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, composerClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }, creditBubble: { minWidth: 44, textAlign: 'center', color: '#FFFFFF', backgroundColor: '#687180', paddingVertical: 10, borderRadius: 22, fontWeight: '900' }, composerKicker: { color: '#AFCBFF', fontSize: 16, fontWeight: '900', paddingHorizontal: 22, marginTop: 14 }, composerTitle: { color: '#FFFFFF', fontSize: 29, lineHeight: 35, fontWeight: '900', paddingHorizontal: 22, marginTop: 12 }, composerSubtitle: { color: '#C9D2E2', fontSize: 15, lineHeight: 21, paddingHorizontal: 22, marginTop: 8 }, slideRow: { paddingHorizontal: 22, paddingTop: 20, gap: 14, paddingBottom: 14 }, slideCard: { height: 430, borderRadius: 8, overflow: 'hidden', borderWidth: 2, borderColor: '#9BC6FF', backgroundColor: '#0D0D10' }, slideCount: { position: 'absolute', zIndex: 3, right: 12, top: 12, color: '#FFFFFF', backgroundColor: 'rgba(0,0,0,0.58)', paddingHorizontal: 11, paddingVertical: 7, borderRadius: 18, fontWeight: '800' }, slideImage: { width: '100%', height: '100%', resizeMode: 'cover' }, textSlide: { flex: 1, padding: 28, justifyContent: 'center' }, slideEyebrow: { color: '#C8C0CA', fontSize: 17, fontWeight: '900', marginBottom: 18 }, slideTitle: { color: '#FFFFFF', fontSize: 27, lineHeight: 36, fontWeight: '800' }, slideBody: { color: '#BEB8C1', fontSize: 17, lineHeight: 24, marginTop: 20 }, composerBar: { backgroundColor: '#111720', paddingHorizontal: 18, paddingTop: 12, flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, composerInput: { flex: 1, minHeight: 52, maxHeight: 110, borderRadius: 24, backgroundColor: '#353C49', color: '#FFFFFF', paddingHorizontal: 18, paddingVertical: 14, fontSize: 16 }, composerSend: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF1493' }, disabledSend: { opacity: 0.4 }, sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.66)', justifyContent: 'flex-end' }, offerSheet: { backgroundColor: '#1B2230', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, gap: 12 }, sheetHandle: { width: 46, height: 5, borderRadius: 3, backgroundColor: '#596170', alignSelf: 'center', marginBottom: 3 }, sheetClose: { position: 'absolute', right: 18, top: 18, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }, offerKicker: { color: '#AFCBFF', fontSize: 13, fontWeight: '900', marginTop: 5 }, offerTitle: { color: '#FFFFFF', fontSize: 27, fontWeight: '900' }, offerSubtitle: { color: '#CAD7F2', fontSize: 15, lineHeight: 21 }, offerCard: { minHeight: 78, padding: 15, borderRadius: 8, backgroundColor: '#0F131D', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)' }, offerLeft: { flex: 1, paddingRight: 10 }, offerCount: { color: '#FFFFFF', fontSize: 17, fontWeight: '900' }, offerMeta: { color: '#FFD166', fontSize: 12, fontWeight: '900', marginTop: 5, textTransform: 'uppercase' }, offerPrice: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textAlign: 'right' }, offerTotal: { color: '#AFCBFF', fontSize: 12, fontWeight: '800', marginTop: 5, textAlign: 'right' }, safetySheet: { backgroundColor: '#17131A', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, gap: 14 }, safetyIcon: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#28222C', alignItems: 'center', justifyContent: 'center', marginTop: 6 }, safetyTitle: { color: '#FFFFFF', fontSize: 25, fontWeight: '900' }, safetyBody: { color: '#C8C0CA', fontSize: 16, lineHeight: 23 }, safetyActions: { flexDirection: 'row', gap: 10, marginTop: 5 }, cancelButton: { flex: 1, minHeight: 52, borderRadius: 8, backgroundColor: '#2A252D', alignItems: 'center', justifyContent: 'center' }, cancelText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' }, confirmButton: { flex: 1.35, minHeight: 52, borderRadius: 8, backgroundColor: '#E84B66', alignItems: 'center', justifyContent: 'center' }, blockButton: { backgroundColor: '#E09C28' }, confirmText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  root: { flex: 1, backgroundColor: '#08070A' }, colorHeader: { minHeight: 92, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }, headerButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.28)', alignItems: 'center', justifyContent: 'center' }, headerIdentity: { flex: 1 }, headerName: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' }, headerDistance: { color: 'rgba(255,255,255,0.82)', fontSize: 13, fontWeight: '700', marginTop: 2 }, headerSpacer: { width: 25 }, detailContent: { backgroundColor: '#08070A' }, hero: { height: 540, justifyContent: 'flex-end', overflow: 'hidden' }, heroImage: { resizeMode: 'cover' }, heroCopy: { padding: 22, gap: 7 }, statusPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFFFFF', borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8 }, statusDot: { width: 9, height: 9, borderRadius: 5 }, statusText: { color: '#17131A', fontWeight: '900', fontSize: 13 }, heroName: { color: '#FFFFFF', fontSize: 34, fontWeight: '900' }, heroAge: { fontWeight: '500' }, heroDistance: { color: '#FFFFFF', fontSize: 17, fontWeight: '800' }, photoStrip: { gap: 10, padding: 10 }, stripPhoto: { width: 210, height: 280, borderRadius: 8, resizeMode: 'cover' }, detailSection: { marginTop: 10, marginHorizontal: 10, padding: 22, borderRadius: 8, backgroundColor: '#151317', gap: 14 }, sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 12 }, sectionTitle: { color: '#D8D1DB', fontSize: 18, fontWeight: '900' }, detailValue: { color: '#FFFFFF', fontSize: 20, lineHeight: 29, fontWeight: '700' }, detailMuted: { color: 'rgba(255,255,255,0.56)', fontSize: 15, fontWeight: '700' }, tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 }, tag: { color: '#FFFFFF', backgroundColor: '#050407', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, fontSize: 14, fontWeight: '800' }, quote: { color: '#FFFFFF', fontSize: 19, lineHeight: 28, fontWeight: '700' }, answerList: { gap: 8 }, safetySection: { paddingTop: 8 }, safetyRow: { marginTop: 10, marginHorizontal: 10, minHeight: 72, borderRadius: 8, backgroundColor: '#151317', alignItems: 'center', flexDirection: 'row', gap: 12, paddingHorizontal: 20, elevation: 2 }, safetyRowPressed: { backgroundColor: '#242027', transform: [{ scale: 0.99 }] }, safetyText: { flex: 1, color: '#FFFFFF', fontSize: 17, fontWeight: '900' }, reportRow: { marginBottom: 12 }, reportText: { color: '#FF718C' }, stickyReply: { position: 'absolute', right: 18, zIndex: 30, elevation: 20, backgroundColor: '#FFFFFF', borderRadius: 999, paddingHorizontal: 19, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 8, shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } }, replyText: { color: '#17131A', fontWeight: '900', fontSize: 16 }, floatingActions: { position: 'absolute', zIndex: 25, elevation: 18, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,7,10,0.95)', flexDirection: 'row', justifyContent: 'center', gap: 22, paddingTop: 12 }, actionButton: { width: 66, height: 66, borderRadius: 33, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }, pass: { backgroundColor: '#29262A' }, super: { backgroundColor: '#252A3D' }, like: { backgroundColor: '#F21C2F' }, composerRoot: { flex: 1, backgroundColor: '#1A2230' }, composerSafe: { flex: 1 }, composerTop: { paddingHorizontal: 20, paddingTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, composerClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }, creditBubble: { minWidth: 44, textAlign: 'center', color: '#FFFFFF', backgroundColor: '#687180', paddingVertical: 10, borderRadius: 22, fontWeight: '900' }, composerKicker: { color: '#AFCBFF', fontSize: 16, fontWeight: '900', paddingHorizontal: 22, marginTop: 14 }, composerTitle: { color: '#FFFFFF', fontSize: 29, lineHeight: 35, fontWeight: '900', paddingHorizontal: 22, marginTop: 12 }, composerSubtitle: { color: '#C9D2E2', fontSize: 15, lineHeight: 21, paddingHorizontal: 22, marginTop: 8 }, slideRow: { paddingHorizontal: 22, paddingTop: 20, gap: 14, paddingBottom: 14 }, slideCard: { height: 430, borderRadius: 8, overflow: 'hidden', borderWidth: 2, borderColor: '#9BC6FF', backgroundColor: '#0D0D10' }, slideCount: { position: 'absolute', zIndex: 3, right: 12, top: 12, color: '#FFFFFF', backgroundColor: 'rgba(0,0,0,0.58)', paddingHorizontal: 11, paddingVertical: 7, borderRadius: 18, fontWeight: '800' }, slideImage: { width: '100%', height: '100%', resizeMode: 'cover' }, textSlide: { flex: 1, padding: 28, justifyContent: 'center' }, slideEyebrow: { color: '#C8C0CA', fontSize: 17, fontWeight: '900', marginBottom: 18 }, slideTitle: { color: '#FFFFFF', fontSize: 27, lineHeight: 36, fontWeight: '800' }, slideBody: { color: '#BEB8C1', fontSize: 17, lineHeight: 24, marginTop: 20 }, composerBar: { backgroundColor: '#111720', paddingHorizontal: 18, paddingTop: 12, flexDirection: 'row', alignItems: 'flex-end', gap: 10 }, composerInput: { flex: 1, minHeight: 52, maxHeight: 110, borderRadius: 24, backgroundColor: '#353C49', color: '#FFFFFF', paddingHorizontal: 18, paddingVertical: 14, fontSize: 16 }, composerSend: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF1493' }, disabledSend: { opacity: 0.4 }, sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.66)', justifyContent: 'flex-end' }, offerSheet: { backgroundColor: '#1B2230', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, gap: 12 }, sheetHandle: { width: 46, height: 5, borderRadius: 3, backgroundColor: '#596170', alignSelf: 'center', marginBottom: 3 }, sheetClose: { position: 'absolute', right: 18, top: 18, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }, offerKicker: { color: '#AFCBFF', fontSize: 13, fontWeight: '900', marginTop: 5 }, offerTitle: { color: '#FFFFFF', fontSize: 27, fontWeight: '900' }, offerSubtitle: { color: '#CAD7F2', fontSize: 15, lineHeight: 21 }, offerCard: { minHeight: 78, padding: 15, borderRadius: 8, backgroundColor: '#0F131D', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)' }, offerLeft: { flex: 1, paddingRight: 10 }, offerCount: { color: '#FFFFFF', fontSize: 17, fontWeight: '900' }, offerMeta: { color: '#FFD166', fontSize: 12, fontWeight: '900', marginTop: 5, textTransform: 'uppercase' }, offerPrice: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textAlign: 'right' }, offerTotal: { color: '#AFCBFF', fontSize: 12, fontWeight: '800', marginTop: 5, textAlign: 'right' }, safetySheet: { backgroundColor: '#17131A', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, gap: 14 }, safetyIcon: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#28222C', alignItems: 'center', justifyContent: 'center', marginTop: 6 }, safetyTitle: { color: '#FFFFFF', fontSize: 25, fontWeight: '900' }, safetyBody: { color: '#C8C0CA', fontSize: 16, lineHeight: 23 }, safetyActions: { flexDirection: 'row', gap: 10, marginTop: 5 }, cancelButton: { flex: 1, minHeight: 52, borderRadius: 8, backgroundColor: '#2A252D', alignItems: 'center', justifyContent: 'center' }, cancelText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' }, confirmButton: { flex: 1.35, minHeight: 52, borderRadius: 8, backgroundColor: '#E84B66', alignItems: 'center', justifyContent: 'center' }, blockButton: { backgroundColor: '#E09C28' }, confirmText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
 });

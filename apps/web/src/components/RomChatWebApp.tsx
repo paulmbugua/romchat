@@ -595,6 +595,15 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
   const [imagePreviewUrl, setImagePreviewUrl] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState<'profile' | 'discovery' | 'prompts' | 'mainPhoto' | 'selfie' | null>(null);
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; title: string; message: string } | null>(null);
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showFeedback(tone: 'success' | 'error', title: string, message: string) {
+    if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+    setFeedback({ tone, title, message });
+    feedbackTimer.current = setTimeout(() => setFeedback(null), 3000);
+  }
 
   const photoMedia = (Array.isArray(profile?.media) ? profile.media : [])
     .filter((item: any) => item?.mediaType === 'image' && item?.url)
@@ -627,6 +636,10 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
     };
   }, [imagePreviewUrl]);
+
+  useEffect(() => () => {
+    if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -725,6 +738,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
     if (!bio.trim()) return setDetailsNotice('Write a short bio.');
     try {
       setBusy(true);
+      setActiveAction('profile');
       setDetailsNotice('');
       setStatus('Saving profile...');
       await apiJson('/api/romchat/profile', {
@@ -752,11 +766,15 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       if (imagePreviewUrl) { URL.revokeObjectURL(imagePreviewUrl); setImagePreviewUrl(''); }
       if (fileInput.current) fileInput.current.value = '';
       setStatus('Profile saved.');
+      showFeedback('success', 'Profile saved', 'Your latest details are now live.');
       await reload(token);
     } catch (error) {
-      setStatus(userFacingErrorMessage(error, 'Profile save failed.'));
+      const message = userFacingErrorMessage(error, 'Profile save failed.');
+      setStatus(message);
+      showFeedback('error', 'Profile not saved', message);
     } finally {
       setBusy(false);
+      setActiveAction(null);
     }
   }
 
@@ -764,48 +782,61 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
     if (!token) return;
     try {
       setBusy(true);
+      setActiveAction('discovery');
       await apiJson('/api/romchat/profile', {
         method: 'PATCH',
         body: JSON.stringify({ displayName, age: Number(profile?.age || age), gender, city, intent, bio, interests: selectedInterests, promptAnswers, maxDistanceKm: distanceKm, minAge, maxAge, mapDiscoveryEnabled: mapEnabled }),
       }, token);
       setStatus('Distance preferences applied.');
+      showFeedback('success', 'Discovery updated', 'New profiles will match these filters.');
       await reload(token);
     } catch (error) {
-      setStatus(userFacingErrorMessage(error, 'Unable to save distance settings.'));
-    } finally { setBusy(false); }
+      const message = userFacingErrorMessage(error, 'Unable to save discovery settings.');
+      setStatus(message);
+      showFeedback('error', 'Filters not applied', message);
+    } finally { setBusy(false); setActiveAction(null); }
   }
 
   async function savePrompts() {
     if (!token) return;
     try {
       setBusy(true);
+      setActiveAction('prompts');
       await apiJson('/api/romchat/profile', {
         method: 'PATCH',
         body: JSON.stringify({ displayName, age: Number(profile?.age || age), gender, city, intent, bio, interests: selectedInterests, promptAnswers, maxDistanceKm: distanceKm, minAge, maxAge, mapDiscoveryEnabled: mapEnabled }),
       }, token);
       setStatus('7 profile prompts saved.');
+      showFeedback('success', 'Prompts saved', 'Your answers are ready to spark conversations.');
       await reload(token);
     } catch (error) {
-      setStatus(userFacingErrorMessage(error, 'Unable to save prompts.'));
-    } finally { setBusy(false); }
+      const message = userFacingErrorMessage(error, 'Unable to save prompts.');
+      setStatus(message);
+      showFeedback('error', 'Prompts not saved', message);
+    } finally { setBusy(false); setActiveAction(null); }
   }
 
   async function setMainPhoto(mediaId?: string) {
     if (!mediaId || !token) return;
     try {
       setBusy(true);
+      setActiveAction('mainPhoto');
       await apiJson('/api/romchat/profile/media/' + encodeURIComponent(mediaId) + '/main', { method: 'PATCH' }, token);
       setStatus('Main profile photo updated.');
+      showFeedback('success', 'Main photo updated', 'This photo now leads your profile.');
       await reload(token);
     } catch (error) {
-      setStatus(userFacingErrorMessage(error, 'Unable to update main photo.'));
-    } finally { setBusy(false); }
+      const message = userFacingErrorMessage(error, 'Unable to update main photo.');
+      setStatus(message);
+      showFeedback('error', 'Main photo unchanged', message);
+    } finally { setBusy(false); setActiveAction(null); }
   }
 
   async function verifySelfie(file?: File) {
     if (!file || !token) return;
     try {
       setBusy(true);
+      setActiveAction('selfie');
       setStatus('Submitting selfie verification...');
       const dataUri = await fileToDataUri(file);
       await apiJson('/api/romchat/profile/selfie-verification', {
@@ -814,10 +845,13 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       }, token);
       if (selfieInput.current) selfieInput.current.value = '';
       setStatus('Selfie verification submitted.');
+      showFeedback('success', 'Selfie submitted', 'We will update your verification status shortly.');
       await reload(token);
     } catch (error) {
-      setStatus(userFacingErrorMessage(error, 'Unable to verify selfie.'));
-    } finally { setBusy(false); }
+      const message = userFacingErrorMessage(error, 'Unable to verify selfie.');
+      setStatus(message);
+      showFeedback('error', 'Verification incomplete', message);
+    } finally { setBusy(false); setActiveAction(null); }
   }
 
   async function requestDeletion() {
@@ -877,6 +911,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
 
   return (
     <section id="profile" className="mx-auto max-w-4xl space-y-4 pb-6">
+      {feedback ? <div role="status" aria-live="polite" className={'fixed right-4 top-4 z-[100] flex w-[min(390px,calc(100vw-2rem))] items-center gap-3 rounded-lg border px-4 py-3 shadow-2xl backdrop-blur-xl transition ' + (feedback.tone === 'success' ? 'border-emerald-400/40 bg-[#17251f]/95' : 'border-[#ff6f61]/50 bg-[#2a171d]/95')}><span className={'grid h-8 w-8 shrink-0 place-items-center rounded-full ' + (feedback.tone === 'success' ? 'bg-emerald-500' : 'bg-[#e65b62]')}>{feedback.tone === 'success' ? <Check size={18} /> : <X size={18} />}</span><span className="min-w-0 flex-1"><strong className="block text-sm font-black text-white">{feedback.title}</strong><span className="mt-0.5 block text-xs font-bold leading-5 text-white/70">{feedback.message}</span></span><button type="button" onClick={() => setFeedback(null)} aria-label="Dismiss message" className="grid h-8 w-8 place-items-center text-white/60 hover:text-white"><X size={17} /></button></div> : null}
       <div className="rounded-[24px] border border-[#ff1493]/20 bg-[#1E1222] p-[18px]">
         <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-[#ff1493]">{account?.email || status || 'RomChat profile'}</p>
         <h1 className="mb-2 text-[27px] font-black leading-tight">{profile?.displayName || account?.name || 'Kenyan profile & vibe'}</h1>
@@ -905,7 +940,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
             <input type="range" min="19" max="80" step="1" value={maxAge} onChange={(e) => setMaxAge(Math.max(Number(e.target.value), minAge + 1))} className="mt-2 w-full accent-[#ff6f61]" />
             <div className="flex justify-between text-xs font-black text-white/45"><span>18</span><span>80+</span></div>
           </div>
-          <button type="button" disabled={busy} onClick={() => void saveDiscoverySettings()} className="mt-4 w-full rounded-[16px] bg-[#ff1493] px-5 py-3 font-black disabled:opacity-50">Apply discovery filters</button>
+          <button type="button" disabled={busy} onClick={() => void saveDiscoverySettings()} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#ff1493] px-5 py-3 font-black disabled:opacity-60">{activeAction === 'discovery' ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />Applying filters...</> : 'Apply discovery filters'}</button>
         </div>
 
         <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => selectImage(e.target.files?.[0])} />
@@ -921,7 +956,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
 
         <div className="mt-4 overflow-hidden rounded-[18px] border border-white/10">{profileTasks.map(([item, detail], index) => <div key={item} className={'px-4 py-3 ' + (index ? 'border-t border-white/10' : '')}><p className="font-black">{item}</p><p className="mt-1 text-xs font-bold text-white/55">{detail}</p></div>)}</div>
         <div className="mt-4 grid grid-cols-2 gap-2"><button type="button" disabled={busy} onClick={() => fileInput.current?.click()} className="inline-flex items-center justify-center gap-2 rounded-[18px] border border-white/10 bg-[#170d1b] px-4 py-3 font-black"><Images size={18} className="text-[#ffd700]" />Add photo</button><button type="button" disabled={busy || !imageCount} onClick={() => selfieInput.current?.click()} className="inline-flex items-center justify-center gap-2 rounded-[18px] border border-white/10 bg-[#170d1b] px-4 py-3 font-black disabled:opacity-40"><Shield size={18} className="text-[#ffd700]" />{profile?.selfieVerified ? 'Verified' : 'Verify selfie'}</button></div>
-        <button type="button" disabled={busy || uploadingImage} onClick={() => void saveProfileDetails()} className="mt-3 w-full rounded-[18px] bg-[#ff1493] px-5 py-3 font-black disabled:opacity-50">{uploadingImage ? 'Uploading photo...' : busy ? 'Saving...' : 'Save profile details'}</button>
+        <button type="button" disabled={busy || uploadingImage} onClick={() => void saveProfileDetails()} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[18px] bg-[#ff1493] px-5 py-3 font-black disabled:opacity-60">{activeAction === 'profile' ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />{uploadingImage ? 'Uploading photo...' : 'Saving profile...'}</> : 'Save profile details'}</button>
         {detailsNotice ? <p className="mt-3 text-center text-sm font-black text-[#ffd700]">{detailsNotice}</p> : null}
         {status ? <p className="mt-3 rounded-[16px] bg-white/5 p-3 text-sm font-bold text-white/70">{status}</p> : null}
         <button type="button" onClick={signOut} className="mt-3 w-full py-2 text-center text-sm font-black text-[#ffd700]">Sign out</button>
@@ -935,11 +970,11 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
         <div className="flex flex-wrap gap-2">{intentions.map((item) => <button type="button" key={item} disabled={busy} onClick={() => setIntent(item)} className={'rounded-full border px-3 py-2 text-sm font-black ' + (intent === item ? 'border-[#ffd700] bg-[#ffd700] text-[#120914]' : 'border-[#ff1493]/20 bg-[#170d1b] text-white/80')}>{item}</button>)}</div>
         <h3 className="mb-3 mt-5 font-black">Interests and vibe signals</h3>
         <div className="flex flex-wrap gap-2">{interests.map((item) => { const active = selectedInterests.includes(item); return <button type="button" key={item} disabled={busy} onClick={() => setSelectedInterests((current) => active ? current.filter((x) => x !== item) : [...current, item])} className={'rounded-full border px-3 py-2 text-sm font-black ' + (active ? 'border-[#ffd700] bg-[#ffd700] text-[#120914]' : 'border-[#ff1493]/20 bg-[#170d1b] text-white/80')}>{item}</button>; })}</div>
-        <button type="button" disabled={busy} onClick={() => void saveProfileDetails()} className="mt-5 w-full rounded-[16px] bg-[#ff1493] px-5 py-3 font-black disabled:opacity-50">Save profile details</button>
+        <button type="button" disabled={busy} onClick={() => void saveProfileDetails()} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#ff1493] px-5 py-3 font-black disabled:opacity-60">{activeAction === 'profile' ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />Saving profile...</> : 'Save profile details'}</button>
 
         <p className="mb-3 mt-7 text-xs font-black uppercase tracking-[0.12em] text-[#ff1493]">Dating prompts</p>
         <div className="space-y-3">{promptAnswers.map((item, index) => <div key={item.prompt} className="rounded-[18px] border border-white/10 bg-[#170d1b] p-3"><label className="text-sm font-black text-[#ffd700]">{item.prompt}</label><textarea value={item.answer} onChange={(e) => setPromptAnswers((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, answer: e.target.value } : row))} placeholder="Write a charming answer" className="mt-2 min-h-20 w-full resize-y rounded-[14px] border border-white/10 bg-[#1E1222] px-3 py-2 font-bold outline-none focus:border-[#ff1493]" /></div>)}</div>
-        <button type="button" disabled={busy} onClick={() => void savePrompts()} className="mt-4 w-full rounded-[18px] bg-[#ff1493] px-5 py-3 font-black disabled:opacity-50">Save 7 profile prompts</button>
+        <button type="button" disabled={busy} onClick={() => void savePrompts()} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[18px] bg-[#ff1493] px-5 py-3 font-black disabled:opacity-60">{activeAction === 'prompts' ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />Saving prompts...</> : 'Save 7 profile prompts'}</button>
 
         <div className="mt-6 rounded-[20px] border border-[#ff6f61]/30 bg-[#ff6f61]/10 p-4">
           <p className="mb-1 text-xs font-black uppercase tracking-[0.12em] text-[#ffd700]">Account deletion</p>

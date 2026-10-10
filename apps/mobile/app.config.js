@@ -22,6 +22,9 @@ module.exports = function expoConfig({ config }) {
     (process.env.NODE_ENV === 'production' ? 'production' : 'development');
   loadEnvironmentFile(appEnv);
   const isProduction = appEnv === 'production';
+  const productionAndroidPackage = 'com.paulmbugua2.romchat1';
+  const androidPackage = process.env.EXPO_PUBLIC_ANDROID_PACKAGE || productionAndroidPackage;
+  const isProductionAndroidPackage = androidPackage === productionAndroidPackage;
   const EAS_PROJECT_ID =
     process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
     process.env.EAS_PROJECT_ID ||
@@ -55,15 +58,6 @@ module.exports = function expoConfig({ config }) {
   const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_ANDROID || '';
   const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_IOS || '';
   const GOOGLE_REVERSED_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID || process.env.GOOGLE_REVERSED_CLIENT_ID || '';
-  const CONFIGURED_ADMOB_ANDROID_APP_ID = process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID || '';
-  const CONFIGURED_ADMOB_IOS_APP_ID = process.env.EXPO_PUBLIC_ADMOB_IOS_APP_ID || '';
-  const ADMOB_APPROVED = process.env.EXPO_PUBLIC_ADMOB_APPROVED === 'true';
-  const ADMOB_ANDROID_APP_ID = CONFIGURED_ADMOB_ANDROID_APP_ID || 'ca-app-pub-3940256099942544~3347511713';
-  const ADMOB_IOS_APP_ID = CONFIGURED_ADMOB_IOS_APP_ID || 'ca-app-pub-3940256099942544~1458002511';
-  const ADMOB_NATIVE_AD_UNIT_ID = process.env.EXPO_PUBLIC_ADMOB_NATIVE_AD_UNIT_ID || '';
-  const configuredAdCadence = Number(process.env.EXPO_PUBLIC_ADS_EVERY_N_SWIPES || 6);
-  const ADS_EVERY_N_SWIPES = Number.isFinite(configuredAdCadence) ? Math.max(4, Math.floor(configuredAdCadence)) : 6;
-
   return {
     ...config,
     owner: 'paulmbugua2',
@@ -71,7 +65,7 @@ module.exports = function expoConfig({ config }) {
     slug: 'romchat',
     version: '1.0.1',
     scheme: 'romchat',
-    runtimeVersion: '1.0.0',
+    runtimeVersion: { policy: 'appVersion' },
     userInterfaceStyle: 'automatic',
     newArchEnabled: true,
     icon: './assets/icon.png',
@@ -83,9 +77,13 @@ module.exports = function expoConfig({ config }) {
     assetBundlePatterns: ['**/*'],
     android: {
       ...config.android,
-      package: 'com.paulmbugua2.romchat1',
-      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || './google-services.json',
+      package: androidPackage,
+      ...(isProductionAndroidPackage ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON || './google-services.json' } : {}),
       permissions: ['INTERNET', 'POST_NOTIFICATIONS', 'CAMERA', 'RECORD_AUDIO'],
+      blockedPermissions: [
+        'com.google.android.gms.permission.AD_ID',
+        'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
+      ],
       notification: {
         icon: './assets/notification-icon.png',
         color: '#a63646',
@@ -135,14 +133,6 @@ module.exports = function expoConfig({ config }) {
       'expo-notifications',
       'expo-web-browser',
       'expo-asset',
-      [
-        'react-native-google-mobile-ads',
-        {
-          androidAppId: ADMOB_ANDROID_APP_ID,
-          iosAppId: ADMOB_IOS_APP_ID,
-          delayAppMeasurementInit: true,
-        },
-      ],
       GOOGLE_WEB_CLIENT_ID && [
         '@react-native-google-signin/google-signin',
         {
@@ -163,7 +153,6 @@ module.exports = function expoConfig({ config }) {
             compileSdkVersion: 36,
             targetSdkVersion: 36,
             javaVersion: 17,
-            extraProguardRules: '-keep class com.google.android.gms.internal.consent_sdk.** { *; }',
           },
           ios: { deploymentTarget: '15.1' },
         },
@@ -181,11 +170,6 @@ module.exports = function expoConfig({ config }) {
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: GOOGLE_ANDROID_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: GOOGLE_IOS_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID: GOOGLE_REVERSED_CLIENT_ID,
-      EXPO_PUBLIC_ADMOB_NATIVE_AD_UNIT_ID: ADMOB_NATIVE_AD_UNIT_ID,
-      EXPO_PUBLIC_ADMOB_APPROVED: ADMOB_APPROVED,
-      EXPO_PUBLIC_ADMOB_ANDROID_CONFIGURED: Boolean(ADMOB_APPROVED && CONFIGURED_ADMOB_ANDROID_APP_ID && ADMOB_NATIVE_AD_UNIT_ID),
-      EXPO_PUBLIC_ADMOB_IOS_CONFIGURED: Boolean(ADMOB_APPROVED && CONFIGURED_ADMOB_IOS_APP_ID && ADMOB_NATIVE_AD_UNIT_ID),
-      EXPO_PUBLIC_ADS_EVERY_N_SWIPES: ADS_EVERY_N_SWIPES,
       ...(EAS_PROJECT_ID ? { EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID, eas: { projectId: EAS_PROJECT_ID } } : {}),
       BACKENDS,
       DEFAULT_BACKEND,
@@ -195,7 +179,7 @@ module.exports = function expoConfig({ config }) {
           updates: {
             url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
             fallbackToCacheTimeout: 0,
-            checkAutomatically: 'NEVER',
+            checkAutomatically: 'ON_LOAD',
           },
         }
       : {}),

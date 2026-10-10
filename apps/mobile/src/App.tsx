@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   PanResponder,
   Platform,
+  Pressable,
   ScrollView,
   RefreshControl,
   StatusBar,
@@ -35,9 +36,6 @@ import { apiBaseUrl, ApiRequestError, userFacingErrorMessage } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 import type { RomanceVibe } from './features/romchat/api';
 import { ProfileDetailModal, type ProfileDetailData } from './components/ProfileDetailModal';
-import { DiscoveryAdCard } from './components/DiscoveryAdCard';
-import { discoveryAdCadence } from './features/ads/config';
-import { useMobileAds } from './features/ads/useMobileAds';
 
 type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'payment' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
 type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
@@ -46,6 +44,8 @@ type RomChatPromptAnswer = { prompt: string; answer: string };
 type PlanName = 'Free' | 'Gold' | 'Platinum';
 type RomChatPayment = { id: string; provider: string; amountKes: number; tokens: number; checkoutUrl?: string | null; instructions: string; status: string; currency: string; reference?: string; packageKind?: string; superLikeCount?: number | null };
 type PaymentSheetState = { provider: 'mpesa' | 'paystack'; title: string; subtitle: string; amountKes: number; paymentId: string; checkoutUrl?: string | null; instructions: string };
+type ProfileAction = 'photo' | 'deletePhoto' | 'mainPhoto' | 'selfie' | 'details' | 'prompts' | 'discovery' | null;
+type ActionFeedback = { id: number; tone: 'success' | 'error'; title: string; message: string };
 type PendingPurchase =
   | { kind: 'tokens'; title: string; subtitle: string; amountKes: number; packageId: string; accent: 'gold' | 'pink' | 'blue' }
   | { kind: 'superlikes'; title: string; subtitle: string; amountKes: number; packageId: 'superlikes_15' | 'superlikes_30'; accent: 'blue' }
@@ -221,6 +221,8 @@ export default function App() {
   const [authBooted, setAuthBooted] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [profileAction, setProfileAction] = useState<ProfileAction>(null);
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [session, setSession] = useState<SessionState | null>(null);
   const [activeSection, setActiveSection] = useState<Section | null>(null);
   const [activeVibeId, setActiveVibeId] = useState<string | null>(null);
@@ -241,9 +243,6 @@ export default function App() {
   const [pendingChatProfileId, setPendingChatProfileId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
-  const adsReady = useMobileAds();
-  const [showDiscoveryAd, setShowDiscoveryAd] = useState(false);
-  const swipeDecisionsSinceAd = useRef(0);
   const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipePosition = useRef(new Animated.ValueXY()).current;
@@ -280,9 +279,9 @@ export default function App() {
   const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
   const hasPlatinumAccess = activePlan === 'Platinum';
 
-  useEffect(() => {
-    if (activePlan !== 'Free') setShowDiscoveryAd(false);
-  }, [activePlan]);
+  const showActionFeedback = useCallback((tone: ActionFeedback['tone'], title: string, message: string) => {
+    setActionFeedback({ id: Date.now(), tone, title, message });
+  }, []);
 
   function normalizeSession(payload: RomChatSessionPayload | (Omit<RomChatSessionPayload, 'token'> & { token?: string }), tokenFallback?: string | null): SessionState {
     const raw = (payload || {}) as Partial<RomChatSessionPayload> & { token?: string; message?: string; routes?: unknown };
@@ -505,13 +504,6 @@ export default function App() {
 
   function advanceProfile() {
     setIndex((value) => profiles.length ? (value + 1) % profiles.length : 0);
-    if (activePlan === 'Free' && adsReady) {
-      swipeDecisionsSinceAd.current += 1;
-      if (swipeDecisionsSinceAd.current >= discoveryAdCadence) {
-        swipeDecisionsSinceAd.current = 0;
-        setShowDiscoveryAd(true);
-      }
-    }
   }
 
   function passProfile() {
@@ -604,7 +596,10 @@ export default function App() {
   const swipeHandlers = useMemo(
     () =>
       PanResponder.create({
-        onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.15,
+        onStartShouldSetPanResponder: () => false,
+        onStartShouldSetPanResponderCapture: () => false,
+        onMoveShouldSetPanResponderCapture: () => false,
+        onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 16 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25,
         onPanResponderMove: Animated.event([null, { dx: swipePosition.x, dy: swipePosition.y }], { useNativeDriver: false }),
         onPanResponderRelease: (_event, gesture) => {
           const swipeOut = (direction: 'left' | 'right') => {
@@ -723,17 +718,24 @@ export default function App() {
   async function saveOnboardingProfile(payload: { displayName: string; age: number; gender: string; city: string; intent: string; bio: string; interests: string[] }) {
     if (!session?.token) return;
     setAuthBusy(true);
+    setProfileAction('details');
     setAuthError('');
     try {
       await romchatAccountApi.saveProfile(session.token, payload);
       await refreshSession(session.token);
-    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to save profile.')); }
-    finally { setAuthBusy(false); }
+      showActionFeedback('success', 'Profile saved', 'You are ready to start discovering connections.');
+    } catch (error) {
+      const message = userFacingErrorMessage(error, 'Unable to save profile.');
+      setAuthError(message);
+      showActionFeedback('error', 'Profile not saved', message);
+    }
+    finally { setAuthBusy(false); setProfileAction(null); }
   }
 
   async function uploadProfileImage(replaceMediaId?: string) {
     if (!session?.token) return;
     setAuthBusy(true);
+    setProfileAction('photo');
     setAuthError('');
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -752,37 +754,55 @@ export default function App() {
       } else {
         await refreshSession(session.token);
       }
-    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to upload image.')); }
-    finally { setAuthBusy(false); }
+      showActionFeedback('success', replaceMediaId ? 'Photo replaced' : 'Photo added', 'Your profile gallery is up to date.');
+    } catch (error) {
+      const message = userFacingErrorMessage(error, 'Unable to upload image.');
+      setAuthError(message);
+      showActionFeedback('error', 'Photo not saved', message);
+    }
+    finally { setAuthBusy(false); setProfileAction(null); }
   }
 
   async function deleteProfileMedia(mediaId: string) {
     if (!session?.token || !mediaId) return;
     setAuthBusy(true);
+    setProfileAction('deletePhoto');
     setAuthError('');
     try {
       const response = await romchatAccountApi.deleteMedia(session.token, mediaId);
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
-    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to delete image.')); }
-    finally { setAuthBusy(false); }
+      showActionFeedback('success', 'Photo removed', 'Your gallery has been updated.');
+    } catch (error) {
+      const message = userFacingErrorMessage(error, 'Unable to delete image.');
+      setAuthError(message);
+      showActionFeedback('error', 'Photo not removed', message);
+    }
+    finally { setAuthBusy(false); setProfileAction(null); }
   }
 
   async function setMainProfilePhoto(mediaId: string) {
     if (!session?.token || !mediaId) return;
     setAuthBusy(true);
+    setProfileAction('mainPhoto');
     setAuthError('');
     try {
       const response = await romchatAccountApi.setMainPhoto(session.token, mediaId);
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
-    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to update main photo.')); }
-    finally { setAuthBusy(false); }
+      showActionFeedback('success', 'Main photo updated', 'This photo now leads your profile.');
+    } catch (error) {
+      const message = userFacingErrorMessage(error, 'Unable to update main photo.');
+      setAuthError(message);
+      showActionFeedback('error', 'Main photo unchanged', message);
+    }
+    finally { setAuthBusy(false); setProfileAction(null); }
   }
 
   async function verifySelfieProfile() {
     if (!session?.token) return;
     setAuthBusy(true);
+    setProfileAction('selfie');
     setAuthError('');
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -795,13 +815,19 @@ export default function App() {
       const response = await romchatAccountApi.verifySelfie(session.token, { dataUri: `data:${contentType};base64,${asset.base64}`, contentType, fileName: asset.fileName || 'selfie-verification.jpg' });
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
-    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to verify selfie.')); }
-    finally { setAuthBusy(false); }
+      showActionFeedback('success', 'Selfie verified', 'Your verification badge is now active.');
+    } catch (error) {
+      const message = userFacingErrorMessage(error, 'Unable to verify selfie.');
+      setAuthError(message);
+      showActionFeedback('error', 'Verification incomplete', message);
+    }
+    finally { setAuthBusy(false); setProfileAction(null); }
   }
 
   async function saveProfileDetails(payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) {
     if (!session?.token || !session.profile) return;
     setAuthBusy(true);
+    setProfileAction('details');
     setAuthError('');
     try {
       const response = await romchatAccountApi.saveProfile(session.token, {
@@ -816,13 +842,19 @@ export default function App() {
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
       await romchat.refresh();
-    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to save profile details.')); }
-    finally { setAuthBusy(false); }
+      showActionFeedback('success', 'Profile saved', 'Your latest details are now live.');
+    } catch (error) {
+      const message = userFacingErrorMessage(error, 'Unable to save profile details.');
+      setAuthError(message);
+      showActionFeedback('error', 'Profile not saved', message);
+    }
+    finally { setAuthBusy(false); setProfileAction(null); }
   }
 
   async function saveProfilePrompts(promptAnswers: RomChatPromptAnswer[]) {
     if (!session?.token || !session.profile) return;
     setAuthBusy(true);
+    setProfileAction('prompts');
     setAuthError('');
     try {
       const response = await romchatAccountApi.saveProfile(session.token, {
@@ -841,13 +873,19 @@ export default function App() {
       });
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
-    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to save prompts.')); }
-    finally { setAuthBusy(false); }
+      showActionFeedback('success', 'Prompts saved', 'Your answers are ready to spark conversations.');
+    } catch (error) {
+      const message = userFacingErrorMessage(error, 'Unable to save prompts.');
+      setAuthError(message);
+      showActionFeedback('error', 'Prompts not saved', message);
+    }
+    finally { setAuthBusy(false); setProfileAction(null); }
   }
 
   async function saveDiscoverySettings(payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) {
     if (!session?.token || !session.profile) return;
     setAuthBusy(true);
+    setProfileAction('discovery');
     setAuthError('');
     try {
       const response = await romchatAccountApi.saveProfile(session.token, {
@@ -867,16 +905,24 @@ export default function App() {
       const next = normalizeSession({ token: session.token, user: session.user, profile: response.profile });
       await persistSession(next);
       await romchat.refresh();
-    } catch (error) { setAuthError(userFacingErrorMessage(error, 'Unable to save distance settings.')); }
-    finally { setAuthBusy(false); }
+      showActionFeedback('success', 'Discovery updated', 'New profiles will match these filters.');
+    } catch (error) {
+      const message = userFacingErrorMessage(error, 'Unable to save discovery settings.');
+      setAuthError(message);
+      showActionFeedback('error', 'Filters not applied', message);
+    }
+    finally { setAuthBusy(false); setProfileAction(null); }
   }
   async function toggleRomanceVibe(vibe: RomanceVibe, joined: boolean) {
     setAuthError('');
     try {
-      return await romchat.setVibeMembership(vibe.id, joined);
+      const updated = await romchat.setVibeMembership(vibe.id, joined);
+      showActionFeedback('success', joined ? 'Vibe joined' : 'Vibe left', joined ? `${vibe.title} is now part of your discovery mix.` : `${vibe.title} was removed from your discovery mix.`);
+      return updated;
     } catch (error) {
       const message = userFacingErrorMessage(error, 'Unable to update this romance vibe.');
       setAuthError(message);
+      showActionFeedback('error', 'Vibe not updated', message);
       throw error;
     }
   }
@@ -967,7 +1013,7 @@ export default function App() {
         />
       );
     }
-    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} error={authError} onUploadImage={uploadProfileImage} onDeletePhoto={deleteProfileMedia} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} openPolicy={(section) => setActiveSection(section)} />;
+    return <Profile account={session?.user || null} profile={session?.profile || null} strength={strength} incognito={incognito} busy={authBusy} activeAction={profileAction} error={authError} onUploadImage={uploadProfileImage} onDeletePhoto={deleteProfileMedia} onSetMainPhoto={setMainProfilePhoto} onVerifySelfie={verifySelfieProfile} onSaveDetails={saveProfileDetails} onSavePrompts={saveProfilePrompts} onSaveDiscoverySettings={saveDiscoverySettings} status={romchat.lastAction} onSignOut={signOut} openPolicy={(section) => setActiveSection(section)} />;
   }
 
   if (!authBooted) {
@@ -979,7 +1025,7 @@ export default function App() {
   }
 
   if (!session.profile || session.onboarding.needsFirstImage) {
-    return <ProfileOnboardingScreen busy={authBusy} error={authError} accountName={session.user?.name || session.user?.email?.split('@')[0] || 'RomChat member'} profile={session.profile} uploadedImageCount={session.onboarding.imageCount} onSaveProfile={saveOnboardingProfile} onUploadImage={uploadProfileImage} onSignOut={signOut} />;
+    return <><ProfileOnboardingScreen busy={authBusy} activeAction={profileAction} error={authError} accountName={session.user?.name || session.user?.email?.split('@')[0] || 'RomChat member'} profile={session.profile} uploadedImageCount={session.onboarding.imageCount} onSaveProfile={saveOnboardingProfile} onUploadImage={uploadProfileImage} onSignOut={signOut} /><ActionFeedbackToast feedback={actionFeedback} onDismiss={() => setActionFeedback(null)} /></>;
   }
 
   if (activeSection) {
@@ -997,6 +1043,7 @@ export default function App() {
           {renderSection(activeSection)}
         </ScrollView>
         <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
+        <ActionFeedbackToast feedback={actionFeedback} onDismiss={() => setActionFeedback(null)} />
   
         <FooterNav active={activeSection} setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} likesReceivedCount={visibleLikesReceivedCount} />
       </SafeAreaView>
@@ -1037,12 +1084,7 @@ export default function App() {
 
         {activeVibe ? <ActiveVibeBar vibe={activeVibe} onClear={() => { setActiveVibeId(null); setIndex(0); }} /> : null}
 
-        {showDiscoveryAd && activePlan === 'Free' && adsReady ? (
-          <DiscoveryAdCard
-            height={Math.max(460, swipeCardHeight - (activeVibe ? 54 : 0))}
-            onDismiss={() => setShowDiscoveryAd(false)}
-          />
-        ) : profile ? (
+        {profile ? (
           <>
             <Discover
               profile={profile}
@@ -1072,6 +1114,7 @@ export default function App() {
       </ScrollView>
       <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
       <RewindPremiumSheet visible={rewindSheetVisible} onClose={() => setRewindSheetVisible(false)} onBuyTokens={() => { setRewindSheetVisible(false); void startTokenPurchase('tokens_100', 'mpesa'); openTokenStore(); }} onUpgrade={() => { setRewindSheetVisible(false); setActiveSection('premium'); }} />
+      <ActionFeedbackToast feedback={actionFeedback} onDismiss={() => setActionFeedback(null)} />
       <FooterNav active="swipe" setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} likesReceivedCount={visibleLikesReceivedCount} />
     </SafeAreaView>
   );
@@ -1083,6 +1126,53 @@ function LoadingScreen({ label }: { label: string }) {
       <ActivityIndicator color="#FF1493" size="large" />
       <Text style={styles.loadingText}>{label}</Text>
     </SafeAreaView>
+  );
+}
+
+function ActionFeedbackToast({ feedback, onDismiss }: { feedback: ActionFeedback | null; onDismiss: () => void }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(-16)).current;
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
+  useEffect(() => {
+    if (!feedback) return undefined;
+    opacity.stopAnimation();
+    translateY.stopAnimation();
+    opacity.setValue(0);
+    translateY.setValue(-16);
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+      Animated.spring(translateY, { toValue: 0, speed: 18, bounciness: 4, useNativeDriver: true }),
+    ]).start();
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 0, duration: 160, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: -10, duration: 160, useNativeDriver: true }),
+      ]).start(() => onDismissRef.current());
+    }, 2600);
+    return () => clearTimeout(timer);
+  }, [feedback?.id, opacity, translateY]);
+
+  if (!feedback) return null;
+  const success = feedback.tone === 'success';
+  return (
+    <Animated.View
+      accessibilityLiveRegion="polite"
+      accessibilityRole="alert"
+      style={[styles.actionToast, success ? styles.actionToastSuccess : styles.actionToastError, { opacity, transform: [{ translateY }] }]}
+    >
+      <View style={[styles.actionToastIcon, success ? styles.actionToastIconSuccess : styles.actionToastIconError]}>
+        <Icon name={success ? 'checkmark' : 'close'} size={18} color="#FFFFFF" />
+      </View>
+      <View style={styles.actionToastCopy}>
+        <Text style={styles.actionToastTitle}>{feedback.title}</Text>
+        <Text style={styles.actionToastMessage} numberOfLines={2}>{feedback.message}</Text>
+      </View>
+      <TouchableOpacity onPress={onDismiss} accessibilityLabel="Dismiss message" hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+        <Icon name="close" size={18} color="rgba(255,255,255,0.72)" />
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
@@ -1242,8 +1332,9 @@ function PasswordField({ value, onChangeText, visible, setVisible, placeholder }
   );
 }
 
-function ProfileOnboardingScreen({ busy, error, accountName, profile, uploadedImageCount, onSaveProfile, onUploadImage, onSignOut }: {
+function ProfileOnboardingScreen({ busy, activeAction, error, accountName, profile, uploadedImageCount, onSaveProfile, onUploadImage, onSignOut }: {
   busy: boolean;
+  activeAction: ProfileAction;
   error: string;
   accountName: string;
   profile: RomChatMemberProfile | null;
@@ -1327,13 +1418,13 @@ function ProfileOnboardingScreen({ busy, error, accountName, profile, uploadedIm
         <View onLayout={rememberSection('interests')}><Text style={[styles.selectorTitle, missingSection === 'interests' && styles.selectorTitleMissing]}>Interests and vibe signals</Text>
         <View style={styles.choiceWrap}>{datingInterests.map((item) => { const active = selectedInterests.includes(item); return <TouchableOpacity key={item} onPress={() => toggleInterest(item)} style={[styles.choiceChip, active && styles.choiceChipActive]}><Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>; })}</View></View>
         <View onLayout={rememberSection('bio')}><TextInput value={bio} onChangeText={setBio} placeholder="Short Kenyan romance bio" placeholderTextColor="rgba(255,255,255,0.45)" style={[styles.authInput, styles.authTextArea, missingSection === 'bio' && styles.inputMissing]} multiline /></View>
-        <TouchableOpacity onLayout={rememberSection('image')} disabled={busy} onPress={() => void onUploadImage()} style={[styles.uploadCard, missingSection === 'image' && styles.uploadCardMissing]}>
-          <Icon name="image" size={24} color="#FFD700" />
-          <View style={{ flex: 1 }}><Text style={styles.uploadTitle}>{imageCount ? String(imageCount) + ' image uploaded' : 'Upload first profile image'}</Text><Text style={styles.uploadMeta}>{missingSection === 'image' ? 'Add at least one photo before saving.' : 'Private RomChat photo gallery'}</Text></View>
+        <TouchableOpacity onLayout={rememberSection('image')} disabled={busy} onPress={() => void onUploadImage()} style={[styles.uploadCard, missingSection === 'image' && styles.uploadCardMissing, busy && styles.actionButtonDisabled]}>
+          {activeAction === 'photo' ? <ActivityIndicator color="#FFD700" size="small" /> : <Icon name="image" size={24} color="#FFD700" />}
+          <View style={{ flex: 1 }}><Text style={styles.uploadTitle}>{activeAction === 'photo' ? 'Uploading photo...' : imageCount ? String(imageCount) + ' image uploaded' : 'Upload first profile image'}</Text><Text style={styles.uploadMeta}>{missingSection === 'image' ? 'Add at least one photo before saving.' : 'Private RomChat photo gallery'}</Text></View>
         </TouchableOpacity>
         {!!missingSection && <Text style={styles.validationNudge}>Finish this highlighted section to continue.</Text>}
-        <TouchableOpacity disabled={busy} onPress={handleSaveProfile} style={styles.authPrimary}>
-          <Text style={styles.authPrimaryText}>Save profile</Text>
+        <TouchableOpacity disabled={busy} onPress={handleSaveProfile} style={[styles.authPrimary, busy && styles.actionButtonDisabled]}>
+          <View style={styles.actionButtonContent}>{activeAction === 'details' && <ActivityIndicator color="#FFFFFF" size="small" />}<Text style={styles.authPrimaryText}>{activeAction === 'details' ? 'Saving profile...' : 'Save profile'}</Text></View>
         </TouchableOpacity>
         {!!error && <Text style={styles.authError}>{error}</Text>}
         <TouchableOpacity onPress={() => void onSignOut()}><Text style={styles.authLink}>Use another account</Text></TouchableOpacity>
@@ -1389,6 +1480,7 @@ function Discover({
   const [photoIndex, setPhotoIndex] = useState(0);
   const [galleryNotice, setGalleryNotice] = useState('');
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const expandButtonScale = useRef(new Animated.Value(1)).current;
   const popScale = useRef(new Animated.Value(0.82)).current;
   const popOpacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -1405,10 +1497,16 @@ function Discover({
     setGalleryNotice('');
   }, [profile.id]);
   const openers = [`Ask ${profile.name} about ${profile.tags[0]?.toLowerCase() || 'her vibe'}.`, `Start with: "${profile.poll.question}"`];
-  const remotePhotos = (profile.photos || []).map((url) => ({ uri: resolveMediaUrl(url) })).filter((item) => Boolean(item.uri));
-  const photoSlots = remotePhotos.length ? remotePhotos : [profile.photo];
+  const remotePhotos = useMemo(
+    () => (profile.photos || []).map((url) => ({ uri: resolveMediaUrl(url) })).filter((item) => Boolean(item.uri)),
+    [profile.photos]
+  );
+  const photoSlots = useMemo(() => remotePhotos.length ? remotePhotos : [profile.photo], [profile.photo, remotePhotos]);
   const totalGallery = Number(profile.fullGallery || profile.gallery || photoSlots.length);
-  const detailProfile: ProfileDetailData = { id: profile.id, name: profile.name, age: profile.age, city: profile.city, distanceKm: profile.distanceKm, intent: profile.intent, prompt: profile.prompt, quote: profile.quote, song: profile.song, tags: profile.tags, answers: profile.answers, photos: photoSlots, photo: photoSlots[0]!, color: profile.color, online: profile.online, verified: profile.verified };
+  const detailProfile: ProfileDetailData = useMemo(() => ({ id: profile.id, name: profile.name, age: profile.age, city: profile.city, distanceKm: profile.distanceKm, intent: profile.intent, prompt: profile.prompt, quote: profile.quote, song: profile.song, tags: profile.tags, answers: profile.answers, photos: photoSlots, photo: photoSlots[0]!, color: profile.color, online: profile.online, verified: profile.verified }), [photoSlots, profile]);
+  const animateExpandButton = (toValue: number) => {
+    Animated.spring(expandButtonScale, { toValue, friction: 7, tension: 240, useNativeDriver: true }).start();
+  };
   const changePhoto = (direction: -1 | 1) => setPhotoIndex((value) => {
     if (direction > 0 && value >= photoSlots.length - 1 && totalGallery > photoSlots.length) {
       setGalleryNotice('Add more of your own photos to unlock the rest of this gallery.');
@@ -1438,7 +1536,25 @@ function Discover({
               <Text style={styles.galleryLockText}>{galleryNotice}</Text>
             </View>
           )}
-          <TouchableOpacity onPress={() => setDetailsOpen(true)} style={styles.expandCardButton} accessibilityLabel="Open full profile details"><Icon name="arrow-up" size={21} color="#FFFFFF" /></TouchableOpacity>
+          <Animated.View style={[styles.expandCardButtonWrap, { transform: [{ scale: expandButtonScale }] }]}>
+            <Pressable
+              onPress={() => setDetailsOpen(true)}
+              onPressIn={() => {
+                animateExpandButton(0.94);
+                setDetailsOpen(true);
+                requestAnimationFrame(() => animateExpandButton(1));
+              }}
+              onPressOut={() => animateExpandButton(1)}
+              hitSlop={12}
+              pressRetentionOffset={20}
+              style={styles.expandCardButton}
+              accessibilityRole="button"
+              accessibilityLabel="Open full profile details"
+              testID="open-profile-details"
+            >
+              <Icon name="arrow-up" size={21} color="#FFFFFF" />
+            </Pressable>
+          </Animated.View>
           <View style={styles.cardCopy}>
             <View style={styles.pillRow}>
               <Text style={styles.verifiedBadge}>{profile.online ? 'Active now' : 'Recently active'}</Text>
@@ -2283,18 +2399,28 @@ function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: Pa
 }
 
 function RewindPremiumSheet({ visible, onClose, onBuyTokens, onUpgrade }: { visible: boolean; onClose: () => void; onBuyTokens: () => void; onUpgrade: () => void }) {
-  const insets = useSafeAreaInsets();
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-    <View style={styles.rewindSheetBackdrop}><TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
-      <View style={[styles.rewindSheetCard, { paddingBottom: Math.max(insets.bottom, 18) }]}><View style={styles.paymentSheetHandle} />
-        <LinearGradient colors={["#FF1493", "#FF6F61"]} style={styles.rewindSheetIcon}><Icon name="return-up-back" size={28} color="#FFFFFF" /></LinearGradient>
-        <View style={styles.rewindSheetEyebrowRow}><Text style={styles.rewindSheetEyebrow}>A second chance</Text><View style={styles.rewindPremiumPill}><Icon name="diamond" size={13} color="#120914" /><Text style={styles.rewindPremiumPillText}>Premium</Text></View></View>
-        <Text style={styles.rewindSheetTitle}>Bring that connection back</Text><Text style={styles.rewindSheetBody}>Accidentally passed someone special? Rewind your last swipe and give the moment another chance.</Text>
-        <View style={styles.rewindOptionRow}><View style={styles.rewindOption}><Text style={styles.rewindOptionValue}>100</Text><Text style={styles.rewindOptionLabel}>tokens</Text></View><View style={styles.rewindOptionDivider} /><View style={styles.rewindOption}><Text style={styles.rewindOptionValue}>KES 250</Text><Text style={styles.rewindOptionLabel}>one-time pack</Text></View></View>
-        <TouchableOpacity onPress={onBuyTokens} style={styles.rewindPrimaryButton}><Icon name="diamond-outline" size={19} color="#FFFFFF" /><Text style={styles.rewindPrimaryText}>Get 100 tokens</Text></TouchableOpacity>
-        <TouchableOpacity onPress={onUpgrade} style={styles.rewindSecondaryButton}><Text style={styles.rewindSecondaryText}>See Gold rewinds</Text><Icon name="arrow-forward" size={17} color="#FFD700" /></TouchableOpacity>
-        <TouchableOpacity onPress={onClose} style={styles.rewindLaterButton}><Text style={styles.rewindLaterText}>Maybe later</Text></TouchableOpacity>
-      </View></View>
+  const benefits = [
+    ['infinite', 'Unlimited rewinds with Gold'],
+    ['flash', 'Return to the last profile instantly'],
+    ['heart', 'Never lose a promising connection'],
+  ] as const;
+  return <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+    <View style={styles.rewindSheetBackdrop}>
+      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} accessibilityLabel="Close rewind offer" />
+      <View style={styles.rewindSheetCard}>
+        <TouchableOpacity onPress={onClose} style={styles.rewindCloseButton} accessibilityLabel="Close rewind offer"><Icon name="close" size={20} color="rgba(255,255,255,0.72)" /></TouchableOpacity>
+        <View style={styles.rewindVisual}>
+          <View style={styles.rewindVisualRingOuter}><View style={styles.rewindVisualRingInner}><LinearGradient colors={["#FF1493", "#FF6F61"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.rewindSheetIcon}><Icon name="return-up-back" size={30} color="#FFFFFF" /></LinearGradient></View></View>
+        </View>
+        <View style={styles.rewindPremiumPill}><Icon name="diamond" size={13} color="#120914" /><Text style={styles.rewindPremiumPillText}>ROMCHAT GOLD</Text></View>
+        <Text style={styles.rewindSheetTitle}>One swipe deserves a second look</Text>
+        <Text style={styles.rewindSheetBody}>Go back to the profile you just passed and decide again, without losing your place.</Text>
+        <View style={styles.rewindBenefits}>{benefits.map(([icon, label]) => <View key={label} style={styles.rewindBenefitRow}><View style={styles.rewindBenefitIcon}><Icon name={icon} size={16} color="#FFD700" /></View><Text style={styles.rewindBenefitText}>{label}</Text></View>)}</View>
+        <TouchableOpacity onPress={onUpgrade} style={styles.rewindPrimaryButton} accessibilityRole="button"><LinearGradient colors={["#FF1493", "#FF4F88"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.rewindPrimaryGradient}><Icon name="diamond-outline" size={19} color="#FFFFFF" /><Text style={styles.rewindPrimaryText}>Unlock unlimited rewinds</Text><Icon name="arrow-forward" size={18} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
+        <TouchableOpacity onPress={onBuyTokens} style={styles.rewindSecondaryButton}><Text style={styles.rewindSecondaryText}>Browse token packs</Text><Text style={styles.rewindTokenPrice}>from KES 250</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onClose} style={styles.rewindLaterButton}><Text style={styles.rewindLaterText}>Keep swiping</Text></TouchableOpacity>
+      </View>
+    </View>
   </Modal>;
 }
 
@@ -2376,7 +2502,7 @@ function resolveMediaUrl(url?: string) {
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, error, onUploadImage, onDeletePhoto, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; error: string; onUploadImage: (replaceMediaId?: string) => Promise<void>; onDeletePhoto: (mediaId: string) => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community') => void }) {
+function Profile({ account, profile, strength, incognito, busy, activeAction, error, onUploadImage, onDeletePhoto, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; activeAction: ProfileAction; error: string; onUploadImage: (replaceMediaId?: string) => Promise<void>; onDeletePhoto: (mediaId: string) => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community') => void }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
@@ -2479,7 +2605,9 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
             <Slider value={maxAge} minimumValue={19} maximumValue={80} step={1} minimumTrackTintColor="#FF6F61" maximumTrackTintColor="rgba(255,255,255,0.18)" thumbTintColor="#FFFFFF" onValueChange={updateMaxAge} />
             <View style={styles.distanceScale}><Text style={styles.distanceScaleText}>18</Text><Text style={styles.distanceScaleText}>80+</Text></View>
           </View>
-          <TouchableOpacity disabled={busy} onPress={() => void onSaveDiscoverySettings({ maxDistanceKm: distanceKm, minAge, maxAge, mapDiscoveryEnabled: mapEnabled })} style={styles.distanceSaveButton}><Text style={styles.distanceSaveText}>Apply discovery filters</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityState={{ busy: activeAction === 'discovery', disabled: busy }} disabled={busy} onPress={() => void onSaveDiscoverySettings({ maxDistanceKm: distanceKm, minAge, maxAge, mapDiscoveryEnabled: mapEnabled })} style={[styles.distanceSaveButton, busy && styles.actionButtonDisabled]}>
+            <View style={styles.actionButtonContent}>{activeAction === 'discovery' && <ActivityIndicator color="#FFFFFF" size="small" />}<Text style={styles.distanceSaveText}>{activeAction === 'discovery' ? 'Applying filters...' : 'Apply discovery filters'}</Text></View>
+          </TouchableOpacity>
         </View>
         <Text style={styles.distanceMeta}>Tap a photo to replace it. Press and hold for primary-photo and delete actions.</Text>
         <View style={styles.photoSlotGrid}>{Array.from({ length: 6 }).map((_, index) => {
@@ -2494,7 +2622,7 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
             <Text style={styles.caption}>{detail}</Text>
           </View>
         ))}
-        <View style={styles.profileActionGrid}><TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} style={styles.profileAction}><Icon name="images" size={18} color="#FFD700" /><Text style={styles.profileActionText}>Add photo</Text></TouchableOpacity><TouchableOpacity disabled={busy || !imageCount} onPress={() => void onVerifySelfie()} style={[styles.profileAction, !imageCount && styles.profileActionDisabled]}><Icon name="shield-checkmark" size={18} color="#FFD700" /><Text style={styles.profileActionText}>{profile?.selfieVerified ? 'Verified' : 'Verify selfie'}</Text></TouchableOpacity></View>{!!error && <Text style={styles.authError}>{error}</Text>}
+        <View style={styles.profileActionGrid}><TouchableOpacity disabled={busy} onPress={() => void onUploadImage()} style={[styles.profileAction, busy && styles.actionButtonDisabled]}>{activeAction === 'photo' ? <ActivityIndicator color="#FFD700" size="small" /> : <Icon name="images" size={18} color="#FFD700" />}<Text style={styles.profileActionText}>{activeAction === 'photo' ? 'Uploading...' : 'Add photo'}</Text></TouchableOpacity><TouchableOpacity disabled={busy || !imageCount} onPress={() => void onVerifySelfie()} style={[styles.profileAction, (!imageCount || busy) && styles.profileActionDisabled]}>{activeAction === 'selfie' ? <ActivityIndicator color="#FFD700" size="small" /> : <Icon name="shield-checkmark" size={18} color="#FFD700" />}<Text style={styles.profileActionText}>{activeAction === 'selfie' ? 'Checking...' : profile?.selfieVerified ? 'Verified' : 'Verify selfie'}</Text></TouchableOpacity></View>{!!error && <Text style={styles.authError}>{error}</Text>}
         <TouchableOpacity onPress={() => void onSignOut()} style={styles.textButton}><Text style={styles.textButtonLabel}>Sign out</Text></TouchableOpacity>
       </View>
       <View style={styles.panel}>
@@ -2506,10 +2634,14 @@ function Profile({ account, profile, strength, incognito, busy, error, onUploadI
         <Text style={styles.selectorTitle}>Interests and vibe signals</Text>
         <View style={styles.choiceWrap}>{datingInterests.map((item) => { const active = selectedInterests.includes(item); return <TouchableOpacity key={item} disabled={busy} onPress={() => toggleEditableInterest(item)} style={[styles.choiceChip, active && styles.choiceChipActive]}><Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text></TouchableOpacity>; })}</View>
         {!!detailsNotice && <Text style={styles.validationNudge}>{detailsNotice}</Text>}
-        <TouchableOpacity disabled={busy} onPress={saveEditableDetails} style={styles.distanceSaveButton}><Text style={styles.distanceSaveText}>Save profile details</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityState={{ busy: activeAction === 'details', disabled: busy }} disabled={busy} onPress={saveEditableDetails} style={[styles.distanceSaveButton, busy && styles.actionButtonDisabled]}>
+          <View style={styles.actionButtonContent}>{activeAction === 'details' && <ActivityIndicator color="#FFFFFF" size="small" />}<Text style={styles.distanceSaveText}>{activeAction === 'details' ? 'Saving profile...' : 'Save profile details'}</Text></View>
+        </TouchableOpacity>
         <Text style={styles.kicker}>Dating prompts</Text>
         {promptAnswers.map((item, index) => <View key={item.prompt} style={styles.promptEditor}><Text style={styles.promptEditorLabel}>{item.prompt}</Text><TextInput value={item.answer} onChangeText={(answer) => setPromptAnswers((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, answer } : row))} placeholder="Write a charming answer" placeholderTextColor="rgba(255,255,255,0.42)" style={styles.promptEditorInput} multiline /></View>)}
-        <TouchableOpacity disabled={busy} onPress={() => void onSavePrompts(promptAnswers)} style={styles.boostButton}><Text style={styles.boostText}>Save 7 profile prompts</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityState={{ busy: activeAction === 'prompts', disabled: busy }} disabled={busy} onPress={() => void onSavePrompts(promptAnswers)} style={[styles.boostButton, busy && styles.actionButtonDisabled]}>
+          <View style={styles.actionButtonContent}>{activeAction === 'prompts' && <ActivityIndicator color="#120914" size="small" />}<Text style={styles.boostText}>{activeAction === 'prompts' ? 'Saving prompts...' : 'Save 7 profile prompts'}</Text></View>
+        </TouchableOpacity>
       </View>
       <View style={styles.legalPanel}>
         <Text style={styles.sectionLabel}>Legal and privacy</Text>
@@ -2536,6 +2668,15 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#120914' },
   safeCenter: { flex: 1, backgroundColor: '#120914', alignItems: 'center', justifyContent: 'center', padding: 24 },
   loadingText: { color: '#FFFFFF', fontWeight: '900', marginTop: 14 },
+  actionToast: { position: 'absolute', top: 12, left: 16, right: 16, zIndex: 1000, elevation: 18, minHeight: 68, borderRadius: 8, borderWidth: 1, paddingHorizontal: 13, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 11, shadowColor: '#000000', shadowOpacity: 0.28, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
+  actionToastSuccess: { backgroundColor: '#17251F', borderColor: 'rgba(91,214,145,0.42)' },
+  actionToastError: { backgroundColor: '#2A171D', borderColor: 'rgba(255,111,97,0.48)' },
+  actionToastIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  actionToastIconSuccess: { backgroundColor: '#2DA66A' },
+  actionToastIconError: { backgroundColor: '#E65B62' },
+  actionToastCopy: { flex: 1, minWidth: 0 },
+  actionToastTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  actionToastMessage: { color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '700', lineHeight: 17, marginTop: 2 },
   authSafe: { flex: 1, backgroundColor: '#120914' },
   keyboardAvoider: { flex: 1 },
   authContent: { padding: 20, paddingBottom: 120, flexGrow: 1, justifyContent: 'center' },
@@ -2605,7 +2746,7 @@ const styles = StyleSheet.create({
   profileCard: { width: '100%', borderRadius: 28, overflow: 'hidden', justifyContent: 'flex-end', backgroundColor: '#1E1222' },
   profilePhoto: { borderRadius: 28 },
   photoOverlay: { ...StyleSheet.absoluteFillObject },
-  tapZones: { ...StyleSheet.absoluteFillObject, flexDirection: 'row' },
+  tapZones: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 246, flexDirection: 'row', zIndex: 1 },
   tapZone: { flex: 1 },
   photoDots: { position: 'absolute', left: 12, right: 12, top: 12, flexDirection: 'row', gap: 4 },
   photoDot: { flex: 1, height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.4)' },
@@ -2616,8 +2757,9 @@ const styles = StyleSheet.create({
   pillRow: { flexDirection: 'row', gap: 6, marginBottom: 5 },
   verifiedBadge: { color: '#00F0FF', backgroundColor: 'rgba(0,240,255,0.12)', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5, fontWeight: '900', fontSize: 10 },
   cardBadge: { color: '#120914', backgroundColor: '#FFD700', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, fontWeight: '900', fontSize: 10 },
-  expandCardButton: { position: 'absolute', right: 18, bottom: 178, width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(0,0,0,0.64)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
-  cardCopy: { paddingHorizontal: 18, paddingBottom: 118, paddingTop: 56 },
+  expandCardButtonWrap: { position: 'absolute', right: 10, bottom: 170, width: 66, height: 66, zIndex: 30, elevation: 30, alignItems: 'center', justifyContent: 'center' },
+  expandCardButton: { width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(0,0,0,0.78)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.42)' },
+  cardCopy: { paddingHorizontal: 18, paddingBottom: 118, paddingTop: 56, zIndex: 2 },
   cardTitle: { color: '#FFFFFF', fontSize: 31, fontWeight: '900' },
   cardAge: { color: '#FFFFFF', fontWeight: '700' },
   cardSub: { color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '800', marginTop: 2 },
@@ -2892,14 +3034,29 @@ const styles = StyleSheet.create({
   cardDividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.12)' },
   cardDividerText: { color: 'rgba(255,255,255,0.58)', fontWeight: '900' },
   paymentNotice: { color: '#FFD700', fontWeight: '800', marginTop: 8, marginBottom: 12, textAlign: 'center' },
-  rewindSheetBackdrop: { flex: 1, backgroundColor: 'rgba(4,2,8,0.72)', justifyContent: 'flex-end' },
-  rewindSheetCard: { backgroundColor: '#1E1222', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 22, paddingTop: 14, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)' },
-  rewindSheetIcon: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', marginTop: 5 },
-  rewindSheetEyebrowRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 }, rewindSheetEyebrow: { color: '#FF6F61', fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  rewindPremiumPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: '#FFD700' }, rewindPremiumPillText: { color: '#120914', fontSize: 11, fontWeight: '900' },
-  rewindSheetTitle: { color: '#FFFFFF', fontSize: 25, fontWeight: '900', marginTop: 8 }, rewindSheetBody: { color: 'rgba(255,255,255,0.72)', fontSize: 15, lineHeight: 21, fontWeight: '600', marginTop: 8 },
-  rewindOptionRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 18, paddingVertical: 14, paddingHorizontal: 16, marginTop: 18 }, rewindOption: { flex: 1 }, rewindOptionValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' }, rewindOptionLabel: { color: 'rgba(255,255,255,0.56)', fontSize: 11, fontWeight: '800', marginTop: 3 }, rewindOptionDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.14)', marginHorizontal: 14 },
-  rewindPrimaryButton: { minHeight: 54, borderRadius: 18, backgroundColor: '#FF1493', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18 }, rewindPrimaryText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' }, rewindSecondaryButton: { minHeight: 48, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,215,0,0.35)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 }, rewindSecondaryText: { color: '#FFD700', fontSize: 14, fontWeight: '900' }, rewindLaterButton: { alignItems: 'center', paddingVertical: 14 }, rewindLaterText: { color: 'rgba(255,255,255,0.56)', fontSize: 13, fontWeight: '800' },
+  rewindSheetBackdrop: { flex: 1, backgroundColor: 'rgba(4,2,8,0.82)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
+  rewindSheetCard: { width: '100%', maxWidth: 390, borderRadius: 8, backgroundColor: '#1E1222', borderWidth: 1, borderColor: 'rgba(255,20,147,0.30)', paddingHorizontal: 20, paddingTop: 24, paddingBottom: 14, alignItems: 'center', shadowColor: '#000000', shadowOpacity: 0.42, shadowRadius: 24, shadowOffset: { width: 0, height: 14 }, elevation: 24 },
+  rewindCloseButton: { position: 'absolute', top: 12, right: 12, width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center', zIndex: 2 },
+  rewindVisual: { width: 104, height: 104, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  rewindVisualRingOuter: { width: 104, height: 104, borderRadius: 52, borderWidth: 1, borderColor: 'rgba(255,20,147,0.16)', backgroundColor: 'rgba(255,20,147,0.05)', alignItems: 'center', justifyContent: 'center' },
+  rewindVisualRingInner: { width: 82, height: 82, borderRadius: 41, borderWidth: 1, borderColor: 'rgba(255,111,97,0.24)', backgroundColor: 'rgba(255,111,97,0.06)', alignItems: 'center', justifyContent: 'center' },
+  rewindSheetIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
+  rewindPremiumPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999, backgroundColor: '#FFD700' },
+  rewindPremiumPillText: { color: '#120914', fontSize: 10, fontWeight: '900' },
+  rewindSheetTitle: { color: '#FFFFFF', fontSize: 24, lineHeight: 30, fontWeight: '900', textAlign: 'center', marginTop: 13, maxWidth: 310 },
+  rewindSheetBody: { color: 'rgba(255,255,255,0.68)', fontSize: 14, lineHeight: 20, fontWeight: '700', textAlign: 'center', marginTop: 8, maxWidth: 325 },
+  rewindBenefits: { width: '100%', borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.08)', paddingVertical: 9, marginTop: 18 },
+  rewindBenefitRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  rewindBenefitIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,215,0,0.10)', alignItems: 'center', justifyContent: 'center' },
+  rewindBenefitText: { color: 'rgba(255,255,255,0.86)', fontSize: 13, fontWeight: '800', flex: 1 },
+  rewindPrimaryButton: { width: '100%', minHeight: 54, borderRadius: 8, overflow: 'hidden', marginTop: 18 },
+  rewindPrimaryGradient: { minHeight: 54, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
+  rewindPrimaryText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900', flexShrink: 1, textAlign: 'center' },
+  rewindSecondaryButton: { width: '100%', minHeight: 48, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.30)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 10 },
+  rewindSecondaryText: { color: '#FFD700', fontSize: 14, fontWeight: '900' },
+  rewindTokenPrice: { color: 'rgba(255,255,255,0.52)', fontSize: 12, fontWeight: '800' },
+  rewindLaterButton: { alignItems: 'center', paddingVertical: 13, paddingHorizontal: 24 },
+  rewindLaterText: { color: 'rgba(255,255,255,0.54)', fontSize: 13, fontWeight: '800' },
   paymentSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', justifyContent: 'flex-end' },
   paymentSheetCard: { backgroundColor: '#111823', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, paddingBottom: 30, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   paymentSheetHandle: { width: 48, height: 5, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.24)', alignSelf: 'center', marginBottom: 18 },
@@ -3028,6 +3185,8 @@ const styles = StyleSheet.create({
   ageRangeValue: { color: '#FFD700', fontWeight: '900', fontSize: 16 },
   distanceSaveButton: { marginTop: 10, backgroundColor: '#FF1493', borderRadius: 999, alignItems: 'center', paddingVertical: 12 },
   distanceSaveText: { color: '#FFFFFF', fontWeight: '900' },
+  actionButtonContent: { minHeight: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
+  actionButtonDisabled: { opacity: 0.68 },
   photoSlotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 12 },
   photoSlot: { width: '30.5%', aspectRatio: 0.82, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,20,147,0.25)', backgroundColor: '#2A1A30', alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden' },
   photoSlotMain: { borderColor: '#FFD700', borderWidth: 2 },

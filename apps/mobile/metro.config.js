@@ -6,6 +6,7 @@ const workspaceRoot = path.resolve(projectRoot, '../..');
 const config = getDefaultConfig(projectRoot);
 
 config.watchFolders = [];
+config.maxWorkers = Math.max(1, Number(process.env.METRO_MAX_WORKERS || 2));
 config.resolver = {
   ...(config.resolver || {}),
   nodeModulesPaths: [

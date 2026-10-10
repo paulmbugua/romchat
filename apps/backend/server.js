@@ -222,7 +222,7 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'romchat-backend', time: now() });
 });
 
-app.get('/api/mobile/version', (req, res) => {
+function sendMobileVersion(req, res) {
   const platform = String(req.query.platform || req.get('x-client-platform') || '').toLowerCase();
   const isIos = platform === 'ios';
   const latestBuildNumber = Number.parseInt(
@@ -256,7 +256,11 @@ app.get('/api/mobile/version', (req, res) => {
     androidStoreUrl,
     iosStoreUrl,
   });
-});
+}
+
+app.get('/api/mobile/version', sendMobileVersion);
+// Kept for production builds released before the update endpoint was standardized.
+app.get('/api/romchat/version', sendMobileVersion);
 
 app.get('/api/romchat/bootstrap', (_req, res) => {
   res.json(bootstrap());
