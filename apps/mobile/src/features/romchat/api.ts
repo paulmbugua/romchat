@@ -109,6 +109,12 @@ export const romchatApi = {
       body: JSON.stringify({ matchId, text, viewOnce: options.mode === 'viewOnce', expiresInSeconds: options.mode === 'timed' ? 86400 : null, readReceiptRequested: Boolean(options.readReceiptRequested) }),
     }),
   messages: (matchId: string, token?: string | null) => apiFetch<{ messages: RomChatMessage[]; generatedAt: string }>(`/api/romchat/messages/${encodeURIComponent(matchId)}`, { token }),
+  markMessagesRead: (matchId: string, messageIds: string[], token?: string | null) =>
+    apiFetch<{ matchId: string; messageIds: string[]; readAt: string }>('/api/romchat/messages/read-receipts', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ matchId, messageIds }),
+    }),
   videoRequests: (matchId = 'match_elena') => apiFetch<{ videoRequests: RomChatVideoRequest[] }>(`/api/romchat/video-requests?matchId=${matchId}`),
   createVideoRequest: (matchId: string, senderProfileId: string) =>
     apiFetch<{ videoRequest: RomChatVideoRequest }>('/api/romchat/video-requests', {

@@ -143,7 +143,12 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
 
   const getMessages = useCallback(async (matchId: string) => {
     const result = await romchatApi.messages(matchId, optionsToken);
-    return result.messages || [];
+    const messages = result.messages || [];
+    const unreadMessageIds = messages.filter((message) => !message.readAt).map((message) => message.id);
+    if (unreadMessageIds.length) {
+      void romchatApi.markMessagesRead(matchId, unreadMessageIds, optionsToken).catch(() => undefined);
+    }
+    return messages;
   }, [optionsToken]);
 
   const unlockMessage = useCallback(async (messageId: string) => {

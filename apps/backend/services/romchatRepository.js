@@ -484,6 +484,25 @@ export async function getMessages(matchId = 'match_elena', actorId = null) {
   }, () => []);
 }
 
+export async function markMessagesRead({ matchId = 'match_elena', actorId = 'me', messageIds = [] } = {}) {
+  const ids = Array.isArray(messageIds) ? messageIds.map(String).filter(Boolean) : [];
+  const readAt = now();
+  return withDb(async () => {
+    await getActiveMatch(matchId, actorId);
+    const result = await queryWithRetry(
+      `UPDATE romchat_messages
+       SET read_at = $3
+       WHERE match_id = $1
+         AND sender_id <> $2
+         AND read_at IS NULL
+         AND (cardinality($4::text[]) = 0 OR id = ANY($4::text[]))
+       RETURNING id`,
+      [matchId, actorId, readAt, ids]
+    );
+    return { matchId, messageIds: result.rows.map((row) => row.id), readAt };
+  }, () => ({ matchId, messageIds: ids, readAt }));
+}
+
 export async function getPrivacy() {
   return withDb(async () => {
     const result = await queryWithRetry('SELECT * FROM romchat_privacy_settings WHERE member_id = $1', ['me']);

@@ -34,7 +34,7 @@ import { storage } from '../utils/storage';
 import { romchatAccountApi, romchatBackendHealth, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
 import { apiBaseUrl, ApiRequestError, userFacingErrorMessage } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
-import type { RomanceVibe } from './features/romchat/api';
+import type { RomanceVibe, RomChatMessage } from './features/romchat/api';
 import { ProfileDetailModal, type ProfileDetailData } from './components/ProfileDetailModal';
 
 type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'payment' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
@@ -958,6 +958,8 @@ export default function App() {
           currentUserId={session?.user?.id || 'me'}
           initialProfileId={pendingChatProfileId}
           onInitialProfileHandled={() => setPendingChatProfileId(null)}
+          blockProfile={(profileId) => romchat.block(profileId)}
+          reportProfile={(profileId, reason) => romchat.report(profileId, reason)}
           status={romchat.lastAction}
         />
       );
@@ -1914,13 +1916,18 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfileId, onInitialProfileHandled, status }: {
+type ChatDeliveryStatus = 'pending' | 'delivered' | 'read' | 'received';
+type ChatThreadMessage = { id: string; from: 'You' | 'Them'; text: string; status: ChatDeliveryStatus };
+
+function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfileId, onInitialProfileHandled, blockProfile, reportProfile, status }: {
   profiles: ProfileSeed[];
-  sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean }) => Promise<unknown>;
-  getMessages: (matchId: string) => Promise<Array<{ id: string; senderId?: string; from?: string; text: string; createdAt?: string }>>;
+  sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean }) => Promise<{ message?: RomChatMessage } | null>;
+  getMessages: (matchId: string) => Promise<RomChatMessage[]>;
   currentUserId: string;
   initialProfileId?: string | null;
   onInitialProfileHandled?: () => void;
+  blockProfile: (profileId: string) => Promise<void>;
+  reportProfile: (profileId: string, reason: string) => Promise<void>;
   status: string;
 }) {
   const matchPool = profiles.filter((profile) => Boolean(profile.matchId));
@@ -1928,15 +1935,35 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
   const orderedMatches = [...onlineMatches, ...matchPool.filter((profile) => profile.online !== true)];
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
-  const [threadMessages, setThreadMessages] = useState<Record<string, Array<{ id: string; from: 'You' | 'Them'; text: string; status: string }>>>({});
+  const [threadMessages, setThreadMessages] = useState<Record<string, ChatThreadMessage[]>>({});
   const [contactWarnings, setContactWarnings] = useState<Record<string, boolean>>({});
   const [pendingContactText, setPendingContactText] = useState('');
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
   const selectedMatch = orderedMatches.find((profile) => profile.id === selectedMatchId) || null;
   const visibleThreads = orderedMatches.filter((profile) => `${profile.name} ${profile.city} ${profile.intent} ${profile.tags.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
   const promptChips = selectedMatch ? [`Ask ${selectedMatch.name} about ${selectedMatch.tags[0] || 'her vibe'}`, 'Coffee this weekend?', 'How has your day been?'] : [];
   const activePhoto = selectedMatch?.photos?.[0] ? { uri: resolveMediaUrl(selectedMatch.photos[0]) } : selectedMatch?.photo || require('../assets/icon.png');
   const selectedMessages = selectedMatch ? threadMessages[selectedMatch.id] || [] : [];
+  const selectedProfilePhotos = useMemo(() => selectedMatch ? (selectedMatch.photos || []).map((url) => ({ uri: resolveMediaUrl(url) })).filter((source) => Boolean(source.uri)) : [], [selectedMatch]);
+  const selectedDetailProfile: ProfileDetailData | null = useMemo(() => selectedMatch ? ({
+    id: selectedMatch.id,
+    name: selectedMatch.name,
+    age: selectedMatch.age,
+    city: selectedMatch.city,
+    distanceKm: selectedMatch.distanceKm,
+    intent: selectedMatch.intent,
+    prompt: selectedMatch.prompt,
+    quote: selectedMatch.quote,
+    song: selectedMatch.song,
+    tags: selectedMatch.tags,
+    answers: selectedMatch.answers,
+    photos: selectedProfilePhotos.length ? selectedProfilePhotos : [selectedMatch.photo],
+    photo: selectedProfilePhotos[0] || selectedMatch.photo,
+    color: selectedMatch.color,
+    online: selectedMatch.online,
+    verified: selectedMatch.verified,
+  }) : null, [selectedMatch, selectedProfilePhotos]);
 
   useEffect(() => {
     if (!initialProfileId) return;
@@ -1946,21 +1973,38 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
     onInitialProfileHandled?.();
   }, [initialProfileId, orderedMatches, onInitialProfileHandled]);
 
+  useEffect(() => {
+    setProfileOpen(false);
+  }, [selectedMatchId]);
+
   function looksLikeContactShare(textValue: string) {
     return /(\+?\d[\d\s().-]{6,}\d)|([\w.%+-]+@[\w.-]+\.[A-Za-z]{2,})|(whats\s*app|telegram|snapchat|instagram|ig\b|@\w{3,})/i.test(textValue);
   }
 
   function appendLocalMessage(profileId: string, textValue: string) {
+    const id = `local_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
     setThreadMessages((current) => ({
       ...current,
-      [profileId]: [...(current[profileId] || []), { id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, from: 'You', text: textValue, status: 'Delivered' }],
+      [profileId]: [...(current[profileId] || []), { id, from: 'You', text: textValue, status: 'pending' }],
     }));
+    return id;
   }
 
-  function deliverMessage(textValue: string) {
+  async function deliverMessage(textValue: string) {
     if (!selectedMatch) return;
-    appendLocalMessage(selectedMatch.id, textValue);
-    void sendMessage(textValue, selectedMatch.matchId || `match_${selectedMatch.id}`, { mode: 'standard', readReceiptRequested: false });
+    const profileId = selectedMatch.id;
+    const localId = appendLocalMessage(profileId, textValue);
+    const result = await sendMessage(textValue, selectedMatch.matchId || `match_${selectedMatch.id}`, { mode: 'standard', readReceiptRequested: true });
+    if (!result?.message) return;
+    setThreadMessages((current) => ({
+      ...current,
+      [profileId]: (current[profileId] || []).map((message) => message.id === localId ? {
+        id: result.message!.id,
+        from: 'You',
+        text: result.message!.text || textValue,
+        status: result.message!.readAt ? 'read' : 'delivered',
+      } : message),
+    }));
   }
 
   function sendChatText(textValue: string) {
@@ -1970,7 +2014,7 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
       setPendingContactText(clean);
       return;
     }
-    deliverMessage(clean);
+    void deliverMessage(clean);
   }
 
   function cancelContactShare() {
@@ -1982,7 +2026,7 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
     const textToSend = pendingContactText;
     setPendingContactText('');
     setContactWarnings((current) => ({ ...current, [selectedMatch.id]: true }));
-    deliverMessage(textToSend);
+    void deliverMessage(textToSend);
   }
 
   function submit() {
@@ -1995,36 +2039,42 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
   useEffect(() => {
     if (!selectedMatch?.matchId) return;
     let mounted = true;
-    void getMessages(selectedMatch.matchId)
+    const profileId = selectedMatch.id;
+    const loadMessages = () => getMessages(selectedMatch.matchId!)
       .then((messages) => {
         if (!mounted) return;
-        setThreadMessages((current) => ({
-          ...current,
-          [selectedMatch.id]: messages.map((message) => ({
+        setThreadMessages((current) => {
+          const fetched = messages.map((message): ChatThreadMessage => ({
             id: message.id,
             from: (message.senderId || message.from) === currentUserId ? 'You' : 'Them',
             text: message.text,
-            status: (message.senderId || message.from) === currentUserId ? 'Delivered' : 'Received',
-          })),
-        }));
+            status: (message.senderId || message.from) === currentUserId ? (message.readAt ? 'read' : 'delivered') : 'received',
+          }));
+          const fetchedIds = new Set(fetched.map((message) => message.id));
+          const optimistic = (current[profileId] || []).filter((message) => message.from === 'You' && !fetchedIds.has(message.id));
+          return { ...current, [profileId]: [...fetched, ...optimistic] };
+        });
       })
       .catch(() => undefined);
-    return () => { mounted = false; };
+    void loadMessages();
+    const poller = setInterval(() => void loadMessages(), 5000);
+    return () => { mounted = false; clearInterval(poller); };
   }, [selectedMatch?.id, selectedMatch?.matchId, currentUserId, getMessages]);
 
   if (selectedMatch) {
     return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0} style={[styles.chatScreen, styles.chatKeyboardAvoider]}>
         <ContactSafetySheet visible={Boolean(pendingContactText)} matchName={selectedMatch.name} onReview={cancelContactShare} onSend={confirmContactShare} />
+        <ProfileDetailModal profile={selectedDetailProfile} visible={profileOpen} matched onReply={() => setProfileOpen(false)} onClose={() => setProfileOpen(false)} onPass={() => undefined} onLike={() => undefined} onSuperLike={() => undefined} onBlock={blockProfile} onReport={reportProfile} onFirstImpression={() => undefined} />
         <View style={styles.threadTopBar}>
           <TouchableOpacity onPress={() => setSelectedMatchId(null)} style={styles.chatBackButton}><Icon name="chevron-back" size={20} color="#FFFFFF" /></TouchableOpacity>
-          <View style={styles.chatIdentity}>
+          <TouchableOpacity onPress={() => setProfileOpen(true)} activeOpacity={0.78} style={styles.chatIdentity} accessibilityRole="button" accessibilityLabel={`View ${selectedMatch.name}'s profile`}>
             <Image source={activePhoto} style={styles.chatHeaderAvatar} />
             <View>
               <Text style={styles.chatName}>{selectedMatch.name}</Text>
               <Text style={styles.chatStatus}>{selectedMatch.online === true ? 'Online now' : 'Matched on RomChat'}</Text>
             </View>
-          </View>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={19} color="#FFFFFF" /></TouchableOpacity>
         </View>
 
@@ -2038,7 +2088,7 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
           {selectedMessages.length ? selectedMessages.map((message) => (
             <View key={message.id} style={[styles.bubble, message.from === 'You' ? styles.sent : styles.received]}>
               <Text style={message.from === 'You' ? styles.sentText : styles.receivedText}>{message.text}</Text>
-              <Text style={message.from === 'You' ? styles.sentMeta : styles.receivedMeta}>{message.status}</Text>
+              {message.from === 'You' ? <MessageReceipt status={message.status} /> : null}
             </View>
           )) : (
             <View style={styles.emptyThreadCard}>
@@ -2109,6 +2159,16 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
         })}
         {!visibleThreads.length && <Text style={styles.emptyThreadText}>No matched conversations found. New matches will appear here.</Text>}
       </View>
+    </View>
+  );
+}
+
+function MessageReceipt({ status }: { status: ChatDeliveryStatus }) {
+  const read = status === 'read';
+  const delivered = status === 'delivered' || read;
+  return (
+    <View style={styles.messageReceipt} accessibilityLabel={read ? 'Read' : delivered ? 'Delivered' : 'Sending'}>
+      <Icon name={delivered ? 'checkmark-done' : 'checkmark'} size={16} color={read ? '#35D07F' : 'rgba(255,255,255,0.72)'} />
     </View>
   );
 }
@@ -2921,7 +2981,7 @@ const styles = StyleSheet.create({
   chatScreen: { backgroundColor: '#120914', paddingBottom: 24 },
   chatKeyboardAvoider: { flex: 1, justifyContent: 'flex-end' },
   chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
-  chatIdentity: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  chatIdentity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 },
   chatInboxStrip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1E1222', borderRadius: 20, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)' },
   chatScreenTitle: { color: '#FFFFFF', fontSize: 21, fontWeight: '900' },
   chatTokenPill: { color: '#120914', backgroundColor: '#FFD700', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 11, paddingVertical: 7, fontWeight: '900' },
@@ -2978,6 +3038,7 @@ const styles = StyleSheet.create({
   receivedText: { color: '#FFFFFF', fontWeight: '800', lineHeight: 22 },
   sentMeta: { color: 'rgba(255,255,255,0.68)', fontSize: 11, fontWeight: '900', marginTop: 6 },
   receivedMeta: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '900', marginTop: 6 },
+  messageReceipt: { minHeight: 18, marginTop: 5, alignSelf: 'flex-end', alignItems: 'center', justifyContent: 'center' },
   segment: { flexDirection: 'row', backgroundColor: '#1E1222', borderRadius: 18, padding: 4, marginVertical: 12 },
   segmentItem: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 15 },
   segmentActive: { backgroundColor: '#FF1493' },

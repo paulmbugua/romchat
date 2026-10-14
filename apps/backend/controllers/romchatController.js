@@ -9,6 +9,7 @@ import {
   createVideoRequest as createVideoVibeRequest,
   getBootstrap,
   getMessages,
+  markMessagesRead,
   markLikesSeen,
   getProfiles,
   getPrivacy,
@@ -330,9 +331,18 @@ export function createRomchatController(io) {
       res.status(202).json(event);
     },
     async readReceipts(req, res) {
-      const receipt = { matchId: req.body?.matchId || 'match_elena', messageIds: Array.isArray(req.body?.messageIds) ? req.body.messageIds : [], readAt: new Date().toISOString() };
-      io?.to(receipt.matchId).emit('romchat:read', receipt);
-      res.json(receipt);
+      try {
+        const state = await authStateFor(req);
+        const receipt = await markMessagesRead({
+          matchId: req.body?.matchId || 'match_elena',
+          actorId: state?.user?.id || 'me',
+          messageIds: Array.isArray(req.body?.messageIds) ? req.body.messageIds : [],
+        });
+        io?.to(receipt.matchId).emit('romchat:read', receipt);
+        res.json(receipt);
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async privacy(req, res) {
       res.json({ privacy: await getPrivacy() });
