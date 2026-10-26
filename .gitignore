@@ -85,3 +85,8 @@ apps/web/.next/cache/
 
 # RomChat local development media
 apps/backend/.romchat-media/
+
+# VPS deployment secrets and generated migration artifacts
+deploy/vps/secrets/
+deploy/vps/*.env
+deploy/vps/backups/

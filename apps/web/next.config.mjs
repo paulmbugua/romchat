@@ -14,6 +14,7 @@ console.log('[next] env check', {
 });
 
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   transpilePackages: ['@mindcare/shared'],
   trailingSlash: true,

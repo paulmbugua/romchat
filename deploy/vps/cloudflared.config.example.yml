@@ -1,0 +1,14 @@
+tunnel: REPLACE_WITH_TUNNEL_ID
+credentials-file: /etc/cloudflared/REPLACE_WITH_TUNNEL_ID.json
+metrics: 0.0.0.0:2000
+
+ingress:
+  - hostname: romchat.co.ke
+    service: http://web:3000
+  - hostname: www.romchat.co.ke
+    service: http://web:3000
+  - hostname: server.romchat.co.ke
+    service: http://backend:4009
+  - hostname: admin.romchat.co.ke
+    service: http://admin:8080
+  - service: http_status:404

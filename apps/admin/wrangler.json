@@ -1,17 +1,17 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "grogonsacco-admin",
+  "name": "romchat-admin",
   "compatibility_date": "2026-06-29",
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"
   },
   "vars": {
-    "VITE_BACKEND_URL": "https://server.grogonsacco.co.ke"
+    "VITE_BACKEND_URL": "https://server.romchat.co.ke"
   },
   "routes": [
     {
-      "pattern": "admin.grogonsacco.co.ke",
+      "pattern": "admin.romchat.co.ke",
       "custom_domain": true
     }
   ]

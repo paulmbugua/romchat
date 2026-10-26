@@ -1,0 +1,248 @@
+name: romchat
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+x-restart: &default-restart unless-stopped
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    restart: *default-restart
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging: *default-logging
+
+  redis:
+    image: redis:7.4-alpine
+    restart: *default-restart
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" --no-auth-warning ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging: *default-logging
+
+  minio:
+    image: chrislusf/seaweedfs:3.80
+    restart: *default-restart
+    command: server -dir=/data -s3 -s3.port=9000 -master.port=9333 -volume.port=8080 -filer.port=8888 -ip=minio -ip.bind=0.0.0.0
+    volumes:
+      - media_data:/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+    logging: *default-logging
+
+  minio-init:
+    image: romchat/backup:${RELEASE_SHA:-latest}
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.backup
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for bucket in images-romchat videos-romchat docs-romchat audio-romchat previews-romchat; do
+          aws --endpoint-url http://minio:9000 s3api head-bucket --bucket "$${bucket}" 2>/dev/null ||
+            aws --endpoint-url http://minio:9000 s3api create-bucket --bucket "$${bucket}"
+        done
+    networks: [data]
+    logging: *default-logging
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.backend
+    image: romchat/backend:${RELEASE_SHA:-latest}
+    restart: *default-restart
+    env_file: [secrets/app.env]
+    environment:
+      NODE_ENV: production
+      PORT: 4009
+      RELEASE_SHA: ${RELEASE_SHA:-unknown}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PGSSL: disable
+      DB_STARTUP_REQUIRED: "true"
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      DISABLE_REDIS: "false"
+      ROMCHAT_MEDIA_DRIVER: r2
+      R2_ENDPOINT: http://minio:9000
+      R2_REGION: us-east-1
+      R2_FORCE_PATH_STYLE: "true"
+      R2_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      R2_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      R2_BUCKET_IMAGES: images-romchat
+      R2_BUCKET_VIDEOS: videos-romchat
+      R2_BUCKET_DOCS: docs-romchat
+      R2_BUCKET_AUDIO: audio-romchat
+      R2_BUCKET_PREVIEWS: previews-romchat
+      FRONTEND_URL: https://www.romchat.co.ke
+      WEB_BASE_URL: https://www.romchat.co.ke
+      WEB_BACKEND_URL: https://server.romchat.co.ke
+      BACKEND_URL: https://server.romchat.co.ke
+      PROD_BACKEND_URL: https://server.romchat.co.ke
+      CORS_ALLOWED_ORIGINS: https://romchat.co.ke,https://www.romchat.co.ke,https://admin.romchat.co.ke
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    networks: [data, edge]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4009/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 45s
+    logging: *default-logging
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.web
+      args:
+        NEXT_PUBLIC_BACKEND_URL: https://server.romchat.co.ke
+        NEXT_PUBLIC_APP_ORIGIN: https://www.romchat.co.ke
+        NEXT_PUBLIC_SITE_URL: https://www.romchat.co.ke
+        RELEASE_SHA: ${RELEASE_SHA:-unknown}
+    image: romchat/web:${RELEASE_SHA:-latest}
+    restart: *default-restart
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      RELEASE_SHA: ${RELEASE_SHA:-unknown}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 30s
+    logging: *default-logging
+
+  admin:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.admin
+      args:
+        VITE_BACKEND_URL: https://server.romchat.co.ke
+        RELEASE_SHA: ${RELEASE_SHA:-unknown}
+    image: romchat/admin:${RELEASE_SHA:-latest}
+    restart: *default-restart
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [edge]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+    logging: *default-logging
+
+  backup:
+    image: romchat/backup:${RELEASE_SHA:-latest}
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.backup
+    restart: *default-restart
+    env_file: [secrets/backup.env]
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      MEDIA_ENDPOINT: http://minio:9000
+      MEDIA_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MEDIA_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - backup_data:/backups
+      - ./secrets/age:/run/secrets/age:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    networks: [data, egress]
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /backups/.last-success && test $$(($$(date +%s)-$$(cat /backups/.last-success))) -lt 172800"]
+      interval: 1h
+      timeout: 5s
+      retries: 3
+      start_period: 5m
+    logging: *default-logging
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.1
+    profiles: [cutover]
+    restart: *default-restart
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./secrets/cloudflared:/etc/cloudflared:ro
+    depends_on:
+      web:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "cloudflared", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+networks:
+  data:
+    internal: true
+  edge:
+  egress:
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:
+  backup_data:
