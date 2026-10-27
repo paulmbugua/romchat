@@ -25,14 +25,5 @@
     "NEXT_PUBLIC_API_URL": "https://server.romchat.co.ke",
     "NEXT_PUBLIC_API_BASE_URL": "https://server.romchat.co.ke"
   },
-  "routes": [
-    {
-      "pattern": "romchat.co.ke",
-      "custom_domain": true
-    },
-    {
-      "pattern": "www.romchat.co.ke",
-      "custom_domain": true
-    }
-  ]
+  "routes": []
 }
