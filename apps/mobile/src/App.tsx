@@ -24,7 +24,6 @@ import {
 } from 'react-native';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
-import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LinearGradient } from 'expo-linear-gradient';
 import Slider from '@react-native-community/slider';
@@ -444,53 +443,30 @@ export default function App() {
   }
 
   async function openPaymentCheckout() {
-    if (!paymentSheet?.checkoutUrl) return;
-    try {
-      await WebBrowser.openBrowserAsync(paymentSheet.checkoutUrl);
-    } catch (error) {
-      setPaymentNotice(userFacingErrorMessage(error, 'Unable to open card checkout.'));
-    }
+    setPaymentNotice('Premium purchases will be available through Google Play billing in a future update.');
   }
 
   function openPaymentPage(next: PendingPurchase) {
-    setPaymentNotice('');
-    setPendingPurchase(next);
-    setActiveSection('payment');
+    void next;
+    setPaymentNotice('Premium purchases are temporarily unavailable on Android while Google Play billing is being connected. Basic messaging remains free.');
   }
 
   async function startTokenPurchase(packageId = 'tokens_100', provider: 'mpesa' | 'paystack' = 'mpesa') {
-    try {
-      if (provider === 'mpesa' && !mpesaPhone.trim()) throw new Error('Enter your M-Pesa phone number first.');
-      console.info('[romchat-payment-ui] token:start', { provider, packageId, hasPhone: Boolean(mpesaPhone.trim()) });
-      const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId, phone: provider === 'mpesa' ? mpesaPhone : undefined });
-      if (!payment) throw new Error('Payment could not start.');
-      setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for KES ${payment.amountKes}. Tokens activate automatically after payment confirmation.` : `Paystack card checkout prepared for KES ${payment.amountKes}. Tokens activate after card confirmation.`);
-      showPaymentSheet(payment, provider, 'Token Wallet', `${payment.tokens || 0} RomChat tokens`);
-    } catch (error) { setPaymentNotice(userFacingErrorMessage(error, 'Unable to start token payment.')); }
+    void packageId;
+    void provider;
+    setPaymentNotice('Premium purchases are temporarily unavailable on Android while Google Play billing is being connected.');
   }
 
   async function startPlanPurchase(planId: 'gold' | 'platinum', provider: 'mpesa' | 'paystack' = 'mpesa') {
-    try {
-      if (provider === 'mpesa' && !mpesaPhone.trim()) throw new Error('Enter your M-Pesa phone number first.');
-      console.info('[romchat-payment-ui] subscription:start', { provider, planId, hasPhone: Boolean(mpesaPhone.trim()) });
-      const payment = await romchat.createPayment({ provider, purpose: 'subscription', planId, phone: provider === 'mpesa' ? mpesaPhone : undefined });
-      if (!payment) throw new Error('Payment could not start.');
-      const plan = plans.find((item) => item.id === planId);
-      setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates automatically after payment confirmation.` : `Paystack card checkout prepared for ${plan?.price || `KES ${payment.amountKes}`}. Premium activates after card confirmation.`);
-      showPaymentSheet(payment, provider, `${plan?.name || 'Premium'} plan`, 'Unlimited likes and premium discovery benefits');
-    } catch (error) { setPaymentNotice(userFacingErrorMessage(error, 'Unable to start subscription payment.')); }
+    void planId;
+    void provider;
+    setPaymentNotice('Premium purchases are temporarily unavailable on Android while Google Play billing is being connected.');
   }
 
   async function startSuperLikePurchase(packageId: 'superlikes_15' | 'superlikes_30', provider: 'mpesa' | 'paystack' = 'mpesa') {
-    const count = packageId === 'superlikes_30' ? 30 : 15;
-    try {
-      if (provider === 'mpesa' && !mpesaPhone.trim()) throw new Error('Enter your M-Pesa phone number first.');
-      console.info('[romchat-payment-ui] superlike:start', { provider, packageId, count, hasPhone: Boolean(mpesaPhone.trim()) });
-      const payment = await romchat.createPayment({ provider, purpose: 'tokens', packageId, phone: provider === 'mpesa' ? mpesaPhone : undefined });
-      if (!payment) throw new Error('Payment could not start.');
-      setPaymentNotice(provider === 'mpesa' ? `M-Pesa request created for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after payment confirmation.` : `Paystack checkout prepared for ${count} Super Likes at KES ${payment.amountKes}. Super Likes activate after card confirmation.`);
-      showPaymentSheet(payment, provider, 'Super Likes', `${count} priority Super Likes`);
-    } catch (error) { setPaymentNotice(userFacingErrorMessage(error, 'Unable to start Super Likes payment.')); }
+    void packageId;
+    void provider;
+    setPaymentNotice('Premium purchases are temporarily unavailable on Android while Google Play billing is being connected.');
   }
 
   function openMatchedChatSoon() {
@@ -974,27 +950,7 @@ export default function App() {
       return <GoldPlansScreen paymentNotice={paymentNotice} openPaymentPage={openPaymentPage} />;
     }
     if (section === 'payment') {
-      return (
-        <PaymentPage
-          purchase={pendingPurchase}
-          mpesaPhone={mpesaPhone}
-          setMpesaPhone={setMpesaPhone}
-          paymentNotice={paymentNotice}
-          onBack={() => setActiveSection('premium')}
-          onMpesa={() => {
-            if (!pendingPurchase) return;
-            if (pendingPurchase.kind === 'plan') void startPlanPurchase(pendingPurchase.planId, 'mpesa');
-            else if (pendingPurchase.kind === 'superlikes') void startSuperLikePurchase(pendingPurchase.packageId, 'mpesa');
-            else void startTokenPurchase(pendingPurchase.packageId, 'mpesa');
-          }}
-          onCard={() => {
-            if (!pendingPurchase) return;
-            if (pendingPurchase.kind === 'plan') void startPlanPurchase(pendingPurchase.planId, 'paystack');
-            else if (pendingPurchase.kind === 'superlikes') void startSuperLikePurchase(pendingPurchase.packageId, 'paystack');
-            else void startTokenPurchase(pendingPurchase.packageId, 'paystack');
-          }}
-        />
-      );
+      return <PaymentUnavailableScreen notice={paymentNotice} onBack={() => setActiveSection('premium')} />;
     }
     if (section === 'privacy' || section === 'terms' || section === 'community') {
       return <PolicyScreen section={section} />;
@@ -2295,7 +2251,7 @@ function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, op
         </LinearGradient>
       ))}
       <TouchableOpacity onPress={activateBoost} style={[styles.boostButton, boosted && styles.boostButtonActive]}><Text style={styles.boostText}>{boosted ? 'Spotlight active for 30 minutes' : 'Boost profile for peak hour'}</Text></TouchableOpacity>
-      <Text style={styles.complianceText}>Currency: KES. Select a package, then choose M-Pesa or card on the secure payment page. Store billing can remain enabled for app-store distributions.</Text>
+      <Text style={styles.complianceText}>Premium purchases are temporarily unavailable on Android while Google Play billing is being connected. Basic messaging remains free.</Text>
     </AnimatedSalesPanel>
   );
 }
@@ -2368,6 +2324,26 @@ function AnimatedSalesPanel({ children, style, delay = 0 }: { children: React.Re
   }, [delay, opacity, scale, translateY]);
 
   return <Animated.View style={[style, { opacity, transform: [{ translateY }, { scale }] }]}>{children}</Animated.View>;
+}
+
+function PaymentUnavailableScreen({ notice, onBack }: { notice: string; onBack: () => void }) {
+  return (
+    <View style={styles.purchaseScreen}>
+      <LinearGradient colors={['#FF1493', '#FF6F61']} style={styles.walletHero}>
+        <Text style={styles.kickerDark}>RomChat Premium</Text>
+        <Text style={styles.balance}>Coming soon</Text>
+        <Text style={styles.heroCopyDark}>Premium purchases will be enabled through Google Play billing.</Text>
+      </LinearGradient>
+      <View style={styles.catalogCard}>
+        <Icon name="shield-checkmark" size={34} color="#FFD700" />
+        <Text style={styles.sectionLabel}>Your account is safe</Text>
+        <Text style={styles.paymentNotice}>{notice || 'Premium purchases are temporarily unavailable on Android. Basic messaging remains free.'}</Text>
+        <TouchableOpacity onPress={onBack} style={styles.purchaseContinue}>
+          <Text style={styles.purchaseContinueText}>Continue chatting</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 }
 
 function PaymentPage({ purchase, mpesaPhone, setMpesaPhone, paymentNotice, onBack, onMpesa, onCard }: {
@@ -2477,7 +2453,7 @@ function RewindPremiumSheet({ visible, onClose, onBuyTokens, onUpgrade }: { visi
         <Text style={styles.rewindSheetBody}>Go back to the profile you just passed and decide again, without losing your place.</Text>
         <View style={styles.rewindBenefits}>{benefits.map(([icon, label]) => <View key={label} style={styles.rewindBenefitRow}><View style={styles.rewindBenefitIcon}><Icon name={icon} size={16} color="#FFD700" /></View><Text style={styles.rewindBenefitText}>{label}</Text></View>)}</View>
         <TouchableOpacity onPress={onUpgrade} style={styles.rewindPrimaryButton} accessibilityRole="button"><LinearGradient colors={["#FF1493", "#FF4F88"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.rewindPrimaryGradient}><Icon name="diamond-outline" size={19} color="#FFFFFF" /><Text style={styles.rewindPrimaryText}>Unlock unlimited rewinds</Text><Icon name="arrow-forward" size={18} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
-        <TouchableOpacity onPress={onBuyTokens} style={styles.rewindSecondaryButton}><Text style={styles.rewindSecondaryText}>Browse token packs</Text><Text style={styles.rewindTokenPrice}>from KES 250</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onBuyTokens} style={styles.rewindSecondaryButton}><Text style={styles.rewindSecondaryText}>View premium options</Text><Text style={styles.rewindTokenPrice}>Coming soon on Android</Text></TouchableOpacity>
         <TouchableOpacity onPress={onClose} style={styles.rewindLaterButton}><Text style={styles.rewindLaterText}>Keep swiping</Text></TouchableOpacity>
       </View>
     </View>
