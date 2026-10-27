@@ -238,8 +238,17 @@ services:
 networks:
   data:
     internal: true
+    ipam:
+      config:
+        - subnet: 10.254.249.0/24
   edge:
+    ipam:
+      config:
+        - subnet: 10.254.248.0/24
   egress:
+    ipam:
+      config:
+        - subnet: 10.254.247.0/24
 
 volumes:
   postgres_data:

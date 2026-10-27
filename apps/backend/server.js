@@ -8,6 +8,7 @@ import { Server } from 'socket.io';
 import crypto from 'crypto';
 import romchatRoutes from './routes/romchatRoutes.js';
 import authRoutes from './routes/authRoutes.js';
+import { getDbStatus } from './config/db.js';
 import { localMediaRoot } from './services/romchatMediaStorage.js';
 import { publicErrorMessage, sanitizeErrorPayload, shouldExposeTechnicalErrors } from './utils/publicError.js';
 
@@ -219,7 +220,14 @@ app.get('/', (_req, res) => {
 });
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'romchat-backend', time: now() });
+  const database = getDbStatus();
+  const ok = database.ready;
+  res.status(ok ? 200 : 503).json({
+    ok,
+    service: 'romchat-backend',
+    database: ok ? 'ready' : 'unavailable',
+    time: now(),
+  });
 });
 
 function sendMobileVersion(req, res) {
