@@ -181,4 +181,10 @@ export const romchatApi = {
       method: 'POST',
       body: JSON.stringify({ memberId: 'me', name: 'RomChat member' }),
     }),
+  verifyGooglePlayPurchase: (payload: { productId: string; purchaseToken: string; transactionId?: string | null }, token?: string | null) =>
+    apiFetch<{ verified: boolean; alreadyProcessed: boolean; walletBalance: number; entitlement: { kind: string; amount?: number; planId?: string } }>('/api/romchat/wallet/google-play-purchase', {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
 };

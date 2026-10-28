@@ -37,6 +37,7 @@ import { moderateMediaAsset, moderateTextPayload } from '../services/romchatMode
 import pool, { queryWithRetry } from '../config/db.js';
 import { getAuthState, getMemberMediaContent, loginWithGoogleToken, loginWithPassword, requestPasswordReset, requestSignupOtp, requireRomchatAccount, resetPasswordWithCode, setMainProfilePhoto, deleteMemberMedia, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
 import { publicErrorMessage } from '../utils/publicError.js';
+import { processGooglePlayPurchase } from '../services/googlePlayBillingService.js';
 
 function sendError(res, error) {
   const status = error.status || 500;
@@ -484,6 +485,16 @@ export function createRomchatController(io) {
       try {
         const state = await authStateFor(req);
         res.status(201).json(await topUpWallet({ ...(req.body || {}), memberId: state?.user?.id || 'me' }));
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async googlePlayPurchase(req, res) {
+      try {
+        const state = await authStateFor(req);
+        const memberId = state?.user?.id;
+        if (!memberId) return res.status(401).json({ message: 'Please sign in before completing a purchase.', code: 'AUTH_REQUIRED' });
+        res.status(201).json(await processGooglePlayPurchase({ ...(req.body || {}), memberId }));
       } catch (error) {
         sendError(res, error);
       }

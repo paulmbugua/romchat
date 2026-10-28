@@ -8094,6 +8094,7 @@ __metadata:
     expo-device: "npm:~8.0.10"
     expo-document-picker: "npm:~14.0.8"
     expo-file-system: "npm:~19.0.21"
+    expo-iap: "npm:6.3.0"
     expo-image: "npm:~3.0.11"
     expo-image-picker: "npm:~17.0.10"
     expo-keep-awake: "npm:~15.0.8"
@@ -15215,6 +15216,24 @@ __metadata:
     react: "*"
     react-native: "*"
   checksum: 10c0/a010c42cfd472078dbd8a94df57df9b816bbd4d69ac46aa588cf9f91c8348ebd4b1e00dc2dc0757e4a0c56ddab32455aef230ba697590b021b5d237cc37c4db6
+  languageName: node
+  linkType: hard
+
+"expo-iap@npm:6.3.0":
+  version: 6.3.0
+  resolution: "expo-iap@npm:6.3.0"
+  peerDependencies:
+    "@amazon-devices/keplerscript-appstore-iap-lib": ~2.13.0
+    "@amazon-devices/package-manager-lib": ~1.0.1767254401
+    expo: "*"
+    react: "*"
+    react-native: "*"
+  peerDependenciesMeta:
+    "@amazon-devices/keplerscript-appstore-iap-lib":
+      optional: true
+    "@amazon-devices/package-manager-lib":
+      optional: true
+  checksum: 10c0/44f9b1c5315c14a459b030f638cd03ebcb4ae2004ce93713f7ac33a53071e3bd2aeaa4aafb54a75789602407bd23a3b19ca07df0c9f42b9eafdd4aa6c0445f08
   languageName: node
   linkType: hard
 

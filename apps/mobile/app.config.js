@@ -58,6 +58,7 @@ module.exports = function expoConfig({ config }) {
   const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_ANDROID || '';
   const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || process.env.GOOGLE_CLIENT_ID_IOS || '';
   const GOOGLE_REVERSED_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID || process.env.GOOGLE_REVERSED_CLIENT_ID || '';
+  const GOOGLE_PLAY_BILLING_ENABLED = process.env.EXPO_PUBLIC_GOOGLE_PLAY_BILLING_ENABLED || 'false';
   return {
     ...config,
     owner: 'paulmbugua2',
@@ -133,6 +134,7 @@ module.exports = function expoConfig({ config }) {
       'expo-notifications',
       'expo-web-browser',
       'expo-asset',
+      'expo-iap',
       GOOGLE_WEB_CLIENT_ID && [
         '@react-native-google-signin/google-signin',
         {
@@ -170,6 +172,7 @@ module.exports = function expoConfig({ config }) {
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: GOOGLE_ANDROID_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: GOOGLE_IOS_CLIENT_ID,
       EXPO_PUBLIC_GOOGLE_REVERSED_CLIENT_ID: GOOGLE_REVERSED_CLIENT_ID,
+      EXPO_PUBLIC_GOOGLE_PLAY_BILLING_ENABLED: GOOGLE_PLAY_BILLING_ENABLED,
       ...(EAS_PROJECT_ID ? { EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID, eas: { projectId: EAS_PROJECT_ID } } : {}),
       BACKENDS,
       DEFAULT_BACKEND,

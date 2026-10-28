@@ -26,6 +26,7 @@
         "EXPO_PUBLIC_APP_ENV": "production",
         "EXPO_PUBLIC_ANDROID_PACKAGE": "com.paulmbugua2.romchat1.devicetest",
         "EXPO_PUBLIC_DEFAULT_BACKEND": "prod",
+      "EXPO_PUBLIC_GOOGLE_PLAY_BILLING_ENABLED": "false",
         "EXPO_NO_DOTENV": "1"
       }
     },
@@ -40,6 +41,7 @@
       "env": {
         "EXPO_PUBLIC_APP_ENV": "production",
         "EXPO_PUBLIC_DEFAULT_BACKEND": "prod",
+        "EXPO_PUBLIC_GOOGLE_PLAY_BILLING_ENABLED": "true",
         "EXPO_NO_DOTENV": "1"
       }
     }

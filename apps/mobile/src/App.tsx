@@ -23,6 +23,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Constants from 'expo-constants';
+import { finishTransaction } from 'expo-iap';
 import * as ImagePicker from 'expo-image-picker';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,8 +34,10 @@ import { storage } from '../utils/storage';
 import { romchatAccountApi, romchatBackendHealth, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
 import { apiBaseUrl, ApiRequestError, userFacingErrorMessage } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
-import type { RomanceVibe, RomChatMessage } from './features/romchat/api';
+import { romchatApi, type RomanceVibe, type RomChatMessage } from './features/romchat/api';
 import { ProfileDetailModal, type ProfileDetailData } from './components/ProfileDetailModal';
+import { connectGooglePlayBilling, googlePlayBilling, launchGooglePlayPurchase, listenForGooglePlayPurchases } from './features/romchat/googlePlayBilling';
+import { GOOGLE_PLAY_PRODUCT_IDS } from './features/romchat/billingCatalog';
 
 type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'payment' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
 type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
@@ -237,12 +240,32 @@ export default function App() {
   const [mpesaPhone, setMpesaPhone] = useState('');
   const [pendingPurchase, setPendingPurchase] = useState<PendingPurchase | null>(null);
   const [paymentSheet, setPaymentSheet] = useState<PaymentSheetState | null>(null);
+  const [playProducts, setPlayProducts] = useState<any[]>([]);
   const [rewindSheetVisible, setRewindSheetVisible] = useState(false);
   const [showMatch, setShowMatch] = useState(false);
   const [pendingChatProfileId, setPendingChatProfileId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const appReady = Boolean(session?.token && session.profile && !session.onboarding.needsFirstImage);
   const romchat = useRomChatData(localProfiles, { enabled: appReady, token: session?.token });
+  useEffect(() => {
+    if (!googlePlayBilling.enabled || !session?.token) return undefined;
+    let mounted = true;
+    void connectGooglePlayBilling().then((products) => { if (mounted) setPlayProducts(products); }).catch(() => {
+      if (mounted) setPaymentNotice('Google Play is not ready yet. Please try again in a moment.');
+    });
+    const stop = listenForGooglePlayPurchases(async (purchase) => {
+      if (purchase.purchaseState !== 'purchased' || !purchase.purchaseToken) return;
+      const result = await romchatApi.verifyGooglePlayPurchase({ productId: purchase.productId, purchaseToken: purchase.purchaseToken, transactionId: purchase.transactionId }, session.token);
+      if (mounted) {
+        setTokens(result.walletBalance);
+        if (result.entitlement.planId === 'platinum') setSubscriptionTier('Platinum');
+        if (result.entitlement.planId === 'gold') setSubscriptionTier('Gold');
+        setPaymentNotice(result.alreadyProcessed ? 'This purchase is already active on your account.' : 'Purchase complete. Your RomChat benefits are ready.');
+      }
+      await finishTransaction({ purchase, isConsumable: result.entitlement.kind === 'tokens' });
+    }, (error) => { if (mounted) setPaymentNotice(error.message); });
+    return () => { mounted = false; stop(); };
+  }, [session?.token]);
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipePosition = useRef(new Animated.ValueXY()).current;
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
@@ -452,21 +475,36 @@ export default function App() {
   }
 
   async function startTokenPurchase(packageId = 'tokens_100', provider: 'mpesa' | 'paystack' = 'mpesa') {
-    void packageId;
     void provider;
-    setPaymentNotice('Premium purchases are temporarily unavailable on Android while Google Play billing is being connected.');
+    try {
+      await launchGooglePlayPurchase(GOOGLE_PLAY_PRODUCT_IDS[packageId === 'tokens_350' ? 'tokens350' : packageId === 'tokens_1000' ? 'tokens1000' : 'tokens100']);
+      setPaymentNotice('Google Play checkout opened. Your tokens will appear after payment is confirmed.');
+    } catch (error) {
+      setPaymentNotice(error instanceof Error ? error.message : 'Google Play could not start checkout.');
+    }
   }
 
   async function startPlanPurchase(planId: 'gold' | 'platinum', provider: 'mpesa' | 'paystack' = 'mpesa') {
-    void planId;
     void provider;
-    setPaymentNotice('Premium purchases are temporarily unavailable on Android while Google Play billing is being connected.');
+    try {
+      const productId = planId === 'gold' ? 'romchat_gold' : 'romchat_platinum';
+      const product = playProducts.find((item) => item.id === productId);
+      const offerToken = product?.subscriptionOffers?.[0]?.offerTokenAndroid;
+      await launchGooglePlayPurchase(productId, true, offerToken);
+      setPaymentNotice('Google Play checkout opened. Your membership will activate after confirmation.');
+    } catch (error) {
+      setPaymentNotice(error instanceof Error ? error.message : 'Google Play could not start checkout.');
+    }
   }
 
   async function startSuperLikePurchase(packageId: 'superlikes_15' | 'superlikes_30', provider: 'mpesa' | 'paystack' = 'mpesa') {
-    void packageId;
     void provider;
-    setPaymentNotice('Premium purchases are temporarily unavailable on Android while Google Play billing is being connected.');
+    try {
+      await launchGooglePlayPurchase(packageId === 'superlikes_15' ? GOOGLE_PLAY_PRODUCT_IDS.superLikes15 : GOOGLE_PLAY_PRODUCT_IDS.superLikes30);
+      setPaymentNotice('Google Play checkout opened. Your Super Likes will appear after confirmation.');
+    } catch (error) {
+      setPaymentNotice(error instanceof Error ? error.message : 'Google Play could not start checkout.');
+    }
   }
 
   function openMatchedChatSoon() {
