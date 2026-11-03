@@ -652,14 +652,8 @@ export default function App() {
   }
 
   function superLikeProfile() {
-    openPaymentPage({
-      kind: 'plan',
-      title: 'RomChat Platinum',
-      subtitle: 'Priority likes, weekly boost, Top Picks, unlimited likes, and faster discovery.',
-      amountKes: 2400,
-      planId: 'platinum',
-      accent: 'platinum',
-    });
+    setPaymentNotice('');
+    setActiveSection('superlikes');
   }
 
   const swipeHandlers = useMemo(
@@ -1621,7 +1615,7 @@ function Discover({
               <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><Icon name="close" size={30} color="#FFFFFF" /></TouchableOpacity>
             </View>
             <View style={styles.actionItem}>
-              <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Open Platinum"><Icon name="diamond" size={21} color="#9BC6FF" /></TouchableOpacity>
+              <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Get Super Likes"><Icon name="diamond" size={21} color="#9BC6FF" /></TouchableOpacity>
             </View>
             <View style={styles.actionItem}>
               <TouchableOpacity onPress={likeProfile} style={styles.likeAction} accessibilityLabel="Like profile"><Icon name="heart" size={30} color="#FF1200" /></TouchableOpacity>
@@ -1965,7 +1959,7 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-type ChatDeliveryStatus = 'pending' | 'delivered' | 'read' | 'received';
+type ChatDeliveryStatus = 'pending' | 'failed' | 'delivered' | 'read' | 'received';
 type ChatThreadMessage = { id: string; from: 'You' | 'Them'; text: string; status: ChatDeliveryStatus };
 
 function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfileId, onInitialProfileHandled, blockProfile, reportProfile, status }: {
@@ -2044,7 +2038,13 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
     const profileId = selectedMatch.id;
     const localId = appendLocalMessage(profileId, textValue);
     const result = await sendMessage(textValue, selectedMatch.matchId || `match_${selectedMatch.id}`, { mode: 'standard', readReceiptRequested: true });
-    if (!result?.message) return;
+    if (!result?.message) {
+      setThreadMessages((current) => ({
+        ...current,
+        [profileId]: (current[profileId] || []).map((message) => message.id === localId ? { ...message, status: 'failed' } : message),
+      }));
+      return;
+    }
     setThreadMessages((current) => ({
       ...current,
       [profileId]: (current[profileId] || []).map((message) => message.id === localId ? {
@@ -2106,7 +2106,7 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
       })
       .catch(() => undefined);
     void loadMessages();
-    const poller = setInterval(() => void loadMessages(), 5000);
+    const poller = setInterval(() => void loadMessages(), 2000);
     return () => { mounted = false; clearInterval(poller); };
   }, [selectedMatch?.id, selectedMatch?.matchId, currentUserId, getMessages]);
 
@@ -2214,10 +2214,11 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
 
 function MessageReceipt({ status }: { status: ChatDeliveryStatus }) {
   const read = status === 'read';
+  const failed = status === 'failed';
   const delivered = status === 'delivered' || read;
   return (
-    <View style={styles.messageReceipt} accessibilityLabel={read ? 'Read' : delivered ? 'Delivered' : 'Sending'}>
-      <Icon name={delivered ? 'checkmark-done' : 'checkmark'} size={16} color={read ? '#35D07F' : 'rgba(255,255,255,0.72)'} />
+    <View style={styles.messageReceipt} accessibilityLabel={failed ? 'Not sent' : read ? 'Read' : delivered ? 'Delivered' : 'Sending'}>
+      {failed ? <><Icon name="alert-circle" size={15} color="#FFD166" /><Text style={styles.messageFailedText}>Not sent</Text></> : <Icon name={delivered ? 'checkmark-done' : 'checkmark'} size={16} color={read ? '#35D07F' : 'rgba(255,255,255,0.72)'} />}
     </View>
   );
 }
@@ -2241,34 +2242,55 @@ function SuperLikesScreen({ paymentNotice, openGoldPlans, openPaymentPage }: {
   const [selected, setSelected] = useState<'superlikes_15' | 'superlikes_30'>('superlikes_15');
   const selectedOffer = superLikeOffers.find((item) => item.id === selected) ?? superLikeOffers[0]!;
   return (
-    <View style={styles.purchaseScreen}>
-      <View style={styles.purchaseCloseRow}><Icon name="close" size={34} color="#FFFFFF" /></View>
-      <LinearGradient colors={["#9BC6FF", "#60A5FA"]} style={styles.superStar}><Icon name="star" size={54} color="#FFFFFF" /></LinearGradient>
-      <Text style={styles.superTitle}>Get <Text style={styles.superTitleScript}>Super Likes</Text></Text>
-      <Text style={styles.superCopy}>Stand out with Super Like. You're 3x more likely to get a match.</Text>
+    <View style={[styles.purchaseScreen, styles.superLikeScreen]}>
+      <View style={styles.superHero}>
+        <View style={styles.superStarHalo}>
+          <LinearGradient colors={["#A8CEFF", "#5A8FFF"]} style={styles.superStar}><Icon name="star" size={38} color="#FFFFFF" /></LinearGradient>
+        </View>
+        <Text style={styles.superTitle}>Stand out with a Super Like</Text>
+        <Text style={styles.superCopy}>Your profile moves higher in their Likes and shows that you are genuinely interested.</Text>
+      </View>
+
+      <Text style={styles.superSectionLabel}>Choose a pack</Text>
       <View style={styles.superOfferStack}>
         {superLikeOffers.map((offer) => (
           <TouchableOpacity key={offer.id} onPress={() => setSelected(offer.id)} activeOpacity={0.9} style={[styles.superOffer, selected === offer.id && styles.superOfferActive]}>
-            <View>
-              {!!offer.badge && offer.id !== 'superlikes_15' && <Text style={styles.superOfferBadge}>{offer.badge}</Text>}
-              <Text style={styles.superOfferCount}>{offer.count} Super Likes</Text>
+            {!!offer.badge && <Text style={[styles.superOfferBadge, selected === offer.id && styles.superOfferBadgeActive]}>{offer.badge}</Text>}
+            <View style={[styles.superOfferCheck, selected === offer.id && styles.superOfferCheckActive]}>
+              {selected === offer.id && <Icon name="checkmark" size={15} color="#FFFFFF" />}
             </View>
-            <Text style={styles.superOfferPrice}>KES{offer.unit.toFixed(2)}/ea</Text>
+            <Text style={[styles.superOfferCount, selected === offer.id && styles.superOfferTextActive]}>{offer.count}</Text>
+            <Text style={[styles.superOfferLabel, selected === offer.id && styles.superOfferTextActive]}>Super Likes</Text>
+            <Text style={[styles.superOfferTotal, selected === offer.id && styles.superOfferTextActive]}>KES {offer.total.toLocaleString()}</Text>
+            <Text style={[styles.superOfferPrice, selected === offer.id && styles.superOfferPriceActive]}>KES {offer.unit}/each</Text>
           </TouchableOpacity>
         ))}
       </View>
-      <Text style={styles.orText}>or</Text>
-      <View style={styles.goldInlineCard}>
-        <View><Text style={styles.goldInlineTitle}>Get RomChat Gold</Text><Text style={styles.goldInlineCopy}>Includes 2 Free Super Likes Every Week</Text></View>
-        <TouchableOpacity onPress={openGoldPlans} style={styles.goldSelectButton}><Text style={styles.goldSelectText}>Select</Text></TouchableOpacity>
+
+      <View style={styles.superBenefitRow}>
+        <View style={styles.superBenefitIcon}><Icon name="sparkles" size={18} color="#84B6FF" /></View>
+        <Text style={styles.superBenefitText}>Super Likes are delivered as priority likes, helping you get noticed sooner.</Text>
       </View>
+
       <TouchableOpacity
         onPress={() => openPaymentPage({ kind: 'superlikes', title: `${selectedOffer.count} Super Likes`, subtitle: 'Priority likes that move you higher in matching.', amountKes: selectedOffer.total, packageId: selectedOffer.id, accent: 'blue' })}
-        style={styles.purchaseContinue}
+        activeOpacity={0.88}
+        style={styles.superPurchaseButton}
       >
-        <Text style={styles.purchaseContinueText}>Select</Text>
+        <LinearGradient colors={["#8FC2FF", "#5C8EFF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.superPurchaseGradient}>
+          <Icon name="star" size={19} color="#FFFFFF" />
+          <Text style={styles.superPurchaseText}>Get {selectedOffer.count} Super Likes</Text>
+        </LinearGradient>
       </TouchableOpacity>
+
+      <View style={styles.superDivider}><View style={styles.superDividerLine} /><Text style={styles.superDividerText}>or</Text><View style={styles.superDividerLine} /></View>
+      <View style={styles.goldInlineCard}>
+        <View style={styles.goldInlineIcon}><Icon name="diamond" size={18} color="#FFD700" /></View>
+        <View style={styles.goldInlineCopyWrap}><Text style={styles.goldInlineTitle}>Included with RomChat Gold</Text><Text style={styles.goldInlineCopy}>Get 2 Super Likes every week, plus unlimited likes.</Text></View>
+        <TouchableOpacity onPress={openGoldPlans} style={styles.goldSelectButton}><Icon name="chevron-forward" size={20} color="#FFFFFF" /></TouchableOpacity>
+      </View>
       {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
+      <Text style={styles.superTerms}>Payment is securely processed by Google Play.</Text>
     </View>
   );
 }
@@ -3111,7 +3133,8 @@ const styles = StyleSheet.create({
   receivedText: { color: '#FFFFFF', fontWeight: '800', lineHeight: 22 },
   sentMeta: { color: 'rgba(255,255,255,0.68)', fontSize: 11, fontWeight: '900', marginTop: 6 },
   receivedMeta: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '900', marginTop: 6 },
-  messageReceipt: { minHeight: 18, marginTop: 5, alignSelf: 'flex-end', alignItems: 'center', justifyContent: 'center' },
+  messageReceipt: { minHeight: 18, marginTop: 5, alignSelf: 'flex-end', flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' },
+  messageFailedText: { color: '#FFD166', fontSize: 10, fontWeight: '800' },
   segment: { flexDirection: 'row', backgroundColor: '#1E1222', borderRadius: 18, padding: 4, marginVertical: 12 },
   segmentItem: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 15 },
   segmentActive: { backgroundColor: '#FF1493' },
@@ -3217,21 +3240,44 @@ const styles = StyleSheet.create({
   paymentSecondaryText: { color: '#FFFFFF', fontWeight: '900' },
   purchaseScreen: { backgroundColor: '#111823', borderRadius: 24, padding: 18, paddingBottom: 26, marginBottom: 18 },
   purchaseCloseRow: { height: 42, justifyContent: 'center', alignItems: 'flex-start' },
-  superStar: { width: 108, height: 108, borderRadius: 54, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
-  superTitle: { color: '#AFCBFF', fontSize: 45, fontWeight: '900', textAlign: 'center', marginBottom: 12 },
+  superLikeScreen: { paddingHorizontal: 18, paddingTop: 26, paddingBottom: 22, borderRadius: 8 },
+  superHero: { alignItems: 'center', paddingHorizontal: 8 },
+  superStarHalo: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(132,182,255,0.10)', borderWidth: 1, borderColor: 'rgba(132,182,255,0.20)', marginBottom: 18 },
+  superStar: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', shadowColor: '#73A9FF', shadowOpacity: 0.42, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 9 },
+  superTitle: { color: '#FFFFFF', fontSize: 28, lineHeight: 34, fontWeight: '900', textAlign: 'center' },
   superTitleScript: { fontStyle: 'italic' },
-  superCopy: { color: '#BFD3F8', fontSize: 20, lineHeight: 28, fontWeight: '800', textAlign: 'center', marginBottom: 24 },
-  superOfferStack: { gap: 12 },
-  superOffer: { minHeight: 112, borderRadius: 22, padding: 18, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  superOfferActive: { backgroundColor: '#9BC6FF', borderColor: '#9BC6FF' },
-  superOfferBadge: { color: '#FFFFFF', fontWeight: '900', fontSize: 13, marginBottom: 12 },
-  superOfferCount: { color: '#FFFFFF', fontSize: 25, fontWeight: '900' },
-  superOfferPrice: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
+  superCopy: { color: 'rgba(255,255,255,0.66)', fontSize: 14, lineHeight: 21, fontWeight: '700', textAlign: 'center', marginTop: 8, maxWidth: 330 },
+  superSectionLabel: { color: 'rgba(255,255,255,0.74)', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', marginTop: 24, marginBottom: 10 },
+  superOfferStack: { flexDirection: 'row', gap: 10 },
+  superOffer: { flex: 1, minWidth: 0, height: 168, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 14, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'flex-end' },
+  superOfferActive: { backgroundColor: 'rgba(132,182,255,0.12)', borderColor: '#84B6FF', borderWidth: 2 },
+  superOfferCheck: { position: 'absolute', top: 10, right: 10, width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  superOfferCheckActive: { backgroundColor: '#6B9EFF', borderColor: '#6B9EFF' },
+  superOfferBadge: { position: 'absolute', top: 12, left: 10, color: 'rgba(255,255,255,0.64)', fontWeight: '900', fontSize: 9, textTransform: 'uppercase' },
+  superOfferBadgeActive: { color: '#AFCFFF' },
+  superOfferCount: { color: '#FFFFFF', fontSize: 36, lineHeight: 40, fontWeight: '900' },
+  superOfferLabel: { color: 'rgba(255,255,255,0.76)', fontSize: 12, fontWeight: '800', marginTop: 1 },
+  superOfferTotal: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', marginTop: 12 },
+  superOfferTextActive: { color: '#D9E9FF' },
+  superOfferPrice: { color: 'rgba(255,255,255,0.48)', fontSize: 10, fontWeight: '800', marginTop: 3 },
+  superOfferPriceActive: { color: '#9EC5FF' },
+  superBenefitRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 12, marginTop: 14 },
+  superBenefitIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(132,182,255,0.12)' },
+  superBenefitText: { color: 'rgba(255,255,255,0.72)', flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  superPurchaseButton: { height: 56, borderRadius: 28, overflow: 'hidden', marginTop: 16 },
+  superPurchaseGradient: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingHorizontal: 18 },
+  superPurchaseText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
+  superDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
+  superDividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.09)' },
+  superDividerText: { color: 'rgba(255,255,255,0.42)', fontSize: 11, fontWeight: '800' },
+  superTerms: { color: 'rgba(255,255,255,0.38)', fontSize: 10, lineHeight: 15, fontWeight: '700', textAlign: 'center', marginTop: 14 },
   orText: { color: '#FFFFFF', fontSize: 28, fontStyle: 'italic', fontWeight: '900', textAlign: 'center', marginVertical: 18 },
-  goldInlineCard: { minHeight: 92, borderRadius: 20, padding: 16, backgroundColor: '#0D111A', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  goldInlineTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
-  goldInlineCopy: { color: 'rgba(255,255,255,0.78)', fontSize: 13, fontWeight: '800', marginTop: 6 },
-  goldSelectButton: { backgroundColor: '#EAF0FF', borderRadius: 999, paddingHorizontal: 24, paddingVertical: 12 },
+  goldInlineCard: { minHeight: 72, borderRadius: 8, padding: 12, backgroundColor: '#0D111A', borderWidth: 1, borderColor: 'rgba(255,215,0,0.18)', flexDirection: 'row', alignItems: 'center', gap: 10 },
+  goldInlineIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,215,0,0.10)', alignItems: 'center', justifyContent: 'center' },
+  goldInlineCopyWrap: { flex: 1 },
+  goldInlineTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  goldInlineCopy: { color: 'rgba(255,255,255,0.58)', fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: 3 },
+  goldSelectButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
   goldSelectText: { color: '#120914', fontWeight: '900', fontSize: 16 },
   purchaseContinue: { minHeight: 60, borderRadius: 30, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 22 },
   purchaseContinueText: { color: '#111111', fontWeight: '900', fontSize: 20, textAlign: 'center' },
