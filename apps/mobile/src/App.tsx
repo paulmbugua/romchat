@@ -237,6 +237,8 @@ export default function App() {
   const [boosted, setBoosted] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<PlanName>('Free');
   const [paymentNotice, setPaymentNotice] = useState('');
+  const [billingStatus, setBillingStatus] = useState<'disabled' | 'connecting' | 'ready' | 'unavailable'>(googlePlayBilling.enabled ? 'connecting' : 'disabled');
+  const [purchaseBusy, setPurchaseBusy] = useState(false);
   const [mpesaPhone, setMpesaPhone] = useState('');
   const [pendingPurchase, setPendingPurchase] = useState<PendingPurchase | null>(null);
   const [paymentSheet, setPaymentSheet] = useState<PaymentSheetState | null>(null);
@@ -250,8 +252,17 @@ export default function App() {
   useEffect(() => {
     if (!googlePlayBilling.enabled || !session?.token) return undefined;
     let mounted = true;
-    void connectGooglePlayBilling().then((products) => { if (mounted) setPlayProducts(products); }).catch(() => {
-      if (mounted) setPaymentNotice('Google Play is not ready yet. Please try again in a moment.');
+    setBillingStatus('connecting');
+    void connectGooglePlayBilling().then((products) => {
+      if (!mounted) return;
+      setPlayProducts(products);
+      setBillingStatus(products.length ? 'ready' : 'unavailable');
+      if (!products.length) setPaymentNotice('Google Play could not load the available purchases. Check your connection and try again.');
+    }).catch(() => {
+      if (mounted) {
+        setBillingStatus('unavailable');
+        setPaymentNotice('Google Play could not connect. Check your connection and try again.');
+      }
     });
     const stop = listenForGooglePlayPurchases(async (purchase) => {
       if (purchase.purchaseState !== 'purchased' || !purchase.purchaseToken) return;
@@ -263,7 +274,12 @@ export default function App() {
         setPaymentNotice(result.alreadyProcessed ? 'This purchase is already active on your account.' : 'Purchase complete. Your RomChat benefits are ready.');
       }
       await finishTransaction({ purchase, isConsumable: result.entitlement.kind === 'tokens' });
-    }, (error) => { if (mounted) setPaymentNotice(error.message); });
+    }, (error) => {
+      if (mounted) {
+        setPurchaseBusy(false);
+        setPaymentNotice(error.message || 'Google Play could not complete the purchase. Please try again.');
+      }
+    });
     return () => { mounted = false; stop(); };
   }, [session?.token]);
   const matchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -469,27 +485,67 @@ export default function App() {
     setPaymentNotice('Premium purchases will be available through Google Play billing in a future update.');
   }
 
-  function openPaymentPage(next: PendingPurchase) {
-    void next;
-    setPaymentNotice('Premium purchases are temporarily unavailable on Android while Google Play billing is being connected. Basic messaging remains free.');
+  async function ensurePlayProducts() {
+    if (playProducts.length) return playProducts;
+    setBillingStatus('connecting');
+    const products = await connectGooglePlayBilling();
+    setPlayProducts(products);
+    setBillingStatus(products.length ? 'ready' : 'unavailable');
+    return products;
   }
 
-  async function startTokenPurchase(packageId = 'tokens_100', provider: 'mpesa' | 'paystack' = 'mpesa') {
-    void provider;
+  async function openPaymentPage(next: PendingPurchase) {
+    if (!googlePlayBilling.enabled) {
+      setPaymentNotice('Google Play purchases require the latest RomChat version from the Play Store.');
+      return;
+    }
+    if (purchaseBusy) return;
+    setPurchaseBusy(true);
+    setPaymentNotice('Opening secure Google Play checkout...');
     try {
-      await launchGooglePlayPurchase(GOOGLE_PLAY_PRODUCT_IDS[packageId === 'tokens_350' ? 'tokens350' : packageId === 'tokens_1000' ? 'tokens1000' : 'tokens100']);
+      const products = await ensurePlayProducts();
+      if (next.kind === 'plan') {
+        await startPlanPurchase(next.planId, products);
+      } else if (next.kind === 'superlikes') {
+        await startSuperLikePurchase(next.packageId, products);
+      } else if (next.kind === 'firstImpressions') {
+        const productId = GOOGLE_PLAY_PRODUCT_IDS[next.packageId === 'first_impressions_12' ? 'firstImpressions12' : next.packageId === 'first_impressions_50' ? 'firstImpressions50' : 'firstImpressions3'];
+        await launchAvailableGooglePlayProduct(productId, products);
+      } else {
+        await startTokenPurchase(next.packageId, products);
+      }
+    } catch (error) {
+      setPaymentNotice(error instanceof Error ? error.message : 'Google Play could not start checkout. Please try again.');
+    } finally {
+      setPurchaseBusy(false);
+    }
+  }
+
+  async function launchAvailableGooglePlayProduct(productId: string, products = playProducts) {
+    if (!products.some((item) => item.id === productId)) {
+      throw new Error('This purchase is not available for your Google Play account yet. Please try again shortly.');
+    }
+    await launchGooglePlayPurchase(productId);
+    setPaymentNotice('Google Play checkout opened. Your purchase will appear after payment is confirmed.');
+  }
+
+  async function startTokenPurchase(packageId = 'tokens_100', products = playProducts) {
+    try {
+      const productId = GOOGLE_PLAY_PRODUCT_IDS[packageId === 'tokens_350' ? 'tokens350' : packageId === 'tokens_1000' ? 'tokens1000' : 'tokens100'];
+      await launchAvailableGooglePlayProduct(productId, products);
       setPaymentNotice('Google Play checkout opened. Your tokens will appear after payment is confirmed.');
     } catch (error) {
       setPaymentNotice(error instanceof Error ? error.message : 'Google Play could not start checkout.');
     }
   }
 
-  async function startPlanPurchase(planId: 'gold' | 'platinum', provider: 'mpesa' | 'paystack' = 'mpesa') {
-    void provider;
+  async function startPlanPurchase(planId: 'gold' | 'platinum', products = playProducts) {
     try {
       const productId = planId === 'gold' ? 'romchat_gold' : 'romchat_platinum';
-      const product = playProducts.find((item) => item.id === productId);
+      const product = products.find((item) => item.id === productId);
+      if (!product) throw new Error('This membership is not available for your Google Play account yet. Please try again shortly.');
       const offerToken = product?.subscriptionOffers?.[0]?.offerTokenAndroid;
+      if (!offerToken) throw new Error('Google Play could not load the subscription plan. Please try again shortly.');
       await launchGooglePlayPurchase(productId, true, offerToken);
       setPaymentNotice('Google Play checkout opened. Your membership will activate after confirmation.');
     } catch (error) {
@@ -497,10 +553,9 @@ export default function App() {
     }
   }
 
-  async function startSuperLikePurchase(packageId: 'superlikes_15' | 'superlikes_30', provider: 'mpesa' | 'paystack' = 'mpesa') {
-    void provider;
+  async function startSuperLikePurchase(packageId: 'superlikes_15' | 'superlikes_30', products = playProducts) {
     try {
-      await launchGooglePlayPurchase(packageId === 'superlikes_15' ? GOOGLE_PLAY_PRODUCT_IDS.superLikes15 : GOOGLE_PLAY_PRODUCT_IDS.superLikes30);
+      await launchAvailableGooglePlayProduct(packageId === 'superlikes_15' ? GOOGLE_PLAY_PRODUCT_IDS.superLikes15 : GOOGLE_PLAY_PRODUCT_IDS.superLikes30, products);
       setPaymentNotice('Google Play checkout opened. Your Super Likes will appear after confirmation.');
     } catch (error) {
       setPaymentNotice(error instanceof Error ? error.message : 'Google Play could not start checkout.');
@@ -979,7 +1034,7 @@ export default function App() {
       );
     }
     if (section === 'premium') {
-      return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} openPaymentPage={openPaymentPage} />;
+      return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} billingStatus={billingStatus} purchaseBusy={purchaseBusy} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} openPaymentPage={openPaymentPage} />;
     }
     if (section === 'superlikes') {
       return <SuperLikesScreen paymentNotice={paymentNotice} openGoldPlans={() => setActiveSection('goldPlans')} openPaymentPage={openPaymentPage} />;
@@ -1109,7 +1164,7 @@ export default function App() {
         )}
       </ScrollView>
       <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
-      <RewindPremiumSheet visible={rewindSheetVisible} onClose={() => setRewindSheetVisible(false)} onBuyTokens={() => { setRewindSheetVisible(false); void startTokenPurchase('tokens_100', 'mpesa'); openTokenStore(); }} onUpgrade={() => { setRewindSheetVisible(false); setActiveSection('premium'); }} />
+      <RewindPremiumSheet visible={rewindSheetVisible} onClose={() => setRewindSheetVisible(false)} onBuyTokens={() => { setRewindSheetVisible(false); void openPaymentPage({ kind: 'tokens', title: '100 tokens', subtitle: 'Use tokens for rewinds, roses, and premium actions.', amountKes: 250, packageId: 'tokens_100', accent: 'pink' }); openTokenStore(); }} onUpgrade={() => { setRewindSheetVisible(false); setActiveSection('premium'); }} />
       <ActionFeedbackToast feedback={actionFeedback} onDismiss={() => setActionFeedback(null)} />
       <FooterNav active="swipe" setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} likesReceivedCount={visibleLikesReceivedCount} />
     </SafeAreaView>
@@ -2255,8 +2310,8 @@ function GoldPlansScreen({ paymentNotice, openPaymentPage }: {
   );
 }
 
-function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, openPaymentPage }: {
-  tokens: number; boosted: boolean; activePlan: PlanName; paymentNotice: string; activateBoost: () => void; openPaymentPage: (purchase: PendingPurchase) => void;
+function Premium({ tokens, boosted, activePlan, paymentNotice, billingStatus, purchaseBusy, activateBoost, openPaymentPage }: {
+  tokens: number; boosted: boolean; activePlan: PlanName; paymentNotice: string; billingStatus: 'disabled' | 'connecting' | 'ready' | 'unavailable'; purchaseBusy: boolean; activateBoost: () => void; openPaymentPage: (purchase: PendingPurchase) => void;
 }) {
   return (
     <AnimatedSalesPanel>
@@ -2270,8 +2325,8 @@ function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, op
             {!!pack.badge && <Text style={styles.packageBadge}>{pack.badge}</Text>}
             <View style={styles.packageTopRow}><Text style={styles.packageAmount}>{pack.amount}</Text><Text style={styles.packagePrice}>{pack.price}</Text></View>
             <Text style={styles.packageUnit}>{pack.unit}</Text>
-            <TouchableOpacity onPress={() => openPaymentPage({ kind: 'tokens', title: `${pack.amount} tokens`, subtitle: `${pack.unit} for roses, rewinds, unlocks, and Super Likes.`, amountKes, packageId: pack.id, accent: pack.badge ? 'gold' : 'pink' })} style={styles.packageSelectButton}>
-              <Text style={styles.packageSelectText}>Select</Text>
+            <TouchableOpacity disabled={purchaseBusy} onPress={() => openPaymentPage({ kind: 'tokens', title: `${pack.amount} tokens`, subtitle: `${pack.unit} for roses, rewinds, unlocks, and Super Likes.`, amountKes, packageId: pack.id, accent: pack.badge ? 'gold' : 'pink' })} style={[styles.packageSelectButton, purchaseBusy && styles.purchaseButtonDisabled]}>
+              <Text style={styles.packageSelectText}>{purchaseBusy ? 'Please wait' : 'Select'}</Text>
             </TouchableOpacity>
           </View>
         );
@@ -2283,13 +2338,17 @@ function Premium({ tokens, boosted, activePlan, paymentNotice, activateBoost, op
         <LinearGradient key={plan.name} colors={plan.name === 'Gold' ? ['#FF6F61', '#FF1493'] : ['#111823', '#2B2350', '#111111']} style={[styles.planCard, plan.name === 'Platinum' && styles.platinumPlanCard, activePlan === plan.name && styles.planCardActive]}>
           <View style={styles.planHeader}><View><Text style={styles.planName}>{plan.name}</Text><Text style={styles.planSubline}>{plan.name === 'Platinum' ? 'Priority discovery for serious matches' : 'Premium essentials for more control'}</Text></View><Text style={styles.planPrice}>{plan.price}</Text></View>
           <View style={styles.planPerkGrid}>{plan.perks.map((perk) => <View key={perk} style={styles.planPerkPill}><Icon name="checkmark" size={14} color="#120914" /><Text style={styles.planPerkPillText}>{perk}</Text></View>)}</View>
-          <TouchableOpacity onPress={() => openPaymentPage({ kind: 'plan', title: `RomChat ${plan.name}`, subtitle: plan.name === 'Platinum' ? 'Priority likes, weekly boost, Top Picks, and unlimited likes.' : 'Unlimited likes, Likes Sent, Top Picks, and rewinds.', amountKes: plan.amountKes, planId: plan.id, accent: plan.name === 'Platinum' ? 'platinum' : 'gold' })} style={[styles.planSelectButton, plan.name === 'Platinum' && styles.platinumSelectButton]}>
-            <Text style={styles.planSelectText}>Select</Text>
+          <TouchableOpacity disabled={purchaseBusy} onPress={() => openPaymentPage({ kind: 'plan', title: `RomChat ${plan.name}`, subtitle: plan.name === 'Platinum' ? 'Priority likes, weekly boost, Top Picks, and unlimited likes.' : 'Unlimited likes, Likes Sent, Top Picks, and rewinds.', amountKes: plan.amountKes, planId: plan.id, accent: plan.name === 'Platinum' ? 'platinum' : 'gold' })} style={[styles.planSelectButton, plan.name === 'Platinum' && styles.platinumSelectButton, purchaseBusy && styles.purchaseButtonDisabled]}>
+            <Text style={styles.planSelectText}>{purchaseBusy ? 'Opening Google Play...' : 'Select'}</Text>
           </TouchableOpacity>
         </LinearGradient>
       ))}
       <TouchableOpacity onPress={activateBoost} style={[styles.boostButton, boosted && styles.boostButtonActive]}><Text style={styles.boostText}>{boosted ? 'Spotlight active for 30 minutes' : 'Boost profile for peak hour'}</Text></TouchableOpacity>
-      <Text style={styles.complianceText}>Premium purchases are temporarily unavailable on Android while Google Play billing is being connected. Basic messaging remains free.</Text>
+      <View style={styles.billingStatusCard}>
+        {billingStatus === 'connecting' && <ActivityIndicator size="small" color="#FFD700" />}
+        <Icon name={billingStatus === 'ready' ? 'shield-checkmark' : billingStatus === 'unavailable' ? 'refresh-circle' : 'logo-google-playstore'} size={20} color={billingStatus === 'ready' ? '#4ADE80' : '#FFD700'} />
+        <Text style={styles.complianceText}>{billingStatus === 'ready' ? 'Secure purchases powered by Google Play.' : billingStatus === 'connecting' ? 'Connecting securely to Google Play...' : billingStatus === 'unavailable' ? 'Google Play is unavailable right now. Tap Select to retry.' : 'Install the latest Play Store version to make purchases.'}</Text>
+      </View>
     </AnimatedSalesPanel>
   );
 }
@@ -3176,6 +3235,8 @@ const styles = StyleSheet.create({
   goldSelectText: { color: '#120914', fontWeight: '900', fontSize: 16 },
   purchaseContinue: { minHeight: 60, borderRadius: 30, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 22 },
   purchaseContinueText: { color: '#111111', fontWeight: '900', fontSize: 20, textAlign: 'center' },
+  purchaseButtonDisabled: { opacity: 0.65 },
+  billingStatusCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 14, marginTop: 14, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)' },
   goldHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   goldBrand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   goldBrandText: { color: '#FFFFFF', fontSize: 26, fontWeight: '900' },

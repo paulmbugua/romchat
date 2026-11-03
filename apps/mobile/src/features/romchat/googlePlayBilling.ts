@@ -16,12 +16,18 @@ export const googlePlayBilling = {
 export async function connectGooglePlayBilling() {
   if (!googlePlayBilling.enabled) return [] as ProductOrSubscription[];
   await initConnection();
-  return (await fetchProducts({ skus: [...googlePlayBilling.productIds, ...googlePlayBilling.subscriptionIds], type: 'all' })) || [];
+  const [products, subscriptions] = await Promise.all([
+    fetchProducts({ skus: [...googlePlayBilling.productIds], type: 'in-app' }),
+    fetchProducts({ skus: [...googlePlayBilling.subscriptionIds], type: 'subs' }),
+  ]);
+  return [...(products || []), ...(subscriptions || [])];
 }
 
 export function listenForGooglePlayPurchases(onPurchase: (purchase: Purchase) => Promise<void>, onError: (error: Error) => void) {
   if (!googlePlayBilling.enabled) return () => undefined;
-  const update = purchaseUpdatedListener((purchase) => { void onPurchase(purchase); });
+  const update = purchaseUpdatedListener((purchase) => {
+    void onPurchase(purchase).catch((error) => onError(error instanceof Error ? error : new Error('We could not confirm this purchase. Please try again.')));
+  });
   const error = purchaseErrorListener((purchaseError) => onError(new Error(purchaseError.message || 'Google Play purchase failed.')));
   return () => { update.remove(); error.remove(); void endConnection(); };
 }
