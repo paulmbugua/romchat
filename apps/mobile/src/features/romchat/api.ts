@@ -102,11 +102,11 @@ export const romchatApi = {
       token,
       body: JSON.stringify({ profileId, action, forceMatch: Boolean(options.forceMatch) }),
     }),
-  sendMessage: (text: string, matchId = 'match_elena', options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean } = {}, token?: string | null) =>
+  sendMessage: (text: string, matchId = 'match_elena', options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean; priority?: boolean } = {}, token?: string | null) =>
     apiFetch<{ message: RomChatMessage; trustInsight: string }>('/api/romchat/messages', {
       method: 'POST',
       token,
-      body: JSON.stringify({ matchId, text, viewOnce: options.mode === 'viewOnce', expiresInSeconds: options.mode === 'timed' ? 86400 : null, readReceiptRequested: Boolean(options.readReceiptRequested) }),
+      body: JSON.stringify({ matchId, text, viewOnce: options.mode === 'viewOnce', expiresInSeconds: options.mode === 'timed' ? 86400 : null, readReceiptRequested: Boolean(options.readReceiptRequested), priority: Boolean(options.priority) }),
     }),
   messages: (matchId: string, token?: string | null) => apiFetch<{ messages: RomChatMessage[]; generatedAt: string }>(`/api/romchat/messages/${encodeURIComponent(matchId)}`, { token }),
   markMessagesRead: (matchId: string, messageIds: string[], token?: string | null) =>
@@ -121,21 +121,30 @@ export const romchatApi = {
       method: 'POST',
       body: JSON.stringify({ matchId, senderProfileId }),
     }),
-  unlockMessage: (messageId: string) =>
+  unlockMessage: (messageId: string, token?: string | null) =>
     apiFetch<{ message: RomChatMessage; spent: number; wallet: { balance: number; currency: string } }>(`/api/romchat/messages/${messageId}/unlock`, {
       method: 'POST',
+      token,
       body: JSON.stringify({}),
     }),
-  unlockVideoRequest: (requestId: string) =>
+  unlockVideoRequest: (requestId: string, token?: string | null) =>
     apiFetch<{ videoRequest: RomChatVideoRequest; spent: number; wallet: { balance: number; currency: string } }>(`/api/romchat/video-requests/${requestId}/unlock`, {
       method: 'POST',
+      token,
       body: JSON.stringify({}),
     }),
   revenue: () => apiFetch<{ revenue: Record<string, { costTokens: number; title: string; description: string }> }>('/api/romchat/revenue'),
-  sendGift: (giftId: string, matchId = 'match_elena') =>
-    apiFetch('/api/romchat/gifts', {
+  sendGift: (giftId: string, matchId = 'match_elena', token?: string | null) =>
+    apiFetch<{ gift: unknown; wallet: { balance: number; currency: string } }>('/api/romchat/gifts', {
       method: 'POST',
+      token,
       body: JSON.stringify({ giftId, matchId }),
+    }),
+  spendTokens: (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message', targetId: string, token?: string | null) =>
+    apiFetch<{ spent: number; alreadyProcessed?: boolean; wallet: { balance: number; currency: string } }>('/api/romchat/wallet/spend', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ feature, targetId }),
     }),
   boost: () =>
     apiFetch('/api/romchat/boosts', {

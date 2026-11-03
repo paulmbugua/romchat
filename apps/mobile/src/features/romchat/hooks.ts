@@ -129,7 +129,7 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
   }, [options.token]);
 
   const optionsToken = options.token;
-  const sendMessage = useCallback(async (text: string, matchId?: string, options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean } = {}) => {
+  const sendMessage = useCallback(async (text: string, matchId?: string, options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean; priority?: boolean } = {}) => {
     setLastAction('Sending message');
     try {
       const result = await romchatApi.sendMessage(text, matchId, options, optionsToken);
@@ -154,7 +154,7 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
   const unlockMessage = useCallback(async (messageId: string) => {
     setLastAction('Unlocking private media');
     try {
-      const result = await romchatApi.unlockMessage(messageId);
+      const result = await romchatApi.unlockMessage(messageId, optionsToken);
       setPaidMessages((messages) => messages.map((message) => message.id === messageId ? { ...message, ...result.message, locked: false, unlockedByActor: true } : message));
       setLastAction(`Unlocked media for ${result.spent} tokens`);
       return result;
@@ -163,12 +163,12 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
       setLastAction('Media unlocked locally');
       return null;
     }
-  }, []);
+  }, [optionsToken]);
 
   const unlockVideoRequest = useCallback(async (requestId: string) => {
     setLastAction('Unlocking video request');
     try {
-      const result = await romchatApi.unlockVideoRequest(requestId);
+      const result = await romchatApi.unlockVideoRequest(requestId, optionsToken);
       setVideoRequests((requests) => requests.map((request) => request.id === requestId ? { ...request, ...result.videoRequest, status: 'unlocked' } : request));
       setLastAction(`Video unlocked for ${result.spent} tokens`);
       return result;
@@ -177,17 +177,27 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
       setLastAction('Video request unlocked locally');
       return null;
     }
-  }, []);
+  }, [optionsToken]);
 
   const sendGift = useCallback(async (giftId: string, matchId?: string) => {
     setLastAction('Sending gift');
     try {
-      await romchatApi.sendGift(giftId, matchId);
+      const result = await romchatApi.sendGift(giftId, matchId, optionsToken);
+      setBootstrap((current) => current ? { ...current, wallet: result.wallet } : current);
       setLastAction('Gift delivered');
+      return result;
     } catch {
-      setLastAction('Gift queued locally');
+      setLastAction('Gift could not be sent');
+      return null;
     }
-  }, []);
+  }, [optionsToken]);
+
+  const spendTokens = useCallback(async (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message', targetId: string) => {
+    const result = await romchatApi.spendTokens(feature, targetId, optionsToken);
+    setBootstrap((current) => current ? { ...current, wallet: result.wallet } : current);
+    setLastAction(result.alreadyProcessed ? 'Already unlocked' : `${result.spent} tokens used`);
+    return result;
+  }, [optionsToken]);
 
   const createVideoRequest = useCallback(async (matchId: string, senderProfileId: string) => {
     setLastAction('Requesting video vibe');
@@ -281,5 +291,5 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, markLikesSeen, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, boost, updatePrivacy, block, report, reportMessage, setVibeMembership, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, markLikesSeen, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, spendTokens, boost, updatePrivacy, block, report, reportMessage, setVibeMembership, verify };
 }

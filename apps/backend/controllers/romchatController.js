@@ -21,6 +21,7 @@ import {
   premiumPlans,
   tokenPackages,
   sendGift,
+  spendFeatureTokens,
   sendMessage,
   unlockPaidMessage,
   unlockVideoRequest,
@@ -431,7 +432,8 @@ export function createRomchatController(io) {
     },
     async unlockMessage(req, res) {
       try {
-        const result = await unlockPaidMessage(req.params.messageId);
+        const user = await requireRomchatAccount(req);
+        const result = await unlockPaidMessage(req.params.messageId, user.id);
         io?.to(result.message.matchId).emit('romchat:unlock', { targetType: 'message', targetId: req.params.messageId });
         res.status(201).json(result);
       } catch (error) {
@@ -440,7 +442,8 @@ export function createRomchatController(io) {
     },
     async unlockVideo(req, res) {
       try {
-        const result = await unlockVideoRequest(req.params.requestId);
+        const user = await requireRomchatAccount(req);
+        const result = await unlockVideoRequest(req.params.requestId, user.id);
         io?.to(result.videoRequest.matchId).emit('romchat:unlock', { targetType: 'video_request', targetId: req.params.requestId });
         res.status(201).json(result);
       } catch (error) {
@@ -470,7 +473,8 @@ export function createRomchatController(io) {
     },
     async gift(req, res) {
       try {
-        const result = await sendGift(req.body || {});
+        const user = await requireRomchatAccount(req);
+        const result = await sendGift({ ...(req.body || {}), memberId: user.id });
         io?.to(result.gift.matchId).emit('romchat:gift', result.gift);
         res.status(201).json(result);
       } catch (error) {
@@ -480,6 +484,14 @@ export function createRomchatController(io) {
     async wallet(req, res) {
       const state = await authStateFor(req);
       res.json(await getWallet(state?.user?.id || 'me'));
+    },
+    async spendTokens(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        res.status(201).json(await spendFeatureTokens({ ...(req.body || {}), memberId: user.id }));
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async topUp(req, res) {
       try {

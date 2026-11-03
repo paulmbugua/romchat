@@ -54,6 +54,7 @@ export default function romchatRoutes(io) {
   router.post('/boosts', controller.boost);
   router.post('/gifts', controller.gift);
   router.get('/wallet', controller.wallet);
+  router.post('/wallet/spend', controller.spendTokens);
   router.post('/wallet/topups', controller.topUp);
   router.post('/wallet/google-play-purchase', controller.googlePlayPurchase);
   router.post('/payments', controller.createPayment);

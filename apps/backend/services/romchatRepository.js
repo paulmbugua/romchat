@@ -516,10 +516,11 @@ export async function getPrivacy() {
   }, () => ({ incognito: true, screenshotsBlocked: true, visibleToLikedOnly: true, disappearingDefaultSeconds: 86400 }));
 }
 
-export async function getWallet() {
+export async function getWallet(memberId = 'me') {
+  const ownerId = memberId || 'me';
   return withDb(async () => {
-    const balance = await queryWithRetry('SELECT COALESCE(SUM(amount), 0) AS balance FROM romchat_wallet_ledger WHERE member_id = $1', ['me']);
-    const ledger = await queryWithRetry('SELECT * FROM romchat_wallet_ledger WHERE member_id = $1 ORDER BY created_at DESC LIMIT 20', ['me']);
+    const balance = await queryWithRetry('SELECT COALESCE(SUM(amount), 0) AS balance FROM romchat_wallet_ledger WHERE member_id = $1', [ownerId]);
+    const ledger = await queryWithRetry('SELECT * FROM romchat_wallet_ledger WHERE member_id = $1 ORDER BY created_at DESC LIMIT 20', [ownerId]);
     return {
       balance: Number(balance.rows[0]?.balance || 0),
       currency: 'KES',
@@ -621,7 +622,7 @@ export async function getBootstrap({ catalogueAccess = 1, viewerId = null, verif
     getProfiles({ verifiedOnly, catalogueAccess, viewerId }),
     getMessages('match_elena'),
     getPrivacy(),
-    getWallet(),
+    getWallet(viewerId || 'me'),
     getLikesSummary(viewerId),
     getActiveSubscription(viewerId),
     getRomanceVibes(viewerId),
@@ -895,6 +896,7 @@ export async function activateBoost(payload = {}) {
 }
 
 export async function sendGift(payload = {}) {
+  const memberId = payload.memberId || 'me';
   const gift = gifts.find((item) => item.id === payload.giftId);
   if (!gift) {
     const error = new Error('Valid giftId is required.');
@@ -904,14 +906,17 @@ export async function sendGift(payload = {}) {
   const entry = { id: id('gift'), giftId: gift.id, matchId: payload.matchId || 'match_elena', note: payload.note || '', tokenCost: gift.tokenCost, redeemableUsd: gift.redeemableUsd, createdAt: now() };
   return withDb(async () => {
     const match = await getActiveMatch(entry.matchId);
+    const spend = await spendTokens({ memberId, targetType: 'read_receipt', targetId: `gift:${entry.id}`, costTokens: gift.tokenCost, title: `Gift: ${gift.name}` });
     await queryWithRetry(
       'INSERT INTO romchat_gifts (id, gift_id, match_id, sender_id, note, token_cost, redeemable_usd) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [entry.id, entry.giftId, entry.matchId, 'me', entry.note, entry.tokenCost, entry.redeemableUsd]
+      [entry.id, entry.giftId, entry.matchId, memberId, entry.note, entry.tokenCost, entry.redeemableUsd]
     );
-    await queryWithRetry('INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)', [id('wl'), 'me', `Gift: ${gift.name}`, -gift.tokenCost, { giftId: gift.id }]);
     await createNotification({ memberId: match.profile_id, matchId: entry.matchId, type: 'gift', title: `RomChat gift: ${gift.name}`, body: entry.note || 'A match sent you a gift.', metadata: { giftId: gift.id, giftEntryId: entry.id } });
-    return { gift: { ...entry, recipientId: match.profile_id, notificationSent: true }, wallet: await getWallet() };
-  }, () => ({ gift: entry, wallet: { balance: Math.max(0, 146 - gift.tokenCost), currency: 'KES', ledger: [] } }));
+    return { gift: { ...entry, recipientId: match.profile_id, notificationSent: true }, wallet: spend.wallet };
+  }, (error) => {
+    if (error?.status) throw error;
+    return { gift: entry, wallet: { balance: Math.max(0, 146 - gift.tokenCost), currency: 'KES', ledger: [] } };
+  });
 }
 
 export async function createLockedMediaPreview({ matchId = 'match_elena', senderId = 'elena', text = 'I sent a private voice note preview. Basic text stays free; unlock this optional media when the vibe feels right.', mediaUrl = 'romchat://demo/voice/aisha-saturday-note', mediaType = 'voice', unlockCostTokens = 18 } = {}) {
@@ -973,25 +978,27 @@ export async function getVideoRequests(matchId = 'match_elena') {
   }, () => []);
 }
 
-async function spendTokens({ targetType, targetId, costTokens, title }) {
+async function spendTokens({ memberId = 'me', targetType, targetId, costTokens, title }) {
+  const ownerId = memberId || 'me';
   const cost = Number(costTokens || 0);
-  if (cost <= 0) return { spent: 0, wallet: await getWallet() };
-  const wallet = await getWallet();
+  if (cost <= 0) return { spent: 0, wallet: await getWallet(ownerId) };
+  const wallet = await getWallet(ownerId);
   if (Number(wallet.balance || 0) < cost) {
     const error = new Error('Not enough RomChat tokens.');
     error.status = 402;
     error.code = 'INSUFFICIENT_TOKENS';
     throw error;
   }
-  await queryWithRetry(
+  const unlock = await queryWithRetry(
     'INSERT INTO romchat_token_unlocks (id, member_id, target_type, target_id, cost_tokens) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (member_id, target_type, target_id) DO NOTHING',
-    [id('unlock'), 'me', targetType, targetId, cost]
+    [id('unlock'), ownerId, targetType, targetId, cost]
   );
-  await queryWithRetry('INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)', [id('wl'), 'me', title, -cost, { targetType, targetId }]);
-  return { spent: cost, wallet: await getWallet() };
+  if (!unlock.rowCount) return { spent: 0, alreadyProcessed: true, wallet: await getWallet(ownerId) };
+  await queryWithRetry('INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)', [id('wl'), ownerId, title, -cost, { targetType, targetId }]);
+  return { spent: cost, alreadyProcessed: false, wallet: await getWallet(ownerId) };
 }
 
-export async function unlockPaidMessage(messageId) {
+export async function unlockPaidMessage(messageId, memberId = 'me') {
   return withDb(async () => {
     const result = await queryWithRetry('SELECT * FROM romchat_messages WHERE id = $1', [messageId]);
     const row = result.rows[0];
@@ -1000,16 +1007,17 @@ export async function unlockPaidMessage(messageId) {
       error.status = 404;
       throw error;
     }
-    const spend = await spendTokens({ targetType: 'message', targetId: messageId, costTokens: row.unlock_cost_tokens, title: 'Unlocked private media' });
+    const spend = await spendTokens({ memberId, targetType: 'message', targetId: messageId, costTokens: row.unlock_cost_tokens, title: 'Unlocked private media' });
     await queryWithRetry('UPDATE romchat_messages SET unlocked_by_actor = true WHERE id = $1', [messageId]);
     return { message: { ...fromMessageRow({ ...row, unlocked_by_actor: true }), unlockedByActor: true }, ...spend };
-  }, () => {
+  }, (error) => {
+    if (error?.status) throw error;
     const message = fallbackMessages.find((item) => item.id === messageId) || fallbackMessages.find((item) => item.locked);
     return { message: { ...message, unlockedByActor: true }, spent: Number(message?.unlockCostTokens || 10), wallet: { balance: 128, currency: 'KES', ledger: [] } };
   });
 }
 
-export async function unlockVideoRequest(requestId) {
+export async function unlockVideoRequest(requestId, memberId = 'me') {
   return withDb(async () => {
     const result = await queryWithRetry('SELECT * FROM romchat_video_requests WHERE id = $1', [requestId]);
     const row = result.rows[0];
@@ -1032,11 +1040,11 @@ export async function unlockVideoRequest(requestId) {
           createdAt: row.created_at,
         },
         spent: 0,
-        wallet: await getWallet(),
+        wallet: await getWallet(memberId),
       };
     }
     const match = await getActiveMatch(row.match_id);
-    const spend = await spendTokens({ targetType: 'video_request', targetId: requestId, costTokens: row.unlock_cost_tokens, title: 'Unlocked 2-minute video vibe' });
+    const spend = await spendTokens({ memberId, targetType: 'video_request', targetId: requestId, costTokens: row.unlock_cost_tokens, title: 'Unlocked 2-minute video vibe' });
     await queryWithRetry('INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)', [id('wl'), row.sender_profile_id, 'Video vibe creator share', 20, { requestId, matchId: row.match_id }]);
     await queryWithRetry('INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)', [id('wl'), 'platform', 'Video vibe platform fee', 5, { requestId, matchId: row.match_id }]);
     await queryWithRetry("UPDATE romchat_video_requests SET status = 'unlocked', unlocked_at = now() WHERE id = $1", [requestId]);
@@ -1162,6 +1170,23 @@ export async function getRevenueCatalog() {
   };
 }
 
+const tokenFeatureCatalog = {
+  undo_swipe: { targetType: 'undo_swipe', costTokens: 9, title: 'Undo previous swipe' },
+  reveal_admirer: { targetType: 'admirer', costTokens: 22, title: 'Revealed an admirer' },
+  priority_message: { targetType: 'read_receipt', costTokens: 15, title: 'Priority message' },
+};
+
+export async function spendFeatureTokens({ memberId = 'me', feature, targetId } = {}) {
+  const item = tokenFeatureCatalog[feature];
+  if (!item || !String(targetId || '').trim()) {
+    const error = new Error('Choose a valid token feature.');
+    error.status = 400;
+    error.code = 'INVALID_TOKEN_FEATURE';
+    throw error;
+  }
+  return spendTokens({ memberId, targetType: item.targetType, targetId: `${feature}:${targetId}`, costTokens: item.costTokens, title: item.title });
+}
+
 export async function createPaymentIntent({ memberId = 'me', provider, purpose = 'tokens', packageId = 'tokens_100', planId = null, phone = '', email = '' } = {}) {
   const normalizedProvider = String(provider || '').toLowerCase();
   if (!['mpesa', 'paystack'].includes(normalizedProvider)) {
@@ -1207,7 +1232,7 @@ export async function createPaymentIntent({ memberId = 'me', provider, purpose =
   }, () => payment);
 }
 
-export async function topUpWallet({ amount, platform, purchaseToken, transactionId, productId } = {}) {
+export async function topUpWallet({ memberId = 'me', amount, platform, purchaseToken, transactionId, productId } = {}) {
   const value = Number(amount || 0);
   const nativePlatform = String(platform || '').toLowerCase();
   const hasNativeProof = ['google_play', 'app_store'].includes(nativePlatform) && Boolean(purchaseToken || transactionId) && Boolean(productId);
@@ -1228,8 +1253,8 @@ export async function topUpWallet({ amount, platform, purchaseToken, transaction
     const entry = { id: id('wl'), title: 'Native IAP wallet top-up', amount: value, createdAt: now(), platform: nativePlatform, productId };
     await queryWithRetry(
       'INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)',
-      [entry.id, 'me', entry.title, entry.amount, { platform: nativePlatform, productId, purchaseToken: purchaseToken || null, transactionId: transactionId || null }]
+      [entry.id, memberId || 'me', entry.title, entry.amount, { platform: nativePlatform, productId, purchaseToken: purchaseToken || null, transactionId: transactionId || null }]
     );
-    return { wallet: await getWallet(), entry };
+    return { wallet: await getWallet(memberId), entry };
   }, () => ({ wallet: { balance: 146 + value, currency: 'KES', ledger: [] }, entry: { id: id('wl'), title: 'Native IAP wallet top-up', amount: value, createdAt: now(), platform: nativePlatform, productId } }));
 }

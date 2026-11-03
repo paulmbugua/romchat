@@ -190,12 +190,11 @@ const profilePromptTemplates = [
 ];
 
 const tokenCatalog = [
-  { id: 'media_unlock', label: 'Unlock voice/photo media', cost: '10' },
   { id: 'undo_swipe_token', label: 'Undo previous swipe', cost: String(UNDO_SWIPE_COST) },
-  { id: 'send_rose', label: 'Send rose', cost: '5' },
+  { id: 'send_rose', label: 'Send a Rose in chat', cost: '5' },
+  { id: 'send_chai', label: 'Send Chai in chat', cost: '12' },
   { id: 'priority_message', label: 'Priority message', cost: String(SUPER_LIKE_COST) },
   { id: 'reveal_admirer', label: 'Reveal admirer', cost: '22' },
-  { id: 'rewind_after_pass', label: 'Undo previous swipe', cost: String(UNDO_SWIPE_COST) },
 ];
 
 const starterMessages: Array<[string, string, string]> = [
@@ -609,9 +608,26 @@ export default function App() {
       setRewindSheetVisible(true);
       return;
     }
+    goToPreviousProfile();
+  }
+
+  function goToPreviousProfile() {
     clearMatchTimer();
     setIndex((value) => (value - 1 + profiles.length) % profiles.length);
     setShowMatch(false);
+  }
+
+  async function rewindWithTokens() {
+    if (!profile) return;
+    try {
+      const result = await romchat.spendTokens('undo_swipe', `${profile.id}:${index}`);
+      setTokens(Math.max(0, Math.floor(result.wallet.balance)));
+      setRewindSheetVisible(false);
+      goToPreviousProfile();
+      showActionFeedback('success', 'Swipe restored', `${result.spent || UNDO_SWIPE_COST} tokens used. You can review the previous profile again.`);
+    } catch (error) {
+      showActionFeedback('error', 'Could not rewind', userFacingErrorMessage(error));
+    }
   }
 
   async function likeProfile(action: 'like' | 'super_like' = 'like') {
@@ -1010,13 +1026,16 @@ export default function App() {
       return <ExploreScreen vibes={romanceVibes} profiles={baseProfiles} onToggle={toggleRomanceVibe} onBrowse={browseRomanceVibe} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={baseProfiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} onAllLikesSeenChange={acknowledgeLikes} />;
+      return <LikesScreen profiles={baseProfiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} tokens={tokens} spendTokens={romchat.spendTokens} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} onAllLikesSeenChange={acknowledgeLikes} />;
     }
     if (section === 'chat') {
       return (
         <Chat
           profiles={baseProfiles}
           sendMessage={romchat.sendMessage}
+          sendGift={romchat.sendGift}
+          spendTokens={romchat.spendTokens}
+          tokens={tokens}
           getMessages={romchat.getMessages}
           currentUserId={session?.user?.id || 'me'}
           initialProfileId={pendingChatProfileId}
@@ -1158,7 +1177,7 @@ export default function App() {
         )}
       </ScrollView>
       <PaymentSheet sheet={paymentSheet} onClose={() => setPaymentSheet(null)} onOpenCheckout={() => void openPaymentCheckout()} onRefresh={() => void romchat.refresh()} />
-      <RewindPremiumSheet visible={rewindSheetVisible} onClose={() => setRewindSheetVisible(false)} onBuyTokens={() => { setRewindSheetVisible(false); void openPaymentPage({ kind: 'tokens', title: '100 tokens', subtitle: 'Use tokens for rewinds, roses, and premium actions.', amountKes: 250, packageId: 'tokens_100', accent: 'pink' }); openTokenStore(); }} onUpgrade={() => { setRewindSheetVisible(false); setActiveSection('premium'); }} />
+      <RewindPremiumSheet visible={rewindSheetVisible} tokenBalance={tokens} onClose={() => setRewindSheetVisible(false)} onUseTokens={() => void rewindWithTokens()} onBuyTokens={() => { setRewindSheetVisible(false); openTokenStore(); }} onUpgrade={() => { setRewindSheetVisible(false); setActiveSection('premium'); }} />
       <ActionFeedbackToast feedback={actionFeedback} onDismiss={() => setActionFeedback(null)} />
       <FooterNav active="swipe" setActiveSection={setActiveSection} openSwipeDeck={openSwipeDeck} bottomInset={bottomInset} chatBadgeCount={chatBadgeCount} likesReceivedCount={visibleLikesReceivedCount} />
     </SafeAreaView>
@@ -1766,10 +1785,12 @@ function ExploreScreen({ vibes, profiles, onToggle, onBrowse }: { vibes: Romance
   );
 }
 
-function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, openPremium, openSuperLikes, openChat, acceptLikeAndOpenChat, passLikeProfile, likeProfile, passProfile, onAllLikesSeenChange }: {
-  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; openPremium: () => void; openSuperLikes: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; passLikeProfile: (profileId: string) => void; likeProfile: () => void; passProfile: () => void; onAllLikesSeenChange?: () => void }) {
+function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, tokens, spendTokens, openPremium, openSuperLikes, openChat, acceptLikeAndOpenChat, passLikeProfile, likeProfile, passProfile, onAllLikesSeenChange }: {
+  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; tokens: number; spendTokens: (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message', targetId: string) => Promise<{ spent: number; wallet: { balance: number } }>; openPremium: () => void; openSuperLikes: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; passLikeProfile: (profileId: string) => void; likeProfile: () => void; passProfile: () => void; onAllLikesSeenChange?: () => void }) {
   const [tab, setTab] = useState<'received' | 'sent' | 'top'>('received');
   const [revealedLikeId, setRevealedLikeId] = useState<string | null>(null);
+  const [tokenReveals, setTokenReveals] = useState<string[]>([]);
+  const [revealBusyId, setRevealBusyId] = useState<string | null>(null);
   const [nextDropCountdown, setNextDropCountdown] = useState(() => formatNextLikeDropCountdown());
   const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
   const sentIds = new Set(likesSummary.sentProfileIds || []);
@@ -1791,8 +1812,20 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
   }, [onAllLikesSeenChange]);
 
   function revealDailyLike() {
-    if (revealedLikeId || hasGoldAccess) return openPremium();
     setRevealedLikeId(dailyGoldMatch.id);
+  }
+  async function revealWithTokens(profileId: string) {
+    if (hasGoldAccess) return setTokenReveals((current) => current.includes(profileId) ? current : [...current, profileId]);
+    if (tokens < 22) return openPremium();
+    setRevealBusyId(profileId);
+    try {
+      await spendTokens('reveal_admirer', profileId);
+      setTokenReveals((current) => current.includes(profileId) ? current : [...current, profileId]);
+    } catch {
+      openPremium();
+    } finally {
+      setRevealBusyId(null);
+    }
   }
   function acceptDailyLike() {
     setRevealedLikeId(null);
@@ -1828,7 +1861,7 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, o
           <GoldMatchCard profile={dailyGoldMatch} revealed={revealedLikeId === dailyGoldMatch.id || hasGoldAccess} onReveal={revealDailyLike} onAccept={acceptDailyLike} onPass={passDailyLike} />
           <Text style={styles.likesSectionTitle}>Everyone else who's into you</Text>
           <View style={styles.likesGrid}>
-            {admirerProfiles.slice(1, 7).map((profile, index) => <BlurredLikeCard key={profile.id} profile={profile} onPress={openPremium} index={index} />)}
+            {admirerProfiles.slice(1, 7).map((profile, index) => <BlurredLikeCard key={profile.id} profile={profile} revealed={hasGoldAccess || tokenReveals.includes(profile.id)} busy={revealBusyId === profile.id} onPress={() => void revealWithTokens(profile.id)} index={index} />)}
           </View>
           <TouchableOpacity onPress={openPremium} style={styles.likesUnlockButton}><Text style={styles.likesUnlockText}>See All Your Likes Now</Text></TouchableOpacity>
         </View>
@@ -1890,15 +1923,16 @@ function GoldMatchCard({ profile, revealed, onReveal, onAccept, onPass }: { prof
   );
 }
 
-function BlurredLikeCard({ profile, onPress, index }: { profile: ProfileSeed; onPress: () => void; index: number }) {
+function BlurredLikeCard({ profile, revealed, busy, onPress, index }: { profile: ProfileSeed; revealed: boolean; busy: boolean; onPress: () => void; index: number }) {
   const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={styles.blurredLikeCard}>
-      <ImageBackground source={photo} resizeMode="cover" blurRadius={18} style={styles.blurredLikeImage} imageStyle={styles.blurredLikeImageRadius}>
+      <ImageBackground source={photo} resizeMode="cover" blurRadius={revealed ? 0 : 18} style={styles.blurredLikeImage} imageStyle={styles.blurredLikeImageRadius}>
         <LinearGradient colors={["rgba(255,255,255,0.10)", "rgba(0,0,0,0.70)"]} style={styles.photoOverlay} />
-        <View style={styles.blurredNamePill} />
-        <Text style={styles.blurredAge}>{profile.age + index % 3}</Text>
+        {!revealed && <View style={styles.blurredNamePill} />}
+        <Text style={styles.blurredAge}>{revealed ? `${profile.name}, ${profile.age}` : profile.age + index % 3}</Text>
         <Text style={styles.blurredMeta}>{profile.online ? 'Recently Active' : `${Math.max(3, Math.round(profile.distanceKm || 9))} miles away`}</Text>
+        {!revealed && <View style={styles.tokenRevealPill}>{busy ? <ActivityIndicator size="small" color="#120914" /> : <><Icon name="diamond" size={13} color="#120914" /><Text style={styles.tokenRevealText}>Reveal · 22</Text></>}</View>}
       </ImageBackground>
     </TouchableOpacity>
   );
@@ -1962,9 +1996,12 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
 type ChatDeliveryStatus = 'pending' | 'failed' | 'delivered' | 'read' | 'received';
 type ChatThreadMessage = { id: string; from: 'You' | 'Them'; text: string; status: ChatDeliveryStatus };
 
-function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfileId, onInitialProfileHandled, blockProfile, reportProfile, status }: {
+function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessages, currentUserId, initialProfileId, onInitialProfileHandled, blockProfile, reportProfile, status }: {
   profiles: ProfileSeed[];
-  sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean }) => Promise<{ message?: RomChatMessage } | null>;
+  sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean; priority?: boolean }) => Promise<{ message?: RomChatMessage } | null>;
+  sendGift: (giftId: string, matchId?: string) => Promise<unknown>;
+  spendTokens: (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message', targetId: string) => Promise<{ spent: number; wallet: { balance: number } }>;
+  tokens: number;
   getMessages: (matchId: string) => Promise<RomChatMessage[]>;
   currentUserId: string;
   initialProfileId?: string | null;
@@ -1983,6 +2020,7 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
   const [pendingContactText, setPendingContactText] = useState('');
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [priorityMessage, setPriorityMessage] = useState(false);
   const selectedMatch = orderedMatches.find((profile) => profile.id === selectedMatchId) || null;
   const visibleThreads = orderedMatches.filter((profile) => `${profile.name} ${profile.city} ${profile.intent} ${profile.tags.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
   const promptChips = selectedMatch ? [`Ask ${selectedMatch.name} about ${selectedMatch.tags[0] || 'her vibe'}`, 'Coffee this weekend?', 'How has your day been?'] : [];
@@ -2033,11 +2071,19 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
     return id;
   }
 
-  async function deliverMessage(textValue: string) {
+  async function deliverMessage(textValue: string, priority = false) {
     if (!selectedMatch) return;
     const profileId = selectedMatch.id;
     const localId = appendLocalMessage(profileId, textValue);
-    const result = await sendMessage(textValue, selectedMatch.matchId || `match_${selectedMatch.id}`, { mode: 'standard', readReceiptRequested: true });
+    if (priority) {
+      try {
+        await spendTokens('priority_message', localId);
+      } catch {
+        setThreadMessages((current) => ({ ...current, [profileId]: (current[profileId] || []).map((message) => message.id === localId ? { ...message, status: 'failed' } : message) }));
+        return;
+      }
+    }
+    const result = await sendMessage(textValue, selectedMatch.matchId || `match_${selectedMatch.id}`, { mode: 'standard', readReceiptRequested: true, priority });
     if (!result?.message) {
       setThreadMessages((current) => ({
         ...current,
@@ -2054,6 +2100,7 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
         status: result.message!.readAt ? 'read' : 'delivered',
       } : message),
     }));
+    if (priority) setPriorityMessage(false);
   }
 
   function sendChatText(textValue: string) {
@@ -2081,8 +2128,22 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
   function submit() {
     const textValue = draft.trim();
     if (!textValue || !selectedMatch) return;
+    if (priorityMessage && tokens < SUPER_LIKE_COST) {
+      Alert.alert('More tokens needed', `A priority message costs ${SUPER_LIKE_COST} tokens. Your message has not been sent.`);
+      return;
+    }
     setDraft('');
-    sendChatText(textValue);
+    if (priorityMessage) void deliverMessage(textValue, true);
+    else sendChatText(textValue);
+  }
+
+  function confirmGift(giftId: 'rose' | 'chai', label: string, cost: number) {
+    if (!selectedMatch) return;
+    if (tokens < cost) return Alert.alert('More tokens needed', `You need ${cost} tokens to send ${label}.`, [{ text: 'OK' }]);
+    Alert.alert(`Send ${label}?`, `${cost} tokens will be deducted from your wallet.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: `Send for ${cost}`, onPress: () => void sendGift(giftId, selectedMatch.matchId || `match_${selectedMatch.id}`) },
+    ]);
   }
 
   useEffect(() => {
@@ -2151,6 +2212,12 @@ function Chat({ profiles, sendMessage, getMessages, currentUserId, initialProfil
           <View style={styles.promptRow}>
             {promptChips.map((prompt) => <TouchableOpacity key={prompt} onPress={() => sendChatText(prompt)}><Text style={styles.promptChip}>{prompt}</Text></TouchableOpacity>)}
           </View>
+          <View style={styles.tokenChatTools}>
+            <TouchableOpacity onPress={() => setPriorityMessage((value) => !value)} style={[styles.tokenChatButton, priorityMessage && styles.tokenChatButtonActive]}><Icon name="flash" size={15} color={priorityMessage ? '#120914' : '#FFD700'} /><Text style={[styles.tokenChatButtonText, priorityMessage && styles.tokenChatButtonTextActive]}>Priority · 15</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => confirmGift('rose', 'a Rose', 5)} style={styles.tokenChatButton}><Icon name="rose" size={15} color="#FF6F91" /><Text style={styles.tokenChatButtonText}>Rose · 5</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => confirmGift('chai', 'Chai', 12)} style={styles.tokenChatButton}><Icon name="cafe" size={15} color="#FFD700" /><Text style={styles.tokenChatButtonText}>Chai · 12</Text></TouchableOpacity>
+          </View>
+          {priorityMessage && <Text style={styles.priorityHint}>Your next message will be placed higher in {selectedMatch.name}'s inbox. Balance: {tokens} tokens.</Text>}
         </View>
         <View style={styles.composer}>
           <TextInput value={draft} onChangeText={setDraft} placeholder={`Message ${selectedMatch.name}`} style={styles.input} placeholderTextColor="#a45a72" multiline maxLength={800} returnKeyType="default" textAlignVertical="center" />
@@ -2338,7 +2405,7 @@ function Premium({ tokens, boosted, activePlan, paymentNotice, billingStatus, pu
   return (
     <AnimatedSalesPanel>
       <LinearGradient colors={['#FFD700', '#FFA500']} style={styles.walletHero}>
-        <Text style={styles.kickerDark}>Token Wallet</Text><Text style={styles.balance}>{tokens} tokens</Text><Text style={styles.heroCopyDark}>Transparent KES token pricing before every purchase.</Text>
+        <Text style={styles.kickerDark}>Token Wallet</Text><Text style={styles.balance}>{tokens} tokens</Text><Text style={styles.heroCopyDark}>Use tokens while swiping, revealing admirers, or chatting with a match.</Text>
       </LinearGradient>
       <View style={styles.packageGrid}>{tokenPackages.map((pack) => {
         const amountKes = Number(String(pack.price).replace(/[^0-9]/g, '') || 0);
@@ -2553,7 +2620,7 @@ function PaymentSheet({ sheet, onClose, onOpenCheckout, onRefresh }: { sheet: Pa
   );
 }
 
-function RewindPremiumSheet({ visible, onClose, onBuyTokens, onUpgrade }: { visible: boolean; onClose: () => void; onBuyTokens: () => void; onUpgrade: () => void }) {
+function RewindPremiumSheet({ visible, tokenBalance, onClose, onUseTokens, onBuyTokens, onUpgrade }: { visible: boolean; tokenBalance: number; onClose: () => void; onUseTokens: () => void; onBuyTokens: () => void; onUpgrade: () => void }) {
   const benefits = [
     ['infinite', 'Unlimited rewinds with Gold'],
     ['flash', 'Return to the last profile instantly'],
@@ -2572,7 +2639,7 @@ function RewindPremiumSheet({ visible, onClose, onBuyTokens, onUpgrade }: { visi
         <Text style={styles.rewindSheetBody}>Go back to the profile you just passed and decide again, without losing your place.</Text>
         <View style={styles.rewindBenefits}>{benefits.map(([icon, label]) => <View key={label} style={styles.rewindBenefitRow}><View style={styles.rewindBenefitIcon}><Icon name={icon} size={16} color="#FFD700" /></View><Text style={styles.rewindBenefitText}>{label}</Text></View>)}</View>
         <TouchableOpacity onPress={onUpgrade} style={styles.rewindPrimaryButton} accessibilityRole="button"><LinearGradient colors={["#FF1493", "#FF4F88"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.rewindPrimaryGradient}><Icon name="diamond-outline" size={19} color="#FFFFFF" /><Text style={styles.rewindPrimaryText}>Unlock unlimited rewinds</Text><Icon name="arrow-forward" size={18} color="#FFFFFF" /></LinearGradient></TouchableOpacity>
-        <TouchableOpacity onPress={onBuyTokens} style={styles.rewindSecondaryButton}><Text style={styles.rewindSecondaryText}>View premium options</Text><Text style={styles.rewindTokenPrice}>Coming soon on Android</Text></TouchableOpacity>
+        <TouchableOpacity onPress={tokenBalance >= UNDO_SWIPE_COST ? onUseTokens : onBuyTokens} style={styles.rewindSecondaryButton}><Text style={styles.rewindSecondaryText}>{tokenBalance >= UNDO_SWIPE_COST ? 'Use tokens once' : 'Get more tokens'}</Text><Text style={styles.rewindTokenPrice}>{UNDO_SWIPE_COST} tokens · {tokenBalance} available</Text></TouchableOpacity>
         <TouchableOpacity onPress={onClose} style={styles.rewindLaterButton}><Text style={styles.rewindLaterText}>Keep swiping</Text></TouchableOpacity>
       </View>
     </View>
@@ -3025,6 +3092,8 @@ const styles = StyleSheet.create({
   blurredNamePill: { width: 72, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.48)', marginBottom: -27 },
   blurredAge: { color: '#FFFFFF', fontSize: 24, fontWeight: '900', marginLeft: 84 },
   blurredMeta: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', marginTop: 6 },
+  tokenRevealPill: { position: 'absolute', right: 10, top: 10, minHeight: 30, paddingHorizontal: 10, borderRadius: 15, backgroundColor: '#FFD700', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  tokenRevealText: { color: '#120914', fontWeight: '900', fontSize: 11 },
   sentLikeCard: { width: '48%', aspectRatio: 0.78, borderRadius: 22, overflow: 'hidden', backgroundColor: '#1E1222' },
   sentLikeImage: { flex: 1, padding: 12, justifyContent: 'flex-end' },
   sentStar: { position: 'absolute', right: 12, top: 12, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(0,0,0,0.48)', alignItems: 'center', justifyContent: 'center' },
@@ -3100,6 +3169,12 @@ const styles = StyleSheet.create({
   chatIconButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#2A1A30', borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', alignItems: 'center', justifyContent: 'center' },
   chatTools: { backgroundColor: '#1E1222', borderRadius: 20, padding: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
   chatToolsSimple: { backgroundColor: '#1E1222', borderRadius: 18, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
+  tokenChatTools: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tokenChatButton: { minHeight: 38, paddingHorizontal: 11, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,215,0,0.28)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  tokenChatButtonActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
+  tokenChatButtonText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12 },
+  tokenChatButtonTextActive: { color: '#120914' },
+  priorityHint: { color: 'rgba(255,255,255,0.68)', fontSize: 12, lineHeight: 17, marginTop: 9 },
   chatHeaderAvatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: '#FF1493' },
   chatName: { color: '#FFFFFF', fontWeight: '900', fontSize: 17 },
   chatStatus: { color: '#16A34A', fontWeight: '800', fontSize: 12 },
