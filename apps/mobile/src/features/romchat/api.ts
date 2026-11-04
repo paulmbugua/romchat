@@ -27,6 +27,10 @@ export type RomChatProfile = {
   matchId?: string | null;
   lastSeenAt?: string | null;
   distanceKm?: number;
+  unreadMessageCount?: number;
+  unreadPriorityCount?: number;
+  latestPriorityAt?: string | null;
+  latestMessageAt?: string | null;
 };
 
 export type RomanceVibe = {
@@ -56,6 +60,8 @@ export type RomChatMessage = {
   messageKind?: string;
   mediaUrl?: string | null;
   mediaType?: 'voice' | 'photo' | 'video' | string | null;
+  giftId?: string | null;
+  priority?: boolean;
 };
 
 export type RomChatVideoRequest = {
@@ -75,7 +81,7 @@ export type RomChatBootstrap = {
   messages: RomChatMessage[];
   vibes?: RomanceVibe[];
   wallet?: { balance: number; currency: string };
-  likes?: { receivedCount: number; unreadReceivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] };
+  likes?: { receivedCount: number; unreadReceivedCount?: number; receivedProfileIds?: string[]; revealedAdmirerProfileIds?: string[]; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] };
   privacy?: {
     incognito: boolean;
     screenshotsBlocked: boolean;
@@ -96,14 +102,14 @@ export const romchatApi = {
       token,
       body: JSON.stringify({ joined }),
     }),
-  swipe: (profileId: string, action: 'pass' | 'like' | 'super_like', token?: string | null, options: { forceMatch?: boolean } = {}) =>
-    apiFetch<{ id: string; matched: boolean; matchId: string | null; message: string; limit?: number; remaining?: number; retryAt?: string | null }>('/api/romchat/swipes', {
+  swipe: (profileId: string, action: 'pass' | 'like' | 'super_like', token?: string | null) =>
+    apiFetch<{ id: string; matched: boolean; matchId: string | null; newMatch?: boolean; message: string; spent?: number; alreadyProcessed?: boolean; wallet?: { balance: number; currency: string }; limit?: number; remaining?: number; retryAt?: string | null }>('/api/romchat/swipes', {
       method: 'POST',
       token,
-      body: JSON.stringify({ profileId, action, forceMatch: Boolean(options.forceMatch) }),
+      body: JSON.stringify({ profileId, action }),
     }),
   sendMessage: (text: string, matchId = 'match_elena', options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean; priority?: boolean } = {}, token?: string | null) =>
-    apiFetch<{ message: RomChatMessage; trustInsight: string }>('/api/romchat/messages', {
+    apiFetch<{ message: RomChatMessage; trustInsight: string; spent?: number; wallet?: { balance: number; currency: string } }>('/api/romchat/messages', {
       method: 'POST',
       token,
       body: JSON.stringify({ matchId, text, viewOnce: options.mode === 'viewOnce', expiresInSeconds: options.mode === 'timed' ? 86400 : null, readReceiptRequested: Boolean(options.readReceiptRequested), priority: Boolean(options.priority) }),
@@ -135,12 +141,12 @@ export const romchatApi = {
     }),
   revenue: () => apiFetch<{ revenue: Record<string, { costTokens: number; title: string; description: string }> }>('/api/romchat/revenue'),
   sendGift: (giftId: string, matchId = 'match_elena', token?: string | null) =>
-    apiFetch<{ gift: unknown; wallet: { balance: number; currency: string } }>('/api/romchat/gifts', {
+    apiFetch<{ gift: unknown; message: RomChatMessage; wallet: { balance: number; currency: string } }>('/api/romchat/gifts', {
       method: 'POST',
       token,
       body: JSON.stringify({ giftId, matchId }),
     }),
-  spendTokens: (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message', targetId: string, token?: string | null) =>
+  spendTokens: (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message' | 'super_like', targetId: string, token?: string | null) =>
     apiFetch<{ spent: number; alreadyProcessed?: boolean; wallet: { balance: number; currency: string } }>('/api/romchat/wallet/spend', {
       method: 'POST',
       token,

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import axios from 'axios';
-import { queryWithRetry } from '../config/db.js';
+import pool, { queryWithRetry } from '../config/db.js';
 import { getAccessToken, mpesaPassword, mpesaTimestamp, resolveStkCallbackUrl, shortcode, MPESA_BASE } from '../utils/mpesa.js';
 import { normalizePhoneNumber } from '../utils/phoneUtils.js';
 
@@ -26,9 +26,16 @@ export const premiumPlans = [
 ];
 
 export const gifts = [
-  { id: 'rose', name: 'Rose', tokenCost: 5, redeemableUsd: 0.4, animation: 'petal_burst' },
-  { id: 'chai', name: 'Chai date', tokenCost: 12, redeemableUsd: 1.2, animation: 'steam_heart' },
-  { id: 'spotlight', name: 'Spotlight note', tokenCost: 30, redeemableUsd: 3.5, animation: 'golden_ribbon' },
+  { id: 'rose', name: 'Rose', emoji: '🌹', animation: 'petal_burst' },
+  { id: 'chai', name: 'Chai', emoji: '☕', animation: 'steam_heart' },
+  { id: 'heart', name: 'Heart', emoji: '💖', animation: 'heart_pop' },
+  { id: 'hug', name: 'Hug', emoji: '🤗', animation: 'warm_glow' },
+  { id: 'kiss', name: 'Kiss', emoji: '💋', animation: 'kiss_pop' },
+  { id: 'bouquet', name: 'Bouquet', emoji: '💐', animation: 'petal_burst' },
+  { id: 'chocolate', name: 'Chocolate', emoji: '🍫', animation: 'sweet_pop' },
+  { id: 'cake', name: 'Cake', emoji: '🎂', animation: 'confetti' },
+  { id: 'sparkle', name: 'Sparkle', emoji: '✨', animation: 'sparkle' },
+  { id: 'dinner', name: 'Dinner', emoji: '🍽️', animation: 'warm_glow' },
 ];
 
 export const tokenPackages = [
@@ -173,11 +180,65 @@ const fallbackMessages = [
 ];
 
 const schemaSql = "\nCREATE TABLE IF NOT EXISTS romchat_profiles (\n  id TEXT PRIMARY KEY,\n  name TEXT NOT NULL,\n  age INTEGER NOT NULL,\n  city TEXT NOT NULL,\n  gender TEXT NOT NULL DEFAULT 'female',\n  match_score INTEGER NOT NULL DEFAULT 80,\n  intent TEXT NOT NULL DEFAULT '',\n  prompt TEXT NOT NULL DEFAULT '',\n  voice_note TEXT NOT NULL DEFAULT '',\n  video_prompt TEXT NOT NULL DEFAULT '',\n  quote TEXT NOT NULL DEFAULT '',\n  song TEXT NOT NULL DEFAULT '',\n  gallery_count INTEGER NOT NULL DEFAULT 0,\n  tags TEXT[] NOT NULL DEFAULT '{}',\n  answers TEXT[] NOT NULL DEFAULT '{}',\n  poll JSONB NOT NULL DEFAULT '{}'::jsonb,\n  color TEXT NOT NULL DEFAULT '#ff2f73',\n  photo_key TEXT,\n  verified BOOLEAN NOT NULL DEFAULT false,\n  online BOOLEAN NOT NULL DEFAULT false,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_swipes (\n  id TEXT PRIMARY KEY,\n  actor_id TEXT NOT NULL DEFAULT 'me',\n  profile_id TEXT NOT NULL REFERENCES romchat_profiles(id) ON DELETE CASCADE,\n  action TEXT NOT NULL CHECK (action IN ('pass', 'like', 'super_like')),\n  matched BOOLEAN NOT NULL DEFAULT false,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_matches (\n  id TEXT PRIMARY KEY,\n  actor_id TEXT NOT NULL DEFAULT 'me',\n  profile_id TEXT NOT NULL REFERENCES romchat_profiles(id) ON DELETE CASCADE,\n  status TEXT NOT NULL DEFAULT 'active',\n  expires_at TIMESTAMPTZ,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  UNIQUE(actor_id, profile_id)\n);\n\nCREATE TABLE IF NOT EXISTS romchat_messages (\n  id TEXT PRIMARY KEY,\n  match_id TEXT NOT NULL,\n  sender_id TEXT NOT NULL,\n  text TEXT NOT NULL DEFAULT '',\n  media_url TEXT,\n  media_type TEXT,\n  gift_id TEXT,\n  priority BOOLEAN NOT NULL DEFAULT false,\n  view_once BOOLEAN NOT NULL DEFAULT false,\n  expires_at TIMESTAMPTZ,\n  read_at TIMESTAMPTZ,\n  risk TEXT NOT NULL DEFAULT 'clear',\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_privacy_settings (\n  member_id TEXT PRIMARY KEY DEFAULT 'me',\n  incognito BOOLEAN NOT NULL DEFAULT true,\n  screenshots_blocked BOOLEAN NOT NULL DEFAULT true,\n  visible_to_liked_only BOOLEAN NOT NULL DEFAULT true,\n  disappearing_default_seconds INTEGER NOT NULL DEFAULT 86400,\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_wallet_ledger (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  title TEXT NOT NULL,\n  amount NUMERIC(12,2) NOT NULL,\n  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_subscriptions (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  plan_id TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'active',\n  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  renews_at TIMESTAMPTZ\n);\n\nCREATE TABLE IF NOT EXISTS romchat_boosts (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  boost_id TEXT NOT NULL,\n  profile_id TEXT NOT NULL DEFAULT 'me',\n  starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  ends_at TIMESTAMPTZ NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS romchat_gifts (\n  id TEXT PRIMARY KEY,\n  gift_id TEXT NOT NULL,\n  match_id TEXT NOT NULL,\n  sender_id TEXT NOT NULL DEFAULT 'me',\n  note TEXT NOT NULL DEFAULT '',\n  token_cost INTEGER NOT NULL DEFAULT 0,\n  redeemable_usd NUMERIC(12,2) NOT NULL DEFAULT 0,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_reports (\n  id TEXT PRIMARY KEY,\n  reporter_id TEXT NOT NULL DEFAULT 'me',\n  profile_id TEXT,\n  type TEXT NOT NULL,\n  severity TEXT NOT NULL DEFAULT 'medium',\n  status TEXT NOT NULL DEFAULT 'open',\n  details TEXT,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_verification_requests (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  name TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'manual_review',\n  risk TEXT NOT NULL DEFAULT 'low',\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE INDEX IF NOT EXISTS idx_romchat_messages_match_created ON romchat_messages(match_id, created_at);\nCREATE INDEX IF NOT EXISTS idx_romchat_swipes_actor_created ON romchat_swipes(actor_id, created_at);\nCREATE INDEX IF NOT EXISTS idx_romchat_reports_status ON romchat_reports(status);\nALTER TABLE romchat_swipes DROP CONSTRAINT IF EXISTS romchat_swipes_profile_id_fkey;\nALTER TABLE romchat_matches DROP CONSTRAINT IF EXISTS romchat_matches_profile_id_fkey;\n\nALTER TABLE romchat_profiles ADD COLUMN IF NOT EXISTS gender TEXT NOT NULL DEFAULT 'female';\n\nALTER TABLE romchat_messages\n  ADD COLUMN IF NOT EXISTS media_type TEXT,\n  ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS unlock_cost_tokens INTEGER NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS unlocked_by_actor BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS message_kind TEXT NOT NULL DEFAULT \'text\';\n\nCREATE TABLE IF NOT EXISTS romchat_video_requests (\n  id TEXT PRIMARY KEY,\n  match_id TEXT NOT NULL,\n  sender_profile_id TEXT NOT NULL,\n  title TEXT NOT NULL,\n  teaser TEXT NOT NULL,\n  unlock_cost_tokens INTEGER NOT NULL DEFAULT 0,\n  status TEXT NOT NULL DEFAULT \'locked\',\n  unlocked_at TIMESTAMPTZ,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS romchat_token_unlocks (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT \'me\',\n  target_type TEXT NOT NULL CHECK (target_type IN (\'message\', \'video_request\', \'admirer\', \'read_receipt\', \'undo_swipe\')),\n  target_id TEXT NOT NULL,\n  cost_tokens INTEGER NOT NULL,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  UNIQUE(member_id, target_type, target_id)\n);\n\nCREATE TABLE IF NOT EXISTS romchat_notifications (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL,\n  match_id TEXT NOT NULL,\n  type TEXT NOT NULL,\n  title TEXT NOT NULL,\n  body TEXT NOT NULL DEFAULT \'\',\n  read_at TIMESTAMPTZ,\n  metadata JSONB NOT NULL DEFAULT \'{}\'::jsonb,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nCREATE INDEX IF NOT EXISTS idx_romchat_notifications_member_created ON romchat_notifications(member_id, created_at DESC);\nCREATE INDEX IF NOT EXISTS idx_romchat_video_requests_match_created ON romchat_video_requests(match_id, created_at DESC);\nCREATE INDEX IF NOT EXISTS idx_romchat_token_unlocks_member_created ON romchat_token_unlocks(member_id, created_at DESC);\n\nCREATE TABLE IF NOT EXISTS romchat_payment_intents (\n  id TEXT PRIMARY KEY,\n  member_id TEXT NOT NULL DEFAULT 'me',\n  provider TEXT NOT NULL,\n  purpose TEXT NOT NULL,\n  amount_kes INTEGER NOT NULL,\n  tokens INTEGER NOT NULL DEFAULT 0,\n  plan_id TEXT,\n  status TEXT NOT NULL DEFAULT 'pending',\n  checkout_url TEXT,\n  phone TEXT,\n  reference TEXT NOT NULL,\n  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS idx_romchat_payment_intents_member_created ON romchat_payment_intents(member_id, created_at DESC);\n\n";
+const reciprocalMatchingSchemaSql = `
+ALTER TABLE romchat_matches ADD COLUMN IF NOT EXISTS pair_key TEXT;
+UPDATE romchat_matches
+SET pair_key = length(LEAST(actor_id, profile_id))::text || ':' || LEAST(actor_id, profile_id) || '|' || GREATEST(actor_id, profile_id)
+WHERE pair_key IS NULL OR pair_key = '';
+UPDATE romchat_matches SET expires_at = NULL WHERE status = 'active' AND expires_at IS NOT NULL;
+WITH ranked AS (
+  SELECT id, first_value(id) OVER (PARTITION BY pair_key ORDER BY created_at, id) AS keeper_id,
+         row_number() OVER (PARTITION BY pair_key ORDER BY created_at, id) AS position
+  FROM romchat_matches
+)
+UPDATE romchat_messages child SET match_id = ranked.keeper_id FROM ranked
+WHERE ranked.position > 1 AND child.match_id = ranked.id;
+WITH ranked AS (
+  SELECT id, first_value(id) OVER (PARTITION BY pair_key ORDER BY created_at, id) AS keeper_id,
+         row_number() OVER (PARTITION BY pair_key ORDER BY created_at, id) AS position
+  FROM romchat_matches
+)
+UPDATE romchat_notifications child SET match_id = ranked.keeper_id FROM ranked
+WHERE ranked.position > 1 AND child.match_id = ranked.id;
+WITH ranked AS (
+  SELECT id, first_value(id) OVER (PARTITION BY pair_key ORDER BY created_at, id) AS keeper_id,
+         row_number() OVER (PARTITION BY pair_key ORDER BY created_at, id) AS position
+  FROM romchat_matches
+)
+UPDATE romchat_gifts child SET match_id = ranked.keeper_id FROM ranked
+WHERE ranked.position > 1 AND child.match_id = ranked.id;
+WITH ranked AS (
+  SELECT id, first_value(id) OVER (PARTITION BY pair_key ORDER BY created_at, id) AS keeper_id,
+         row_number() OVER (PARTITION BY pair_key ORDER BY created_at, id) AS position
+  FROM romchat_matches
+)
+UPDATE romchat_video_requests child SET match_id = ranked.keeper_id FROM ranked
+WHERE ranked.position > 1 AND child.match_id = ranked.id;
+DELETE FROM romchat_matches duplicate USING romchat_matches keeper
+WHERE duplicate.pair_key = keeper.pair_key
+  AND (duplicate.created_at, duplicate.id) > (keeper.created_at, keeper.id);
+ALTER TABLE romchat_matches ALTER COLUMN pair_key SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_romchat_matches_pair_key ON romchat_matches (pair_key);
+CREATE INDEX IF NOT EXISTS idx_romchat_swipes_reciprocal ON romchat_swipes (actor_id, profile_id, created_at DESC);
+`;
+
 let schemaReady = false;
 
 async function ensureSchema() {
   if (schemaReady) return;
   await queryWithRetry(schemaSql);
+  await queryWithRetry(reciprocalMatchingSchemaSql);
+  await queryWithRetry(`DO $$ BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conname = 'romchat_token_unlocks_target_type_check'
+        AND pg_get_constraintdef(oid) LIKE '%super_like%'
+    ) THEN
+      ALTER TABLE romchat_token_unlocks DROP CONSTRAINT IF EXISTS romchat_token_unlocks_target_type_check;
+      ALTER TABLE romchat_token_unlocks ADD CONSTRAINT romchat_token_unlocks_target_type_check
+        CHECK (target_type IN ('message', 'video_request', 'admirer', 'read_receipt', 'undo_swipe', 'super_like'));
+    END IF;
+  END $$`);
   await queryWithRetry(`CREATE TABLE IF NOT EXISTS romchat_likes_read_state (
     member_id TEXT PRIMARY KEY,
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -276,6 +337,10 @@ function fromMemberProfileRow(row, catalogueAccess = 1) {
     lastSeenAt: row.last_seen_at || null,
     online: isRecentlyOnline(row),
     boosted: Boolean(row.boosted_now),
+    unreadMessageCount: Number(row.unread_message_count || 0),
+    unreadPriorityCount: Number(row.unread_priority_count || 0),
+    latestPriorityAt: row.latest_priority_at || null,
+    latestMessageAt: row.latest_message_at || null,
     distanceKm: Number(row.distance_km || 0),
     gender: row.gender || '',
   };
@@ -449,6 +514,24 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
       );
     }
     if (viewerId && result.rows.length) {
+      const inboxSummary = await queryWithRetry(
+        `SELECT other.member_id,
+                COUNT(msg.id) FILTER (WHERE msg.sender_id = other.member_id AND msg.read_at IS NULL)::int AS unread_message_count,
+                COUNT(msg.id) FILTER (WHERE msg.sender_id = other.member_id AND msg.read_at IS NULL AND msg.priority = true)::int AS unread_priority_count,
+                MAX(msg.created_at) FILTER (WHERE msg.sender_id = other.member_id AND msg.read_at IS NULL AND msg.priority = true) AS latest_priority_at,
+                MAX(msg.created_at) AS latest_message_at
+           FROM romchat_matches active_match
+           CROSS JOIN LATERAL (
+             SELECT CASE WHEN active_match.actor_id = $1 THEN active_match.profile_id ELSE active_match.actor_id END AS member_id
+           ) other
+           LEFT JOIN romchat_messages msg ON msg.match_id = active_match.id
+          WHERE active_match.status = 'active'
+            AND (active_match.actor_id = $1 OR active_match.profile_id = $1)
+          GROUP BY other.member_id`,
+        [viewerId]
+      );
+      const inboxByMember = new Map(inboxSummary.rows.map((row) => [row.member_id, row]));
+      result.rows = result.rows.map((row) => ({ ...row, ...(inboxByMember.get(row.member_id) || {}) }));
       const candidateIds = result.rows.map((row) => row.member_id).filter(Boolean);
       const memberships = await queryWithRetry(
         `SELECT member_id, array_agg(vibe_id ORDER BY vibe_id) AS vibe_ids
@@ -481,7 +564,10 @@ export async function getMessages(matchId = 'match_elena', actorId = null) {
       [matchId]
     );
     return result.rows.map(fromMessageRow);
-  }, () => []);
+  }, (error) => {
+    if (error?.status) throw error;
+    return [];
+  });
 }
 
 export async function markMessagesRead({ matchId = 'match_elena', actorId = 'me', messageIds = [] } = {}) {
@@ -500,7 +586,10 @@ export async function markMessagesRead({ matchId = 'match_elena', actorId = 'me'
       [matchId, actorId, readAt, ids]
     );
     return { matchId, messageIds: result.rows.map((row) => row.id), readAt };
-  }, () => ({ matchId, messageIds: ids, readAt }));
+  }, (error) => {
+    if (error?.status) throw error;
+    return { matchId, messageIds: ids, readAt };
+  });
 }
 
 export async function getPrivacy() {
@@ -531,15 +620,52 @@ export async function getWallet(memberId = 'me') {
 
 export async function getLikesSummary(memberId = null) {
   return withDb(async () => {
-    if (!memberId) return { receivedCount: 0, unreadReceivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] };
-    const [received, unreadReceived, sent, topPicks] = await Promise.all([
-      queryWithRetry("SELECT COUNT(DISTINCT actor_id)::int AS received_count FROM romchat_swipes WHERE profile_id = $1 AND action IN ('like', 'super_like')", [memberId]),
-      queryWithRetry(`SELECT COUNT(DISTINCT s.actor_id)::int AS unread_count
-        FROM romchat_swipes s
+    if (!memberId) return { receivedCount: 0, unreadReceivedCount: 0, receivedProfileIds: [], revealedAdmirerProfileIds: [], sentCount: 0, sentProfileIds: [], topPickProfileIds: [] };
+    const [received, unreadReceived, receivedProfiles, revealedAdmirers, sent, topPicks] = await Promise.all([
+      queryWithRetry(`WITH latest AS (
+          SELECT DISTINCT ON (actor_id) actor_id, action, created_at
+          FROM romchat_swipes WHERE profile_id = $1
+          ORDER BY actor_id, created_at DESC
+        )
+        SELECT COUNT(*)::int AS received_count FROM latest
+        WHERE action IN ('like', 'super_like')
+          AND NOT EXISTS (
+            SELECT 1 FROM romchat_matches m
+            WHERE m.status = 'active' AND ((m.actor_id = $1 AND m.profile_id = latest.actor_id) OR (m.profile_id = $1 AND m.actor_id = latest.actor_id))
+          )`, [memberId]),
+      queryWithRetry(`WITH latest AS (
+          SELECT DISTINCT ON (actor_id) actor_id, action, created_at
+          FROM romchat_swipes WHERE profile_id = $1
+          ORDER BY actor_id, created_at DESC
+        )
+        SELECT COUNT(*)::int AS unread_count
+        FROM latest s
         LEFT JOIN romchat_likes_read_state r ON r.member_id = $1
-        WHERE s.profile_id = $1 AND s.action IN ('like', 'super_like')
-          AND s.created_at > COALESCE(r.last_seen_at, '-infinity'::timestamptz)`, [memberId]),
-      queryWithRetry("SELECT DISTINCT profile_id FROM romchat_swipes WHERE actor_id = $1 AND action IN ('like', 'super_like') ORDER BY profile_id", [memberId]),
+        WHERE s.action IN ('like', 'super_like')
+          AND s.created_at > COALESCE(r.last_seen_at, '-infinity'::timestamptz)
+          AND NOT EXISTS (
+            SELECT 1 FROM romchat_matches m
+            WHERE m.status = 'active' AND ((m.actor_id = $1 AND m.profile_id = s.actor_id) OR (m.profile_id = $1 AND m.actor_id = s.actor_id))
+          )`, [memberId]),
+      queryWithRetry(`WITH latest AS (
+          SELECT DISTINCT ON (actor_id) actor_id, action
+          FROM romchat_swipes WHERE profile_id = $1
+          ORDER BY actor_id, created_at DESC
+        )
+        SELECT actor_id FROM latest
+        WHERE action IN ('like', 'super_like')
+          AND NOT EXISTS (
+            SELECT 1 FROM romchat_matches m
+            WHERE m.status = 'active' AND ((m.actor_id = $1 AND m.profile_id = latest.actor_id) OR (m.profile_id = $1 AND m.actor_id = latest.actor_id))
+          )
+        ORDER BY actor_id`, [memberId]),
+      queryWithRetry("SELECT replace(target_id, 'reveal_admirer:', '') AS profile_id FROM romchat_token_unlocks WHERE member_id = $1 AND target_type = 'admirer' AND target_id LIKE 'reveal_admirer:%' ORDER BY created_at", [memberId]),
+      queryWithRetry(`WITH latest AS (
+          SELECT DISTINCT ON (profile_id) profile_id, action
+          FROM romchat_swipes WHERE actor_id = $1
+          ORDER BY profile_id, created_at DESC
+        )
+        SELECT profile_id FROM latest WHERE action IN ('like', 'super_like') ORDER BY profile_id`, [memberId]),
       queryWithRetry(`SELECT candidate.member_id
          FROM romchat_member_profiles candidate
          JOIN romchat_member_profiles viewer ON viewer.member_id = $1
@@ -552,10 +678,12 @@ export async function getLikesSummary(memberId = null) {
           candidate.updated_at DESC
         LIMIT 12`, [memberId]),
     ]);
+    const receivedProfileIds = receivedProfiles.rows.map((row) => row.actor_id).filter(Boolean);
+    const revealedAdmirerProfileIds = revealedAdmirers.rows.map((row) => row.profile_id).filter(Boolean);
     const sentProfileIds = sent.rows.map((row) => row.profile_id).filter(Boolean);
     const topPickProfileIds = topPicks.rows.map((row) => row.member_id).filter(Boolean);
-    return { receivedCount: Number(received.rows[0]?.received_count || 0), unreadReceivedCount: Number(unreadReceived.rows[0]?.unread_count || 0), sentCount: sentProfileIds.length, sentProfileIds, topPickProfileIds };
-  }, () => ({ receivedCount: 0, unreadReceivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] }));
+    return { receivedCount: Number(received.rows[0]?.received_count || 0), unreadReceivedCount: Number(unreadReceived.rows[0]?.unread_count || 0), receivedProfileIds, revealedAdmirerProfileIds, sentCount: sentProfileIds.length, sentProfileIds, topPickProfileIds };
+  }, () => ({ receivedCount: 0, unreadReceivedCount: 0, receivedProfileIds: [], revealedAdmirerProfileIds: [], sentCount: 0, sentProfileIds: [], topPickProfileIds: [] }));
 }
 
 export async function markLikesSeen(memberId) {
@@ -647,19 +775,6 @@ export async function getBootstrap({ catalogueAccess = 1, viewerId = null, verif
   };
 }
 
-function deterministicPercent(input) {
-  const hash = crypto.createHash('sha256').update(String(input)).digest();
-  return hash[0] % 100;
-}
-
-function shouldCreateMutualMatch(profileId, action, profile) {
-  if (action === 'pass') return false;
-  const baseChance = action === 'super_like' ? 42 : 16;
-  const score = Number(profile?.match || 0);
-  const scoreBoost = score >= 94 ? 12 : score >= 88 ? 6 : 0;
-  return deterministicPercent(String(profileId) + ':' + action + ':romchat-mutual') < baseChance + scoreBoost;
-}
-
 async function getActiveSubscription(memberId = 'me') {
   const active = await queryWithRetry(
     `SELECT plan_id, status, started_at, renews_at
@@ -698,35 +813,193 @@ async function enforceDailyLikeLimit(memberId, action) {
   throw error;
 }
 
-function matchIdFor(actorId, profileId) {
-  return `match_${String(actorId || 'me').replace(/[^a-zA-Z0-9_]/g, '_')}_${String(profileId || '').replace(/[^a-zA-Z0-9_]/g, '_')}`;
+function pairKeyFor(firstMemberId, secondMemberId) {
+  const [first, second] = [String(firstMemberId), String(secondMemberId)].sort();
+  return `${first.length}:${first}|${second}`;
 }
 
-export async function createSwipe({ profileId, action, actorId = 'me', forceMatch = false }) {
+function matchIdFor(firstMemberId, secondMemberId) {
+  return `match_${crypto.createHash('sha256').update(pairKeyFor(firstMemberId, secondMemberId)).digest('hex').slice(0, 24)}`;
+}
+
+async function chargeSuperLike(client, memberId, profileId) {
+  const targetId = `super_like:${profileId}`;
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`wallet:${memberId}`]);
+  const existing = await client.query(
+    `SELECT id FROM romchat_token_unlocks
+     WHERE member_id = $1 AND target_type = 'super_like' AND target_id = ANY($2::text[])
+     LIMIT 1`,
+    [memberId, [targetId, profileId]],
+  );
+  if (existing.rows[0]) return { spent: 0, alreadyProcessed: true };
+
+  const balanceResult = await client.query(
+    'SELECT COALESCE(SUM(amount), 0) AS balance FROM romchat_wallet_ledger WHERE member_id = $1',
+    [memberId],
+  );
+  if (Number(balanceResult.rows[0]?.balance || 0) < 15) {
+    const error = new Error('You need 15 tokens to send a Super Like.');
+    error.status = 402;
+    error.code = 'INSUFFICIENT_TOKENS';
+    throw error;
+  }
+  await client.query(
+    `INSERT INTO romchat_token_unlocks (id, member_id, target_type, target_id, cost_tokens)
+     VALUES ($1,$2,'super_like',$3,15)`,
+    [id('unlock'), memberId, targetId],
+  );
+  await client.query(
+    `INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata)
+     VALUES ($1,$2,'Super Like sent',-15,$3)`,
+    [id('wl'), memberId, { targetType: 'super_like', targetId, profileId }],
+  );
+  return { spent: 15, alreadyProcessed: false };
+}
+
+export async function createSwipe({ profileId, action, actorId = 'me' }) {
   if (!profileId || !['pass', 'like', 'super_like'].includes(action)) {
     const error = new Error('profileId and a valid action are required.');
     error.status = 400;
     throw error;
   }
-  const profiles = await getProfiles({ verifiedOnly: false });
-  const profile = profiles.find((item) => item.id === profileId);
-  const matched = Boolean(forceMatch && action !== 'pass') || shouldCreateMutualMatch(profileId, action, profile);
-  const swipeId = id('swipe');
-  const matchId = matched ? matchIdFor(actorId || 'me', profileId) : null;
+  const memberId = String(actorId || 'me');
+  const targetMemberId = String(profileId);
+  if (memberId === targetMemberId) {
+    const error = new Error('You cannot swipe on your own profile.');
+    error.status = 400;
+    error.code = 'INVALID_SWIPE_TARGET';
+    throw error;
+  }
 
-  return withDb(async () => {
-    await enforceDailyLikeLimit(actorId || 'me', action);
-    await queryWithRetry('INSERT INTO romchat_swipes (id, actor_id, profile_id, action, matched) VALUES ($1,$2,$3,$4,$5)', [swipeId, actorId || 'me', profileId, action, matched]);
-    if (matched) {
-      await queryWithRetry(
-        `INSERT INTO romchat_matches (id, actor_id, profile_id, expires_at)
-         VALUES ($1, $2, $3, now() + interval '24 hours')
-         ON CONFLICT (actor_id, profile_id) DO UPDATE SET status = 'active'`,
-        [matchId, actorId || 'me', profileId]
-      );
+  await ensureSchema();
+  const swipeId = id('swipe');
+  const pairKey = pairKeyFor(memberId, targetMemberId);
+  const canonicalMembers = [memberId, targetMemberId].sort();
+  const client = await pool.connect();
+  let result;
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`swipes:${memberId}`]);
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`match:${pairKey}`]);
+
+    const members = await client.query(
+      `SELECT member_id, display_name FROM romchat_member_profiles
+       WHERE member_id = ANY($1::text[])`,
+      [[memberId, targetMemberId]],
+    );
+    if (!members.rows.some((row) => row.member_id === targetMemberId)) {
+      const error = new Error('This profile is no longer available.');
+      error.status = 404;
+      error.code = 'PROFILE_NOT_FOUND';
+      throw error;
     }
-    return { id: swipeId, matched, matchId, message: matched ? 'Ni match. Say hi.' : 'Like sent. If they like you back, it becomes a match.' };
-  }, () => ({ id: swipeId, matched, matchId, message: matched ? 'Ni match. Say hi.' : 'Like sent. If they like you back, it becomes a match.' }));
+    const blocked = await client.query(
+      `SELECT 1 FROM romchat_profile_blocks
+       WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)
+       LIMIT 1`,
+      [memberId, targetMemberId],
+    );
+    if (blocked.rows[0]) {
+      const error = new Error('This profile is unavailable.');
+      error.status = 403;
+      error.code = 'PROFILE_UNAVAILABLE';
+      throw error;
+    }
+
+    await enforceDailyLikeLimit(memberId, action);
+    const spend = action === 'super_like'
+      ? await chargeSuperLike(client, memberId, targetMemberId)
+      : { spent: 0, alreadyProcessed: false };
+    const existingSuperLike = action === 'super_like' && spend.alreadyProcessed
+      ? await client.query(
+          `SELECT id, matched FROM romchat_swipes
+           WHERE actor_id = $1 AND profile_id = $2 AND action = 'super_like'
+           ORDER BY created_at DESC LIMIT 1`,
+          [memberId, targetMemberId],
+        )
+      : null;
+
+    const existingMatch = await client.query(
+      `SELECT id, status FROM romchat_matches WHERE pair_key = $1 LIMIT 1`,
+      [pairKey],
+    );
+    if (existingSuperLike?.rows[0]) {
+      const activeMatch = existingMatch.rows[0]?.status === 'active' ? existingMatch.rows[0] : null;
+      await client.query('COMMIT');
+      result = {
+        id: existingSuperLike.rows[0].id,
+        matched: Boolean(activeMatch),
+        matchId: activeMatch?.id || null,
+        newMatch: false,
+        message: 'You already Super Liked this profile.',
+        ...spend,
+      };
+    } else {
+      const reciprocal = action === 'pass'
+        ? { rows: [] }
+        : await client.query(
+            `SELECT id, action FROM romchat_swipes
+             WHERE actor_id = $1 AND profile_id = $2
+             ORDER BY created_at DESC LIMIT 1`,
+            [targetMemberId, memberId],
+          );
+      const reciprocalSwipe = reciprocal.rows[0];
+      const mutual = action !== 'pass' && ['like', 'super_like'].includes(reciprocalSwipe?.action);
+      await client.query(
+        `INSERT INTO romchat_swipes (id, actor_id, profile_id, action, matched)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [swipeId, memberId, targetMemberId, action, mutual || existingMatch.rows[0]?.status === 'active'],
+      );
+
+      let match = existingMatch.rows[0]?.status === 'active' ? existingMatch.rows[0] : null;
+      let newMatch = false;
+      if (mutual && !match) {
+        const created = await client.query(
+          `INSERT INTO romchat_matches (id, actor_id, profile_id, status, expires_at, pair_key)
+           VALUES ($1,$2,$3,'active',NULL,$4)
+           ON CONFLICT (pair_key) DO UPDATE SET status = 'active', expires_at = NULL
+           RETURNING id`,
+          [matchIdFor(memberId, targetMemberId), canonicalMembers[0], canonicalMembers[1], pairKey],
+        );
+        match = created.rows[0];
+        newMatch = true;
+        await client.query('UPDATE romchat_swipes SET matched = true WHERE id = ANY($1::text[])', [[swipeId, reciprocalSwipe.id]]);
+
+        const names = new Map(members.rows.map((row) => [row.member_id, row.display_name || 'your match']));
+        for (const recipientId of [memberId, targetMemberId]) {
+          const otherId = recipientId === memberId ? targetMemberId : memberId;
+          await client.query(
+            `INSERT INTO romchat_notifications (id, member_id, match_id, type, title, body, metadata)
+             VALUES ($1,$2,$3,'new_match',$4,$5,$6)`,
+            [id('ntf'), recipientId, match.id, "It's a match!", `You and ${names.get(otherId) || 'this person'} liked each other.`, { otherMemberId: otherId, triggerAction: action }],
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      result = {
+        id: swipeId,
+        matched: Boolean(match),
+        matchId: match?.id || null,
+        newMatch,
+        message: match
+          ? 'Ni match. You can start chatting now.'
+          : action === 'super_like'
+            ? 'Super Like sent. They will see you near the top of their Likes.'
+            : action === 'pass'
+              ? 'Profile passed.'
+              : 'Like sent. If they like you back, it becomes a match.',
+        ...spend,
+      };
+    }
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  if (action === 'super_like') result.wallet = await getWallet(memberId);
+  return result;
 }
 
 export async function sendMessage({ matchId = 'match_elena', text, actorId = 'me', expiresInSeconds = null, viewOnce = false, mediaUrl = null, mediaType = null, giftId = null, priority = false, readReceiptRequested = false, riskOverride = null }) {
@@ -754,21 +1027,51 @@ export async function sendMessage({ matchId = 'match_elena', text, actorId = 'me
   return withDb(async () => {
     const match = await getActiveMatch(matchId, actorId || 'me');
     const recipientId = match.actor_id === (actorId || 'me') ? match.profile_id : match.actor_id;
-    await queryWithRetry(
-      `INSERT INTO romchat_messages (id, match_id, sender_id, text, media_url, media_type, gift_id, priority, view_once, expires_at, risk)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [message.id, message.matchId, message.senderId, message.text, message.mediaUrl, message.mediaType, message.giftId, message.priority, message.viewOnce, message.expiresAt, message.risk]
-    );
-    await createNotification({
-      memberId: recipientId,
-      matchId,
-      type: 'message',
-      title: readReceiptRequested ? 'New RomChat message with read receipt' : 'New RomChat message',
-      body: message.text.slice(0, 160),
-      metadata: { messageId: message.id, viewOnce: message.viewOnce, expiresAt: message.expiresAt, readReceiptRequested: Boolean(readReceiptRequested) },
-    });
-    return { ...message, recipientId, notificationSent: true, readReceiptRequested: Boolean(readReceiptRequested) };
-  }, () => message);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      let spent = 0;
+      if (message.priority) {
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [message.senderId]);
+        const balanceResult = await client.query('SELECT COALESCE(SUM(amount), 0) AS balance FROM romchat_wallet_ledger WHERE member_id = $1', [message.senderId]);
+        if (Number(balanceResult.rows[0]?.balance || 0) < 15) {
+          const error = new Error('You need 15 tokens to send a priority message.');
+          error.status = 402;
+          error.code = 'INSUFFICIENT_TOKENS';
+          throw error;
+        }
+        const targetId = `priority:${message.id}`;
+        await client.query(
+          `INSERT INTO romchat_token_unlocks (id, member_id, target_type, target_id, cost_tokens)
+           VALUES ($1,$2,'read_receipt',$3,15)`,
+          [id('unlock'), message.senderId, targetId]
+        );
+        await client.query(
+          `INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata)
+           VALUES ($1,$2,'Priority message',-15,$3)`,
+          [id('wl'), message.senderId, { targetType: 'priority_message', targetId, messageId: message.id, matchId }]
+        );
+        spent = 15;
+      }
+      await client.query(
+        `INSERT INTO romchat_messages (id, match_id, sender_id, text, media_url, media_type, gift_id, priority, view_once, expires_at, risk)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [message.id, message.matchId, message.senderId, message.text, message.mediaUrl, message.mediaType, message.giftId, message.priority, message.viewOnce, message.expiresAt, message.risk]
+      );
+      await client.query(
+        `INSERT INTO romchat_notifications (id, member_id, match_id, type, title, body, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [id('ntf'), recipientId, matchId, message.priority ? 'priority_message' : 'message', message.priority ? 'Priority message waiting' : readReceiptRequested ? 'New RomChat message with read receipt' : 'New RomChat message', message.text.slice(0, 160), { messageId: message.id, priority: message.priority, viewOnce: message.viewOnce, expiresAt: message.expiresAt, readReceiptRequested: Boolean(readReceiptRequested) }]
+      );
+      await client.query('COMMIT');
+      return { ...message, recipientId, notificationSent: true, readReceiptRequested: Boolean(readReceiptRequested), spent, wallet: await getWallet(message.senderId) };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }, (error) => { throw error; });
 }
 
 export async function updatePrivacy(payload = {}) {
@@ -903,20 +1206,33 @@ export async function sendGift(payload = {}) {
     error.status = 400;
     throw error;
   }
-  const entry = { id: id('gift'), giftId: gift.id, matchId: payload.matchId || 'match_elena', note: payload.note || '', tokenCost: gift.tokenCost, redeemableUsd: gift.redeemableUsd, createdAt: now() };
+  const entry = { id: id('gift'), giftId: gift.id, matchId: payload.matchId || 'match_elena', note: payload.note || '', tokenCost: 0, redeemableUsd: 0, createdAt: now() };
+  const message = {
+    id: id('msg'),
+    matchId: entry.matchId,
+    senderId: memberId,
+    from: memberId,
+    text: `${gift.emoji} ${gift.name}`,
+    giftId: gift.id,
+    messageKind: 'gift',
+    readAt: null,
+    createdAt: now(),
+  };
   return withDb(async () => {
-    const match = await getActiveMatch(entry.matchId);
-    const spend = await spendTokens({ memberId, targetType: 'read_receipt', targetId: `gift:${entry.id}`, costTokens: gift.tokenCost, title: `Gift: ${gift.name}` });
+    const match = await getActiveMatch(entry.matchId, memberId);
+    const recipientId = match.actor_id === memberId ? match.profile_id : match.actor_id;
     await queryWithRetry(
       'INSERT INTO romchat_gifts (id, gift_id, match_id, sender_id, note, token_cost, redeemable_usd) VALUES ($1,$2,$3,$4,$5,$6,$7)',
       [entry.id, entry.giftId, entry.matchId, memberId, entry.note, entry.tokenCost, entry.redeemableUsd]
     );
-    await createNotification({ memberId: match.profile_id, matchId: entry.matchId, type: 'gift', title: `RomChat gift: ${gift.name}`, body: entry.note || 'A match sent you a gift.', metadata: { giftId: gift.id, giftEntryId: entry.id } });
-    return { gift: { ...entry, recipientId: match.profile_id, notificationSent: true }, wallet: spend.wallet };
-  }, (error) => {
-    if (error?.status) throw error;
-    return { gift: entry, wallet: { balance: Math.max(0, 146 - gift.tokenCost), currency: 'KES', ledger: [] } };
-  });
+    await queryWithRetry(
+      `INSERT INTO romchat_messages (id, match_id, sender_id, text, gift_id, message_kind, risk)
+       VALUES ($1,$2,$3,$4,$5,$6,'clear')`,
+      [message.id, message.matchId, message.senderId, message.text, message.giftId, message.messageKind]
+    );
+    await createNotification({ memberId: recipientId, matchId: entry.matchId, type: 'gift', title: `${gift.emoji} ${gift.name} from your match`, body: entry.note || 'Open your chat to see it.', metadata: { giftId: gift.id, giftEntryId: entry.id, messageId: message.id } });
+    return { gift: { ...entry, recipientId, notificationSent: true }, message: { ...message, recipientId }, wallet: await getWallet(memberId) };
+  }, (error) => { throw error; });
 }
 
 export async function createLockedMediaPreview({ matchId = 'match_elena', senderId = 'elena', text = 'I sent a private voice note preview. Basic text stays free; unlock this optional media when the vibe feels right.', mediaUrl = 'romchat://demo/voice/aisha-saturday-note', mediaType = 'voice', unlockCostTokens = 18 } = {}) {
@@ -1174,6 +1490,7 @@ const tokenFeatureCatalog = {
   undo_swipe: { targetType: 'undo_swipe', costTokens: 9, title: 'Undo previous swipe' },
   reveal_admirer: { targetType: 'admirer', costTokens: 22, title: 'Revealed an admirer' },
   priority_message: { targetType: 'read_receipt', costTokens: 15, title: 'Priority message' },
+  super_like: { targetType: 'super_like', costTokens: 15, title: 'Super Like sent' },
 };
 
 export async function spendFeatureTokens({ memberId = 'me', feature, targetId } = {}) {
@@ -1183,6 +1500,9 @@ export async function spendFeatureTokens({ memberId = 'me', feature, targetId } 
     error.status = 400;
     error.code = 'INVALID_TOKEN_FEATURE';
     throw error;
+  }
+  if (feature === 'priority_message') {
+    return { spent: 0, alreadyProcessed: false, deferredToMessageSend: true, wallet: await getWallet(memberId) };
   }
   return spendTokens({ memberId, targetType: item.targetType, targetId: `${feature}:${targetId}`, costTokens: item.costTokens, title: item.title });
 }

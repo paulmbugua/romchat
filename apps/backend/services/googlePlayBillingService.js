@@ -50,6 +50,9 @@ async function playRequest(path, options = {}) {
 
 function productEntitlement(productId) {
   const tokenPackage = tokenPackages.find((item) => item.productIds?.android === productId);
+  if (tokenPackage?.superLikeCount) {
+    return { kind: 'super_likes', amount: Number(tokenPackage.amount || 0), superLikeCount: Number(tokenPackage.superLikeCount), title: `${tokenPackage.superLikeCount} Super Likes` };
+  }
   if (tokenPackage) return { kind: 'tokens', amount: Number(tokenPackage.amount || 0), title: `${tokenPackage.amount} RomChat Tokens` };
   const plan = premiumPlans.find((item) => `romchat_${item.id}` === productId);
   if (plan && plan.id !== 'free') return { kind: 'subscription', planId: plan.id, title: `RomChat ${plan.name}` };
@@ -102,7 +105,7 @@ export async function processGooglePlayPurchase({ memberId, productId, purchaseT
       [purchaseToken, transactionId || null, memberId, productId, entitlement, providerPurchase]
     );
     if (inserted.rowCount) {
-      if (entitlement.kind === 'tokens') {
+      if (entitlement.kind === 'tokens' || entitlement.kind === 'super_likes') {
         await client.query(
           'INSERT INTO romchat_wallet_ledger (id, member_id, title, amount, metadata) VALUES ($1,$2,$3,$4,$5)',
           [`gplay_${Date.now()}_${Math.random().toString(16).slice(2)}`, memberId, entitlement.title, entitlement.amount, { platform: 'google_play', productId, purchaseToken }]

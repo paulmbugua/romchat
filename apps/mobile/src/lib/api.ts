@@ -205,11 +205,9 @@ const physicalAndroidBackendUrl = (
 
 const developmentDeviceBackendSelected =
   Platform.OS === 'android' &&
-  selectedBackendKey === 'prod' &&
+  selectedBackendKey === 'devDevice' &&
   extra.EXPO_PUBLIC_APP_ENV !== 'production' &&
-  Boolean(lanBackendUrl) &&
-  !process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL &&
-  !extra.EXPO_PUBLIC_DEVICE_BACKEND_URL;
+  Boolean(explicitDeviceBackendUrl || lanBackendUrl);
 
 const selectedApiBaseUrl =
   androidEmulatorBackendSelected || developmentDeviceBackendSelected ? physicalAndroidBackendUrl : configuredApiBaseUrl;
@@ -254,8 +252,12 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
   };
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
   if (apiDebugEnabled) console.info('[romchat-api] request:start', { requestId, method, url, hasAuth: Boolean(options.token) });
+  const timeoutController = new AbortController();
+  const requestTimeout = setTimeout(() => timeoutController.abort(), 12_000);
+  const abortFromCaller = () => timeoutController.abort();
+  options.signal?.addEventListener('abort', abortFromCaller, { once: true });
   try {
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(url, { ...options, headers, signal: timeoutController.signal });
     const responseText = await response.text().catch(() => '');
     let payload: any = {};
     try { payload = responseText ? JSON.parse(responseText) : {}; } catch { payload = { raw: responseText.slice(0, 500) }; }
@@ -282,7 +284,13 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
     const details = describeApiError(error);
     console.warn('[romchat-api] request:failed', { requestId, method, url, ...details });
     if (error instanceof ApiRequestError) throw error;
+    if (timeoutController.signal.aborted && !options.signal?.aborted) {
+      throw new Error('The connection timed out. Check your internet connection and try again.');
+    }
     throw new Error(userFacingErrorMessage(error));
+  } finally {
+    clearTimeout(requestTimeout);
+    options.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 

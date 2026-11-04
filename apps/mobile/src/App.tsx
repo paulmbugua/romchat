@@ -29,9 +29,10 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 import { LinearGradient } from 'expo-linear-gradient';
 import Slider from '@react-native-community/slider';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { io } from 'socket.io-client';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { storage } from '../utils/storage';
-import { romchatAccountApi, romchatBackendHealth, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
+import { romchatAccountApi, type RomChatAccount, type RomChatMemberProfile, type RomChatOnboardingState, type RomChatSessionPayload } from './features/romchat/account';
 import { apiBaseUrl, ApiRequestError, userFacingErrorMessage } from './lib/api';
 import { useRomChatData } from './features/romchat/hooks';
 import { romchatApi, type RomanceVibe, type RomChatMessage } from './features/romchat/api';
@@ -84,6 +85,10 @@ type ProfileSeed = {
   matchId?: string | null;
   sharedVibeIds?: string[];
   lastSeenAt?: string | null;
+  unreadMessageCount?: number;
+  unreadPriorityCount?: number;
+  latestPriorityAt?: string | null;
+  latestMessageAt?: string | null;
   online?: boolean;
   verified?: boolean;
 };
@@ -163,11 +168,20 @@ const plans: Array<{ id: 'gold' | 'platinum'; name: PlanName; price: string; amo
   { id: 'platinum', name: 'Platinum', price: 'KES 2,400/mo', amountKes: 2400, perks: ['Unlimited likes', 'Priority likes', 'Likes Sent', 'Top Picks', 'Weekly Boost'] },
 ];
 
-const gifts = [
-  { id: 'rose', name: 'Rose', tokens: 5 },
-  { id: 'chai', name: 'Chai date', tokens: 12 },
-  { id: 'spotlight', name: 'Spotlight', tokens: 30 },
-];
+const chatGifts = [
+  { id: 'rose', name: 'Rose', emoji: '🌹' },
+  { id: 'chai', name: 'Chai', emoji: '☕' },
+  { id: 'heart', name: 'Heart', emoji: '💖' },
+  { id: 'hug', name: 'Hug', emoji: '🤗' },
+  { id: 'kiss', name: 'Kiss', emoji: '💋' },
+  { id: 'bouquet', name: 'Bouquet', emoji: '💐' },
+  { id: 'chocolate', name: 'Chocolate', emoji: '🍫' },
+  { id: 'cake', name: 'Cake', emoji: '🎂' },
+  { id: 'sparkle', name: 'Sparkle', emoji: '✨' },
+  { id: 'dinner', name: 'Dinner', emoji: '🍽️' },
+] as const;
+
+const chatEmojis = ['😀', '😂', '🥰', '😍', '😘', '😊', '😉', '🤭', '🤗', '😎', '🥳', '❤️', '💕', '🔥', '✨', '🙌', '👏', '👍', '🙏', '💯', '🌹', '☕', '🎉', '🌙'];
 
 const tokenPackages = [
   { id: 'tokens_100', amount: 100, price: 'KES 250', unit: 'KES 2.50/ea', badge: '' },
@@ -191,8 +205,6 @@ const profilePromptTemplates = [
 
 const tokenCatalog = [
   { id: 'undo_swipe_token', label: 'Undo previous swipe', cost: String(UNDO_SWIPE_COST) },
-  { id: 'send_rose', label: 'Send a Rose in chat', cost: '5' },
-  { id: 'send_chai', label: 'Send Chai in chat', cost: '12' },
   { id: 'priority_message', label: 'Priority message', cost: String(SUPER_LIKE_COST) },
   { id: 'reveal_admirer', label: 'Reveal admirer', cost: '22' },
 ];
@@ -272,7 +284,7 @@ export default function App() {
         if (result.entitlement.planId === 'gold') setSubscriptionTier('Gold');
         setPaymentNotice(result.alreadyProcessed ? 'This purchase is already active on your account.' : 'Purchase complete. Your RomChat benefits are ready.');
       }
-      await finishTransaction({ purchase, isConsumable: result.entitlement.kind === 'tokens' });
+      await finishTransaction({ purchase, isConsumable: result.entitlement.kind !== 'subscription' });
     }, (error) => {
       if (mounted) {
         setPurchaseBusy(false);
@@ -309,7 +321,7 @@ export default function App() {
   const firstUploadedImageUrl = resolveMediaUrl([...(session?.profile?.media || [])].sort((a, b) => (a.position || 0) - (b.position || 0)).find((item) => item.mediaType === 'image')?.url);
   const strength = useMemo(() => 82 + (verifiedOnly ? 5 : 0) + (incognito ? 4 : 0) + (antiGrab ? 3 : 0), [verifiedOnly, incognito, antiGrab]);
   const activePlan: PlanName = boosted ? 'Platinum' : subscriptionTier;
-  const likesSummary = romchat.bootstrap?.likes || { receivedCount: 0, sentCount: 0, sentProfileIds: [], topPickProfileIds: [] };
+  const likesSummary = romchat.bootstrap?.likes || { receivedCount: 0, receivedProfileIds: [], sentCount: 0, sentProfileIds: [], topPickProfileIds: [] };
   const likesReceivedCount = Math.max(0, Number(likesSummary.receivedCount || 0));
   const visibleLikesReceivedCount = Math.max(0, Number(likesSummary.unreadReceivedCount ?? likesReceivedCount));
   const acknowledgeLikes = useCallback(() => { void romchat.markLikesSeen(); }, [romchat.markLikesSeen]);
@@ -317,6 +329,7 @@ export default function App() {
   const hasPlatinumAccess = activePlan === 'Platinum';
 
   const showActionFeedback = useCallback((tone: ActionFeedback['tone'], title: string, message: string) => {
+    if (tone === 'success') return;
     setActionFeedback({ id: Date.now(), tone, title, message });
   }, []);
 
@@ -635,6 +648,10 @@ export default function App() {
     clearMatchTimer();
     try {
       const result = await romchat.swipe(profile.id, action);
+      if (result?.wallet) setTokens(Math.max(0, Math.floor(result.wallet.balance)));
+      if (action === 'super_like') {
+        showActionFeedback('success', 'Super Like sent', `${profile.name} will see you near the top of their Likes.`);
+      }
       if (result?.matched) openMatchedChatSoon();
       else {
         setShowMatch(false);
@@ -649,18 +666,26 @@ export default function App() {
         ]);
         return;
       }
-      throw error;
+      if (error instanceof ApiRequestError && error.code === 'INSUFFICIENT_TOKENS') {
+        setPaymentNotice('Get a Super Like pack to stand out to this profile.');
+        setActiveSection('superlikes');
+        return;
+      }
+      showActionFeedback('error', action === 'super_like' ? 'Super Like not sent' : 'Like not sent', userFacingErrorMessage(error));
     }
   }
 
   async function acceptLikeAndOpenChat(profileId: string) {
     clearMatchTimer();
     setShowMatch(false);
-    const result = await romchat.swipe(profileId, 'like', { forceMatch: true });
-    setPendingChatProfileId(profileId);
-    await romchat.refresh();
-    setActiveSection('chat');
-    if (!result?.matched) console.warn('[romchat-likes] accepted like did not return matched result', { profileId, result });
+    const result = await romchat.swipe(profileId, 'like');
+    if (result?.matched) {
+      setPendingChatProfileId(profileId);
+      await romchat.refresh();
+      setActiveSection('chat');
+    } else {
+      showActionFeedback('error', 'Match not created', 'Their latest choice is no longer a Like. Keep discovering new profiles.');
+    }
   }
 
   function passLikeProfile(profileId: string) {
@@ -668,8 +693,53 @@ export default function App() {
   }
 
   function superLikeProfile() {
-    setPaymentNotice('');
-    setActiveSection('superlikes');
+    if (tokens < SUPER_LIKE_COST) {
+      setPaymentNotice('Choose a pack to send more Super Likes.');
+      setActiveSection('superlikes');
+      return;
+    }
+    void likeProfile('super_like');
+  }
+
+  function animatedSuperLikeProfile() {
+    if (tokens < SUPER_LIKE_COST) {
+      Animated.spring(swipePosition, { toValue: { x: 0, y: 0 }, friction: 7, tension: 95, useNativeDriver: false }).start();
+      superLikeProfile();
+      return;
+    }
+    clearMatchTimer();
+    Animated.timing(swipePosition, {
+      toValue: { x: 0, y: -windowHeight * 1.05 },
+      duration: 245,
+      useNativeDriver: false,
+    }).start(() => {
+      swipePosition.setValue({ x: 0, y: 0 });
+      void likeProfile('super_like');
+    });
+  }
+
+  async function superLikeRevealedProfile(profileId: string) {
+    if (tokens < SUPER_LIKE_COST) {
+      setPaymentNotice('Choose a pack to send more Super Likes.');
+      setActiveSection('superlikes');
+      return;
+    }
+    try {
+      const result = await romchat.swipe(profileId, 'super_like');
+      if (result?.wallet) setTokens(Math.max(0, Math.floor(result.wallet.balance)));
+      if (result?.matched) {
+        setPendingChatProfileId(profileId);
+        await romchat.refresh();
+        setActiveSection('chat');
+      }
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.code === 'INSUFFICIENT_TOKENS') {
+        setPaymentNotice('Choose a pack to send more Super Likes.');
+        setActiveSection('superlikes');
+        return;
+      }
+      showActionFeedback('error', 'Super Like not sent', userFacingErrorMessage(error));
+    }
   }
 
   const swipeHandlers = useMemo(
@@ -678,7 +748,9 @@ export default function App() {
         onStartShouldSetPanResponder: () => false,
         onStartShouldSetPanResponderCapture: () => false,
         onMoveShouldSetPanResponderCapture: () => false,
-        onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) > 16 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25,
+        onMoveShouldSetPanResponder: (_event, gesture) =>
+          (Math.abs(gesture.dx) > 16 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25) ||
+          (gesture.dy < -16 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.25),
         onPanResponderMove: Animated.event([null, { dx: swipePosition.x, dy: swipePosition.y }], { useNativeDriver: false }),
         onPanResponderRelease: (_event, gesture) => {
           const swipeOut = (direction: 'left' | 'right') => {
@@ -694,11 +766,12 @@ export default function App() {
           };
           if (gesture.dx > 92) return swipeOut('right');
           if (gesture.dx < -92) return swipeOut('left');
+          if (gesture.dy < -92) return animatedSuperLikeProfile();
           Animated.spring(swipePosition, { toValue: { x: 0, y: 0 }, friction: 7, tension: 95, useNativeDriver: false }).start();
         },
         onPanResponderTerminate: () => Animated.spring(swipePosition, { toValue: { x: 0, y: 0 }, friction: 7, tension: 95, useNativeDriver: false }).start(),
       }).panHandlers,
-    [profile?.id, profiles.length, windowWidth, swipePosition, likeProfile, passProfile]
+    [profile?.id, profiles.length, tokens, windowHeight, windowWidth, swipePosition, likeProfile, passProfile]
   );
 
   async function loginWithEmail(email: string, password: string) {
@@ -776,12 +849,6 @@ export default function App() {
       const { idToken } = await GoogleSignin.getTokens();
       console.info('[romchat-google] native:tokens', { hasIdToken: Boolean(idToken), tokenLength: idToken?.length || 0 });
       if (!idToken) throw new Error('Google did not return an ID token.');
-      try {
-        const health = await romchatBackendHealth();
-        console.info('[romchat-google] backend:health-ok', health);
-      } catch (healthError) {
-        console.warn('[romchat-google] backend:health-failed', healthError);
-      }
       await applyAuth(await romchatAccountApi.google(idToken));
       console.info('[romchat-google] native:backend-auth-success');
     } catch (error) {
@@ -1026,7 +1093,7 @@ export default function App() {
       return <ExploreScreen vibes={romanceVibes} profiles={baseProfiles} onToggle={toggleRomanceVibe} onBrowse={browseRomanceVibe} />;
     }
     if (section === 'likes') {
-      return <LikesScreen profiles={baseProfiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} tokens={tokens} spendTokens={romchat.spendTokens} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} onAllLikesSeenChange={acknowledgeLikes} />;
+      return <LikesScreen profiles={baseProfiles} likesReceivedCount={likesReceivedCount} likesSummary={likesSummary} activePlan={activePlan} tokens={tokens} spendTokens={romchat.spendTokens} openPremium={openTokenStore} openSuperLikes={() => setActiveSection('superlikes')} openChat={() => setActiveSection('chat')} acceptLikeAndOpenChat={(profileId) => void acceptLikeAndOpenChat(profileId)} superLikeProfile={(profileId) => void superLikeRevealedProfile(profileId)} passLikeProfile={passLikeProfile} likeProfile={() => likeProfile('like')} passProfile={passProfile} blockProfile={(profileId) => romchat.block(profileId)} reportProfile={(profileId, reason) => romchat.report(profileId, reason)} onAllLikesSeenChange={acknowledgeLikes} />;
     }
     if (section === 'chat') {
       return (
@@ -1050,7 +1117,7 @@ export default function App() {
       return <Premium tokens={tokens} boosted={boosted} activePlan={activePlan} paymentNotice={paymentNotice} billingStatus={billingStatus} purchaseBusy={purchaseBusy} activateBoost={() => { setBoosted(true); setSubscriptionTier('Platinum'); void romchat.boost(); }} openPaymentPage={openPaymentPage} />;
     }
     if (section === 'superlikes') {
-      return <SuperLikesScreen paymentNotice={paymentNotice} openGoldPlans={() => setActiveSection('goldPlans')} openPaymentPage={openPaymentPage} />;
+      return <SuperLikesScreen paymentNotice={paymentNotice} billingStatus={billingStatus} purchaseBusy={purchaseBusy} openGoldPlans={() => setActiveSection('goldPlans')} openPaymentPage={openPaymentPage} />;
     }
     if (section === 'goldPlans') {
       return <GoldPlansScreen paymentNotice={paymentNotice} openPaymentPage={openPaymentPage} />;
@@ -1154,7 +1221,8 @@ export default function App() {
               profile={profile}
               passProfile={animatedPassProfile}
               likeProfile={animatedLikeProfile}
-              topProfile={superLikeProfile}
+              topProfile={animatedSuperLikeProfile}
+              superLikesAvailable={Math.floor(tokens / SUPER_LIKE_COST)}
               blockProfile={(profileId) => romchat.block(profileId)}
               reportProfile={(profileId, reason) => romchat.report(profileId, reason)}
               onFirstImpression={(offer, message) => openPaymentPage({ kind: 'firstImpressions', title: `${offer.count} First Impressions`, subtitle: message ? `Your note: “${message}”` : 'Send thoughtful priority messages before a mutual match.', amountKes: offer.total, packageId: offer.id, accent: 'blue' })}
@@ -1513,6 +1581,7 @@ function Discover({
   passProfile,
   likeProfile,
   topProfile,
+  superLikesAvailable,
   blockProfile,
   reportProfile,
   onFirstImpression,
@@ -1529,6 +1598,7 @@ function Discover({
   passProfile: () => void;
   likeProfile: () => void;
   topProfile: () => void;
+  superLikesAvailable: number;
   blockProfile: (profileId: string) => Promise<void>;
   reportProfile: (profileId: string, reason: string) => Promise<void>;
   onFirstImpression: (offer: { id: string; count: number; total: number; unit: number; badge?: string }, message: string) => void;
@@ -1634,7 +1704,10 @@ function Discover({
               <TouchableOpacity onPress={passProfile} style={styles.passAction} accessibilityLabel="Pass profile"><Icon name="close" size={30} color="#FFFFFF" /></TouchableOpacity>
             </View>
             <View style={styles.actionItem}>
-              <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel="Get Super Likes"><Icon name="diamond" size={21} color="#9BC6FF" /></TouchableOpacity>
+              <TouchableOpacity onPress={topProfile} style={styles.topAction} accessibilityLabel={superLikesAvailable > 0 ? `Send Super Like, ${superLikesAvailable} available` : 'Get Super Likes'}>
+                <Icon name="star" size={23} color="#9BC6FF" />
+                <View style={styles.superLikeCountBadge}><Text style={styles.superLikeCountText}>{superLikesAvailable > 99 ? '99+' : superLikesAvailable}</Text></View>
+              </TouchableOpacity>
             </View>
             <View style={styles.actionItem}>
               <TouchableOpacity onPress={likeProfile} style={styles.likeAction} accessibilityLabel="Like profile"><Icon name="heart" size={30} color="#FF1200" /></TouchableOpacity>
@@ -1785,31 +1858,62 @@ function ExploreScreen({ vibes, profiles, onToggle, onBrowse }: { vibes: Romance
   );
 }
 
-function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, tokens, spendTokens, openPremium, openSuperLikes, openChat, acceptLikeAndOpenChat, passLikeProfile, likeProfile, passProfile, onAllLikesSeenChange }: {
-  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; tokens: number; spendTokens: (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message', targetId: string) => Promise<{ spent: number; wallet: { balance: number } }>; openPremium: () => void; openSuperLikes: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; passLikeProfile: (profileId: string) => void; likeProfile: () => void; passProfile: () => void; onAllLikesSeenChange?: () => void }) {
+function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, tokens, spendTokens, openPremium, openSuperLikes, openChat, acceptLikeAndOpenChat, superLikeProfile, passLikeProfile, likeProfile, passProfile, blockProfile, reportProfile, onAllLikesSeenChange }: {
+  profiles: ProfileSeed[]; likesReceivedCount: number; likesSummary: { receivedCount?: number; receivedProfileIds?: string[]; revealedAdmirerProfileIds?: string[]; sentCount?: number; sentProfileIds?: string[]; topPickProfileIds?: string[] }; activePlan: PlanName; tokens: number; spendTokens: (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message' | 'super_like', targetId: string) => Promise<{ spent: number; wallet: { balance: number } }>; openPremium: () => void; openSuperLikes: () => void; openChat: () => void; acceptLikeAndOpenChat: (profileId: string) => void; superLikeProfile: (profileId: string) => void; passLikeProfile: (profileId: string) => void; likeProfile: () => void; passProfile: () => void; blockProfile: (profileId: string) => Promise<void> | void; reportProfile: (profileId: string, reason: string) => Promise<void> | void; onAllLikesSeenChange?: () => void }) {
   const [tab, setTab] = useState<'received' | 'sent' | 'top'>('received');
   const [revealedLikeId, setRevealedLikeId] = useState<string | null>(null);
   const [tokenReveals, setTokenReveals] = useState<string[]>([]);
   const [revealBusyId, setRevealBusyId] = useState<string | null>(null);
+  const [selectedRevealedProfile, setSelectedRevealedProfile] = useState<ProfileSeed | null>(null);
   const [nextDropCountdown, setNextDropCountdown] = useState(() => formatNextLikeDropCountdown());
   const hasGoldAccess = activePlan === 'Gold' || activePlan === 'Platinum';
   const sentIds = new Set(likesSummary.sentProfileIds || []);
+  const receivedIds = new Set(likesSummary.receivedProfileIds || []);
   const topIds = new Set(likesSummary.topPickProfileIds || []);
   const sentProfiles = profiles.filter((profile) => sentIds.has(profile.id));
   const topPicks = profiles.filter((profile) => topIds.has(profile.id));
   const fallbackTopPicks = profiles.filter((profile) => profile.match >= 88).slice(0, 6);
-  const admirerProfiles = profiles.filter((profile) => !sentIds.has(profile.id)).slice(0, 8);
+  const actualAdmirers = profiles.filter((profile) => receivedIds.has(profile.id));
+  const admirerProfiles = (actualAdmirers.length ? actualAdmirers : profiles.filter((profile) => !sentIds.has(profile.id))).slice(0, 8);
   const dailyGoldMatch = admirerProfiles[0] || profiles[0] || localProfiles[0]!;
   const topPickList = (topPicks.length ? topPicks : fallbackTopPicks).slice(0, 6);
   const sentList = (sentProfiles.length ? sentProfiles : profiles.slice(0, 4)).slice(0, 8);
   const likesLabel = likesReceivedCount > 99 ? '99+' : String(Math.max(likesReceivedCount, admirerProfiles.length));
   const tabText = tab === 'received' ? `${likesLabel} Likes` : tab === 'sent' ? 'Likes Sent' : 'Top Picks';
+  const selectedDetailProfile: ProfileDetailData | null = useMemo(() => {
+    if (!selectedRevealedProfile) return null;
+    const remotePhotos = (selectedRevealedProfile.photos || []).map((url) => ({ uri: resolveMediaUrl(url) })).filter((item) => Boolean(item.uri));
+    const photos: ImageSourcePropType[] = remotePhotos.length ? remotePhotos : [selectedRevealedProfile.photo];
+    return {
+      id: selectedRevealedProfile.id,
+      name: selectedRevealedProfile.name,
+      age: selectedRevealedProfile.age,
+      city: selectedRevealedProfile.city,
+      distanceKm: selectedRevealedProfile.distanceKm,
+      intent: selectedRevealedProfile.intent,
+      prompt: selectedRevealedProfile.prompt,
+      quote: selectedRevealedProfile.quote,
+      song: selectedRevealedProfile.song,
+      tags: selectedRevealedProfile.tags,
+      answers: selectedRevealedProfile.answers,
+      photos,
+      photo: photos[0]!,
+      color: selectedRevealedProfile.color,
+      online: selectedRevealedProfile.online,
+      verified: selectedRevealedProfile.verified,
+    };
+  }, [selectedRevealedProfile]);
 
   useEffect(() => {
     onAllLikesSeenChange?.();
     const timer = setInterval(() => setNextDropCountdown(formatNextLikeDropCountdown()), 1000);
     return () => clearInterval(timer);
   }, [onAllLikesSeenChange]);
+
+  useEffect(() => {
+    const restored = likesSummary.revealedAdmirerProfileIds || [];
+    if (restored.length) setTokenReveals((current) => Array.from(new Set([...current, ...restored])));
+  }, [likesSummary.revealedAdmirerProfileIds]);
 
   function revealDailyLike() {
     setRevealedLikeId(dailyGoldMatch.id);
@@ -1826,6 +1930,13 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, t
     } finally {
       setRevealBusyId(null);
     }
+  }
+  function openOrRevealAdmirer(profile: ProfileSeed) {
+    if (hasGoldAccess || tokenReveals.includes(profile.id)) {
+      setSelectedRevealedProfile(profile);
+      return;
+    }
+    void revealWithTokens(profile.id);
   }
   function acceptDailyLike() {
     setRevealedLikeId(null);
@@ -1861,7 +1972,7 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, t
           <GoldMatchCard profile={dailyGoldMatch} revealed={revealedLikeId === dailyGoldMatch.id || hasGoldAccess} onReveal={revealDailyLike} onAccept={acceptDailyLike} onPass={passDailyLike} />
           <Text style={styles.likesSectionTitle}>Everyone else who's into you</Text>
           <View style={styles.likesGrid}>
-            {admirerProfiles.slice(1, 7).map((profile, index) => <BlurredLikeCard key={profile.id} profile={profile} revealed={hasGoldAccess || tokenReveals.includes(profile.id)} busy={revealBusyId === profile.id} onPress={() => void revealWithTokens(profile.id)} index={index} />)}
+            {admirerProfiles.slice(1, 7).map((profile, index) => <BlurredLikeCard key={profile.id} profile={profile} revealed={hasGoldAccess || tokenReveals.includes(profile.id)} busy={revealBusyId === profile.id} onPress={() => openOrRevealAdmirer(profile)} index={index} />)}
           </View>
           <TouchableOpacity onPress={openPremium} style={styles.likesUnlockButton}><Text style={styles.likesUnlockText}>See All Your Likes Now</Text></TouchableOpacity>
         </View>
@@ -1886,6 +1997,30 @@ function LikesScreen({ profiles, likesReceivedCount, likesSummary, activePlan, t
           <TouchableOpacity onPress={openPremium} style={styles.topPickUnlockButton}><Text style={styles.topPickUnlockText}>{hasGoldAccess ? 'Refresh Top Picks' : 'Unlock all Top Picks'}</Text></TouchableOpacity>
         </View>
       )}
+
+      <ProfileDetailModal
+        profile={selectedDetailProfile}
+        visible={Boolean(selectedDetailProfile)}
+        onClose={() => setSelectedRevealedProfile(null)}
+        onPass={() => {
+          if (selectedRevealedProfile) passLikeProfile(selectedRevealedProfile.id);
+          setSelectedRevealedProfile(null);
+        }}
+        onLike={() => {
+          if (selectedRevealedProfile) acceptLikeAndOpenChat(selectedRevealedProfile.id);
+          setSelectedRevealedProfile(null);
+        }}
+        onSuperLike={() => {
+          if (selectedRevealedProfile) superLikeProfile(selectedRevealedProfile.id);
+          setSelectedRevealedProfile(null);
+        }}
+        onBlock={blockProfile}
+        onReport={reportProfile}
+        onFirstImpression={() => {
+          if (selectedRevealedProfile) acceptLikeAndOpenChat(selectedRevealedProfile.id);
+          setSelectedRevealedProfile(null);
+        }}
+      />
     </View>
   );
 }
@@ -1994,15 +2129,22 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
 }
 
 type ChatDeliveryStatus = 'pending' | 'failed' | 'delivered' | 'read' | 'received';
-type ChatThreadMessage = { id: string; from: 'You' | 'Them'; text: string; status: ChatDeliveryStatus };
+type ChatThreadMessage = { id: string; from: 'You' | 'Them'; text: string; status: ChatDeliveryStatus; giftId?: string | null; priority?: boolean };
+
+function isEmojiOnlyMessage(value: string) {
+  const compact = String(value || '').replace(/\s/g, '');
+  return compact.length > 0
+    && compact.length <= 32
+    && /^(?:\p{Extended_Pictographic}|\p{Emoji_Presentation}|\uFE0F|\u200D)+$/u.test(compact);
+}
 
 function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessages, currentUserId, initialProfileId, onInitialProfileHandled, blockProfile, reportProfile, status }: {
   profiles: ProfileSeed[];
   sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean; priority?: boolean }) => Promise<{ message?: RomChatMessage } | null>;
-  sendGift: (giftId: string, matchId?: string) => Promise<unknown>;
+  sendGift: (giftId: string, matchId?: string) => Promise<{ gift: unknown; message: RomChatMessage; wallet: { balance: number; currency: string } } | null>;
   spendTokens: (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message', targetId: string) => Promise<{ spent: number; wallet: { balance: number } }>;
   tokens: number;
-  getMessages: (matchId: string) => Promise<RomChatMessage[]>;
+  getMessages: (matchId: string, readerId?: string) => Promise<RomChatMessage[]>;
   currentUserId: string;
   initialProfileId?: string | null;
   onInitialProfileHandled?: () => void;
@@ -2011,8 +2153,6 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
   status: string;
 }) {
   const matchPool = profiles.filter((profile) => Boolean(profile.matchId));
-  const onlineMatches = matchPool.filter((profile) => profile.online === true);
-  const orderedMatches = [...onlineMatches, ...matchPool.filter((profile) => profile.online !== true)];
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
   const [threadMessages, setThreadMessages] = useState<Record<string, ChatThreadMessage[]>>({});
@@ -2021,6 +2161,21 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [priorityMessage, setPriorityMessage] = useState(false);
+  const [priorityConfirmOpen, setPriorityConfirmOpen] = useState(false);
+  const [priorityOverrides, setPriorityOverrides] = useState<Record<string, { count: number; latestAt: string | null }>>({});
+  const [giftPickerOpen, setGiftPickerOpen] = useState(false);
+  const [giftPickerTab, setGiftPickerTab] = useState<'gifts' | 'emoji'>('gifts');
+  const [giftSendingId, setGiftSendingId] = useState<string | null>(null);
+  const priorityCountFor = (profile: ProfileSeed) => priorityOverrides[profile.id]?.count ?? Number(profile.unreadPriorityCount || 0);
+  const priorityTimeFor = (profile: ProfileSeed) => priorityOverrides[profile.id]?.latestAt || profile.latestPriorityAt || '';
+  const orderedMatches = [...matchPool].sort((left, right) =>
+    priorityCountFor(right) - priorityCountFor(left)
+    || Date.parse(priorityTimeFor(right) || '1970-01-01') - Date.parse(priorityTimeFor(left) || '1970-01-01')
+    || Number(right.unreadMessageCount || 0) - Number(left.unreadMessageCount || 0)
+    || Date.parse(right.latestMessageAt || '1970-01-01') - Date.parse(left.latestMessageAt || '1970-01-01')
+    || Number(right.online === true) - Number(left.online === true)
+  );
+  const onlineMatches = orderedMatches.filter((profile) => profile.online === true);
   const selectedMatch = orderedMatches.find((profile) => profile.id === selectedMatchId) || null;
   const visibleThreads = orderedMatches.filter((profile) => `${profile.name} ${profile.city} ${profile.intent} ${profile.tags.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
   const promptChips = selectedMatch ? [`Ask ${selectedMatch.name} about ${selectedMatch.tags[0] || 'her vibe'}`, 'Coffee this weekend?', 'How has your day been?'] : [];
@@ -2056,17 +2211,55 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
 
   useEffect(() => {
     setProfileOpen(false);
+    setGiftPickerOpen(false);
+    setPriorityMessage(false);
+    setPriorityConfirmOpen(false);
+    if (selectedMatchId) {
+      setPriorityOverrides((current) => ({ ...current, [selectedMatchId]: { count: 0, latestAt: null } }));
+    }
   }, [selectedMatchId]);
+
+  useEffect(() => {
+    const matchIds = matchPool.map((profile) => profile.matchId).filter(Boolean) as string[];
+    if (!matchIds.length) return undefined;
+    const socket = io(apiBaseUrl, { transports: ['websocket'], reconnection: true });
+    const joinMatches = () => matchIds.forEach((matchId) => socket.emit('romchat:join', matchId));
+    const receiveMessage = (message: RomChatMessage) => {
+      const profile = matchPool.find((candidate) => candidate.matchId === message.matchId);
+      if (!profile || (message.senderId || message.from) === currentUserId) return;
+      setThreadMessages((current) => {
+        const existing = current[profile.id] || [];
+        if (existing.some((item) => item.id === message.id)) return current;
+        return {
+          ...current,
+          [profile.id]: [...existing, { id: message.id, from: 'Them', text: message.text, status: 'received', giftId: message.giftId, priority: Boolean(message.priority) }],
+        };
+      });
+      if (message.priority && selectedMatchId !== profile.id) {
+        setPriorityOverrides((current) => {
+          const previous = current[profile.id]?.count ?? Number(profile.unreadPriorityCount || 0);
+          return { ...current, [profile.id]: { count: previous + 1, latestAt: message.createdAt || new Date().toISOString() } };
+        });
+      }
+    };
+    socket.on('connect', joinMatches);
+    socket.on('romchat:message', receiveMessage);
+    return () => {
+      socket.off('connect', joinMatches);
+      socket.off('romchat:message', receiveMessage);
+      socket.disconnect();
+    };
+  }, [currentUserId, matchPool.map((profile) => `${profile.id}:${profile.matchId}`).join('|'), selectedMatchId]);
 
   function looksLikeContactShare(textValue: string) {
     return /(\+?\d[\d\s().-]{6,}\d)|([\w.%+-]+@[\w.-]+\.[A-Za-z]{2,})|(whats\s*app|telegram|snapchat|instagram|ig\b|@\w{3,})/i.test(textValue);
   }
 
-  function appendLocalMessage(profileId: string, textValue: string) {
+  function appendLocalMessage(profileId: string, textValue: string, giftId?: string, priority = false) {
     const id = `local_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
     setThreadMessages((current) => ({
       ...current,
-      [profileId]: [...(current[profileId] || []), { id, from: 'You', text: textValue, status: 'pending' }],
+      [profileId]: [...(current[profileId] || []), { id, from: 'You', text: textValue, status: 'pending', giftId, priority }],
     }));
     return id;
   }
@@ -2074,7 +2267,7 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
   async function deliverMessage(textValue: string, priority = false) {
     if (!selectedMatch) return;
     const profileId = selectedMatch.id;
-    const localId = appendLocalMessage(profileId, textValue);
+    const localId = appendLocalMessage(profileId, textValue, undefined, priority);
     if (priority) {
       try {
         await spendTokens('priority_message', localId);
@@ -2098,6 +2291,7 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
         from: 'You',
         text: result.message!.text || textValue,
         status: result.message!.readAt ? 'read' : 'delivered',
+        priority: Boolean(result.message!.priority || priority),
       } : message),
     }));
     if (priority) setPriorityMessage(false);
@@ -2137,20 +2331,43 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
     else sendChatText(textValue);
   }
 
-  function confirmGift(giftId: 'rose' | 'chai', label: string, cost: number) {
-    if (!selectedMatch) return;
-    if (tokens < cost) return Alert.alert('More tokens needed', `You need ${cost} tokens to send ${label}.`, [{ text: 'OK' }]);
-    Alert.alert(`Send ${label}?`, `${cost} tokens will be deducted from your wallet.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: `Send for ${cost}`, onPress: () => void sendGift(giftId, selectedMatch.matchId || `match_${selectedMatch.id}`) },
-    ]);
+  async function sendChatGift(gift: (typeof chatGifts)[number]) {
+    if (!selectedMatch || giftSendingId) return;
+    const profileId = selectedMatch.id;
+    const textValue = `${gift.emoji} ${gift.name}`;
+    const localId = appendLocalMessage(profileId, textValue, gift.id);
+    setGiftSendingId(gift.id);
+    const result = await sendGift(gift.id, selectedMatch.matchId || `match_${selectedMatch.id}`);
+    setGiftSendingId(null);
+    if (!result?.message) {
+      setThreadMessages((current) => ({
+        ...current,
+        [profileId]: (current[profileId] || []).map((message) => message.id === localId ? { ...message, status: 'failed' } : message),
+      }));
+      return;
+    }
+    setThreadMessages((current) => ({
+      ...current,
+      [profileId]: (current[profileId] || []).map((message) => message.id === localId ? {
+        id: result.message.id,
+        from: 'You',
+        text: result.message.text || textValue,
+        status: result.message.readAt ? 'read' : 'delivered',
+        giftId: gift.id,
+      } : message),
+    }));
+    setGiftPickerOpen(false);
+  }
+
+  function addEmoji(emoji: string) {
+    setDraft((current) => `${current}${emoji}`);
   }
 
   useEffect(() => {
     if (!selectedMatch?.matchId) return;
     let mounted = true;
     const profileId = selectedMatch.id;
-    const loadMessages = () => getMessages(selectedMatch.matchId!)
+    const loadMessages = () => getMessages(selectedMatch.matchId!, currentUserId)
       .then((messages) => {
         if (!mounted) return;
         setThreadMessages((current) => {
@@ -2159,6 +2376,8 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
             from: (message.senderId || message.from) === currentUserId ? 'You' : 'Them',
             text: message.text,
             status: (message.senderId || message.from) === currentUserId ? (message.readAt ? 'read' : 'delivered') : 'received',
+            giftId: message.giftId,
+            priority: Boolean(message.priority),
           }));
           const fetchedIds = new Set(fetched.map((message) => message.id));
           const optimistic = (current[profileId] || []).filter((message) => message.from === 'You' && !fetchedIds.has(message.id));
@@ -2167,7 +2386,7 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
       })
       .catch(() => undefined);
     void loadMessages();
-    const poller = setInterval(() => void loadMessages(), 2000);
+    const poller = setInterval(() => void loadMessages(), 10000);
     return () => { mounted = false; clearInterval(poller); };
   }, [selectedMatch?.id, selectedMatch?.matchId, currentUserId, getMessages]);
 
@@ -2175,6 +2394,56 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
     return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0} style={[styles.chatScreen, styles.chatKeyboardAvoider]}>
         <ContactSafetySheet visible={Boolean(pendingContactText)} matchName={selectedMatch.name} onReview={cancelContactShare} onSend={confirmContactShare} />
+        <Modal visible={priorityConfirmOpen} transparent animationType="fade" onRequestClose={() => setPriorityConfirmOpen(false)}>
+          <Pressable style={styles.priorityModalBackdrop} onPress={() => setPriorityConfirmOpen(false)}>
+            <Pressable style={styles.priorityModalCard} onPress={(event) => event.stopPropagation()}>
+              <View style={styles.priorityModalIcon}><Icon name="flash" size={25} color="#120914" /></View>
+              <Text style={styles.priorityModalTitle}>Send with priority?</Text>
+              <Text style={styles.priorityModalBody}>Your next message will move to the top of {selectedMatch.name}'s unread chats and receive a priority highlight.</Text>
+              <View style={styles.priorityModalCostRow}>
+                <Text style={styles.priorityModalCostLabel}>One priority message</Text>
+                <Text style={styles.priorityModalCost}>15 tokens</Text>
+              </View>
+              <Text style={[styles.priorityModalBalance, tokens < SUPER_LIKE_COST && styles.priorityModalBalanceLow]}>Your balance: {tokens} tokens</Text>
+              <View style={styles.priorityModalActions}>
+                <TouchableOpacity onPress={() => setPriorityConfirmOpen(false)} style={styles.priorityModalCancel}><Text style={styles.priorityModalCancelText}>Not now</Text></TouchableOpacity>
+                <TouchableOpacity disabled={tokens < SUPER_LIKE_COST} onPress={() => { setPriorityMessage(true); setPriorityConfirmOpen(false); }} style={[styles.priorityModalConfirm, tokens < SUPER_LIKE_COST && styles.priorityModalConfirmDisabled]}><Icon name="flash" size={16} color="#120914" /><Text style={styles.priorityModalConfirmText}>{tokens < SUPER_LIKE_COST ? 'Need more tokens' : 'Use on next message'}</Text></TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+        <Modal visible={giftPickerOpen} transparent animationType="slide" onRequestClose={() => setGiftPickerOpen(false)}>
+          <Pressable style={styles.giftPickerBackdrop} onPress={() => setGiftPickerOpen(false)}>
+            <Pressable style={styles.giftPickerSheet} onPress={(event) => event.stopPropagation()}>
+              <View style={styles.giftPickerHandle} />
+              <View style={styles.giftPickerHeader}>
+                <View>
+                  <Text style={styles.giftPickerTitle}>Make them smile</Text>
+                  <Text style={styles.giftPickerSubtitle}>Choose something warm for your conversation.</Text>
+                </View>
+                <TouchableOpacity accessibilityLabel="Close gift picker" onPress={() => setGiftPickerOpen(false)} style={styles.giftPickerClose}><Icon name="close" size={20} color="#FFFFFF" /></TouchableOpacity>
+              </View>
+              <View style={styles.giftPickerTabs}>
+                <TouchableOpacity onPress={() => setGiftPickerTab('gifts')} style={[styles.giftPickerTab, giftPickerTab === 'gifts' && styles.giftPickerTabActive]}><Icon name="gift-outline" size={18} color={giftPickerTab === 'gifts' ? '#FFD700' : 'rgba(255,255,255,0.58)'} /><Text style={[styles.giftPickerTabText, giftPickerTab === 'gifts' && styles.giftPickerTabTextActive]}>Gifts</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => setGiftPickerTab('emoji')} style={[styles.giftPickerTab, giftPickerTab === 'emoji' && styles.giftPickerTabActive]}><Icon name="happy-outline" size={18} color={giftPickerTab === 'emoji' ? '#FFD700' : 'rgba(255,255,255,0.58)'} /><Text style={[styles.giftPickerTabText, giftPickerTab === 'emoji' && styles.giftPickerTabTextActive]}>Emoji</Text></TouchableOpacity>
+              </View>
+              {giftPickerTab === 'gifts' ? (
+                <View style={styles.giftPickerGrid}>
+                  {chatGifts.map((gift) => (
+                    <TouchableOpacity key={gift.id} disabled={Boolean(giftSendingId)} onPress={() => void sendChatGift(gift)} style={[styles.giftPickerItem, giftSendingId === gift.id && styles.giftPickerItemActive]}>
+                      {giftSendingId === gift.id ? <ActivityIndicator color="#FF1493" /> : <Text style={styles.giftPickerEmoji}>{gift.emoji}</Text>}
+                      <Text numberOfLines={1} style={styles.giftPickerName}>{gift.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.emojiPickerGrid}>
+                  {chatEmojis.map((emoji, index) => <TouchableOpacity key={`${emoji}-${index}`} onPress={() => addEmoji(emoji)} style={styles.emojiPickerItem}><Text style={styles.emojiPickerText}>{emoji}</Text></TouchableOpacity>)}
+                </View>
+              )}
+            </Pressable>
+          </Pressable>
+        </Modal>
         <ProfileDetailModal profile={selectedDetailProfile} visible={profileOpen} matched onReply={() => setProfileOpen(false)} onClose={() => setProfileOpen(false)} onPass={() => undefined} onLike={() => undefined} onSuperLike={() => undefined} onBlock={blockProfile} onReport={reportProfile} onFirstImpression={() => undefined} />
         <View style={styles.threadTopBar}>
           <TouchableOpacity onPress={() => setSelectedMatchId(null)} style={styles.chatBackButton}><Icon name="chevron-back" size={20} color="#FFFFFF" /></TouchableOpacity>
@@ -2195,12 +2464,16 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
 
         <View style={styles.conversationPanel}>
           <Text style={styles.matchContext}>{selectedMatch.intent} - {selectedMatch.city}{typeof selectedMatch.distanceKm === 'number' && selectedMatch.distanceKm > 0 ? ` - ${selectedMatch.distanceKm} km` : ''}</Text>
-          {selectedMessages.length ? selectedMessages.map((message) => (
-            <View key={message.id} style={[styles.bubble, message.from === 'You' ? styles.sent : styles.received]}>
-              <Text style={message.from === 'You' ? styles.sentText : styles.receivedText}>{message.text}</Text>
-              {message.from === 'You' ? <MessageReceipt status={message.status} /> : null}
-            </View>
-          )) : (
+          {selectedMessages.length ? selectedMessages.map((message) => {
+            const emojiOnly = !message.giftId && isEmojiOnlyMessage(message.text);
+            return (
+              <View key={message.id} style={[styles.bubble, message.from === 'You' ? styles.sent : styles.received, message.giftId && styles.giftBubble, emojiOnly && styles.emojiOnlyBubble, message.priority && message.from === 'Them' && styles.priorityReceivedBubble, message.priority && message.from === 'You' && styles.prioritySentBubble]}>
+                {message.priority ? <View style={styles.priorityMessageLabel}><Icon name="flash" size={12} color={message.from === 'You' ? '#FFD700' : '#FFD700'} /><Text style={styles.priorityMessageLabelText}>{message.from === 'You' ? 'Priority sent' : 'Priority message'}</Text></View> : null}
+                <Text style={message.giftId ? styles.giftBubbleText : emojiOnly ? styles.emojiOnlyText : message.from === 'You' ? styles.sentText : styles.receivedText}>{message.text}</Text>
+                {message.from === 'You' ? <MessageReceipt status={message.status} /> : null}
+              </View>
+            );
+          }) : (
             <View style={styles.emptyThreadCard}>
               <Text style={styles.emptyThreadTitle}>Start with a simple message</Text>
               <Text style={styles.emptyThreadText}>Matched chats are free. Say hello, ask about a profile detail, and keep it respectful.</Text>
@@ -2213,11 +2486,10 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
             {promptChips.map((prompt) => <TouchableOpacity key={prompt} onPress={() => sendChatText(prompt)}><Text style={styles.promptChip}>{prompt}</Text></TouchableOpacity>)}
           </View>
           <View style={styles.tokenChatTools}>
-            <TouchableOpacity onPress={() => setPriorityMessage((value) => !value)} style={[styles.tokenChatButton, priorityMessage && styles.tokenChatButtonActive]}><Icon name="flash" size={15} color={priorityMessage ? '#120914' : '#FFD700'} /><Text style={[styles.tokenChatButtonText, priorityMessage && styles.tokenChatButtonTextActive]}>Priority · 15</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => confirmGift('rose', 'a Rose', 5)} style={styles.tokenChatButton}><Icon name="rose" size={15} color="#FF6F91" /><Text style={styles.tokenChatButtonText}>Rose · 5</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => confirmGift('chai', 'Chai', 12)} style={styles.tokenChatButton}><Icon name="cafe" size={15} color="#FFD700" /><Text style={styles.tokenChatButtonText}>Chai · 12</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => priorityMessage ? setPriorityMessage(false) : setPriorityConfirmOpen(true)} style={[styles.tokenChatButton, priorityMessage && styles.tokenChatButtonActive]}><Icon name="flash" size={15} color={priorityMessage ? '#120914' : '#FFD700'} /><Text style={[styles.tokenChatButtonText, priorityMessage && styles.tokenChatButtonTextActive]}>{priorityMessage ? 'Priority ready' : 'Priority · 15'}</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setGiftPickerOpen(true)} style={styles.chatGiftLauncher}><Icon name="gift-outline" size={17} color="#F4B8D1" /><Text style={styles.chatGiftLauncherText}>Gifts & emoji</Text></TouchableOpacity>
           </View>
-          {priorityMessage && <Text style={styles.priorityHint}>Your next message will be placed higher in {selectedMatch.name}'s inbox. Balance: {tokens} tokens.</Text>}
+          {priorityMessage && <View style={styles.priorityReadyRow}><Icon name="checkmark-circle" size={15} color="#36D399" /><Text style={styles.priorityHint}>Priority is ready. Sending your next message will use 15 tokens.</Text></View>}
         </View>
         <View style={styles.composer}>
           <TextInput value={draft} onChangeText={setDraft} placeholder={`Message ${selectedMatch.name}`} style={styles.input} placeholderTextColor="#a45a72" multiline maxLength={800} returnKeyType="default" textAlignVertical="center" />
@@ -2258,18 +2530,19 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
         {visibleThreads.map((profile) => {
           const photo = profile.photos?.[0] ? { uri: resolveMediaUrl(profile.photos[0]) } : profile.photo;
           const messages = threadMessages[profile.id] || [];
-          const preview = messages.length ? messages[messages.length - 1]!.text : profile.prompt;
+          const priorityCount = priorityCountFor(profile);
+          const preview = messages.length ? messages[messages.length - 1]!.text : priorityCount > 0 ? 'Priority message waiting' : profile.prompt;
           return (
-            <TouchableOpacity key={profile.id} onPress={() => setSelectedMatchId(profile.id)} style={styles.threadRow}>
+            <TouchableOpacity key={profile.id} onPress={() => setSelectedMatchId(profile.id)} style={[styles.threadRow, priorityCount > 0 && styles.priorityThreadRow]}>
               <View>
                 <Image source={photo} style={styles.threadAvatar} />
                 {profile.online !== false && <View style={styles.threadOnlineDot} />}
               </View>
               <View style={styles.threadCopy}>
-                <Text numberOfLines={1} style={styles.threadName}>{profile.name}{profile.verified ? ' verified' : ''}</Text>
-                <Text numberOfLines={1} style={styles.threadPreview}>{preview}</Text>
+                <View style={styles.threadNameRow}><Text numberOfLines={1} style={styles.threadName}>{profile.name}{profile.verified ? ' verified' : ''}</Text>{priorityCount > 0 ? <Icon name="flash" size={14} color="#FFD700" /> : null}</View>
+                <Text numberOfLines={1} style={[styles.threadPreview, priorityCount > 0 && styles.priorityThreadPreview]}>{preview}</Text>
               </View>
-              <Text style={styles.yourTurnPill}>{messages.length ? 'Open' : 'Say hi'}</Text>
+              {priorityCount > 0 ? <View style={styles.priorityInboxPill}><Icon name="flash" size={11} color="#120914" /><Text style={styles.priorityInboxPillText}>{priorityCount}</Text></View> : <Text style={styles.yourTurnPill}>{messages.length ? 'Open' : 'Say hi'}</Text>}
             </TouchableOpacity>
           );
         })}
@@ -2301,8 +2574,10 @@ const goldPlanOptions = [
   { id: 'six', label: '6 Months', unit: 100, total: 2400, badge: 'Best Value' },
 ];
 
-function SuperLikesScreen({ paymentNotice, openGoldPlans, openPaymentPage }: {
+function SuperLikesScreen({ paymentNotice, billingStatus, purchaseBusy, openGoldPlans, openPaymentPage }: {
   paymentNotice: string;
+  billingStatus: 'disabled' | 'connecting' | 'ready' | 'unavailable';
+  purchaseBusy: boolean;
   openGoldPlans: () => void;
   openPaymentPage: (purchase: PendingPurchase) => void;
 }) {
@@ -2340,15 +2615,17 @@ function SuperLikesScreen({ paymentNotice, openGoldPlans, openPaymentPage }: {
       </View>
 
       <TouchableOpacity
+        disabled={purchaseBusy}
         onPress={() => openPaymentPage({ kind: 'superlikes', title: `${selectedOffer.count} Super Likes`, subtitle: 'Priority likes that move you higher in matching.', amountKes: selectedOffer.total, packageId: selectedOffer.id, accent: 'blue' })}
         activeOpacity={0.88}
-        style={styles.superPurchaseButton}
+        style={[styles.superPurchaseButton, purchaseBusy && styles.purchaseButtonDisabled]}
       >
         <LinearGradient colors={["#8FC2FF", "#5C8EFF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.superPurchaseGradient}>
-          <Icon name="star" size={19} color="#FFFFFF" />
-          <Text style={styles.superPurchaseText}>Get {selectedOffer.count} Super Likes</Text>
+          {purchaseBusy ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Icon name="star" size={19} color="#FFFFFF" />}
+          <Text style={styles.superPurchaseText}>{purchaseBusy ? 'Opening Google Play...' : `Get ${selectedOffer.count} Super Likes`}</Text>
         </LinearGradient>
       </TouchableOpacity>
+      <Text style={styles.superTerms}>{billingStatus === 'ready' ? 'Secure checkout powered by Google Play.' : billingStatus === 'connecting' ? 'Connecting securely to Google Play...' : billingStatus === 'unavailable' ? 'Tap the button to reconnect to Google Play.' : 'Google Play Billing is unavailable in this build.'}</Text>
 
       <View style={styles.superDivider}><View style={styles.superDividerLine} /><Text style={styles.superDividerText}>or</Text><View style={styles.superDividerLine} /></View>
       <View style={styles.goldInlineCard}>
@@ -2357,7 +2634,7 @@ function SuperLikesScreen({ paymentNotice, openGoldPlans, openPaymentPage }: {
         <TouchableOpacity onPress={openGoldPlans} style={styles.goldSelectButton}><Icon name="chevron-forward" size={20} color="#FFFFFF" /></TouchableOpacity>
       </View>
       {!!paymentNotice && <Text style={styles.paymentNotice}>{paymentNotice}</Text>}
-      <Text style={styles.superTerms}>Payment is securely processed by Google Play.</Text>
+      <Text style={styles.superTerms}>Each Super Like uses 15 RomChat tokens and places you higher in their Likes.</Text>
     </View>
   );
 }
@@ -2414,7 +2691,7 @@ function Premium({ tokens, boosted, activePlan, paymentNotice, billingStatus, pu
             {!!pack.badge && <Text style={styles.packageBadge}>{pack.badge}</Text>}
             <View style={styles.packageTopRow}><Text style={styles.packageAmount}>{pack.amount}</Text><Text style={styles.packagePrice}>{pack.price}</Text></View>
             <Text style={styles.packageUnit}>{pack.unit}</Text>
-            <TouchableOpacity disabled={purchaseBusy} onPress={() => openPaymentPage({ kind: 'tokens', title: `${pack.amount} tokens`, subtitle: `${pack.unit} for roses, rewinds, unlocks, and Super Likes.`, amountKes, packageId: pack.id, accent: pack.badge ? 'gold' : 'pink' })} style={[styles.packageSelectButton, purchaseBusy && styles.purchaseButtonDisabled]}>
+            <TouchableOpacity disabled={purchaseBusy} onPress={() => openPaymentPage({ kind: 'tokens', title: `${pack.amount} tokens`, subtitle: `${pack.unit} for rewinds, unlocks, priority messages, and Super Likes.`, amountKes, packageId: pack.id, accent: pack.badge ? 'gold' : 'pink' })} style={[styles.packageSelectButton, purchaseBusy && styles.purchaseButtonDisabled]}>
               <Text style={styles.packageSelectText}>{purchaseBusy ? 'Please wait' : 'Select'}</Text>
             </TouchableOpacity>
           </View>
@@ -2994,6 +3271,8 @@ const styles = StyleSheet.create({
   passAction: { width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(20,20,22,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 7 }, elevation: 7 },
   passGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
   topAction: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(20,20,22,0.88)', borderWidth: 1, borderColor: 'rgba(155,198,255,0.48)', justifyContent: 'center', alignItems: 'center', shadowColor: '#9BC6FF', shadowOpacity: 0.22, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } },
+  superLikeCountBadge: { position: 'absolute', right: -5, top: -7, minWidth: 22, height: 22, paddingHorizontal: 5, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#9BC6FF', borderWidth: 2, borderColor: '#120914' },
+  superLikeCountText: { color: '#120914', fontSize: 10, fontWeight: '900' },
   likeAction: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(20,20,22,0.88)', borderWidth: 1, borderColor: 'rgba(255,18,0,0.26)', alignItems: 'center', justifyContent: 'center' },
   likeGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
   rewindAction: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(20,20,22,0.76)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', justifyContent: 'center', alignItems: 'center' },
@@ -3128,11 +3407,16 @@ const styles = StyleSheet.create({
   messagesPanel: { backgroundColor: '#111011', borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   messagesTitle: { color: '#FFFFFF', fontSize: 21, fontWeight: '900', marginBottom: 8 },
   threadRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  priorityThreadRow: { backgroundColor: 'rgba(255,215,0,0.065)', borderBottomColor: 'rgba(255,215,0,0.25)', paddingHorizontal: 8 },
   threadAvatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#241528' },
   threadOnlineDot: { position: 'absolute', right: 1, bottom: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: '#16A34A', borderWidth: 2, borderColor: '#111011' },
   threadCopy: { flex: 1, minWidth: 0 },
+  threadNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   threadName: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
   threadPreview: { color: 'rgba(255,255,255,0.62)', fontSize: 15, fontWeight: '800', marginTop: 4 },
+  priorityThreadPreview: { color: '#FFD700' },
+  priorityInboxPill: { minWidth: 34, height: 28, borderRadius: 14, paddingHorizontal: 8, backgroundColor: '#FFD700', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
+  priorityInboxPillText: { color: '#120914', fontSize: 12, fontWeight: '900' },
   yourTurnPill: { color: '#120914', backgroundColor: '#FFFFFF', borderRadius: 999, overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 7, fontWeight: '900', fontSize: 12 },
   threadBadge: { minWidth: 24, height: 24, borderRadius: 12, overflow: 'hidden', backgroundColor: '#FF1493', color: '#FFFFFF', textAlign: 'center', paddingTop: 3, fontWeight: '900', fontSize: 12 },
   modeHint: { color: 'rgba(255,255,255,0.58)', fontWeight: '800', fontSize: 12, marginTop: 8, lineHeight: 17 },
@@ -3174,7 +3458,26 @@ const styles = StyleSheet.create({
   tokenChatButtonActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
   tokenChatButtonText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12 },
   tokenChatButtonTextActive: { color: '#120914' },
-  priorityHint: { color: 'rgba(255,255,255,0.68)', fontSize: 12, lineHeight: 17, marginTop: 9 },
+  chatGiftLauncher: { minHeight: 38, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  chatGiftLauncherText: { color: '#F4B8D1', fontWeight: '900', fontSize: 12 },
+  priorityReadyRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 9 },
+  priorityHint: { flex: 1, color: 'rgba(255,255,255,0.72)', fontSize: 12, lineHeight: 17 },
+  priorityModalBackdrop: { flex: 1, backgroundColor: 'rgba(4,1,6,0.76)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  priorityModalCard: { width: '100%', maxWidth: 380, borderRadius: 8, backgroundColor: '#1E1222', borderWidth: 1, borderColor: 'rgba(255,215,0,0.38)', padding: 20, shadowColor: '#000000', shadowOpacity: 0.4, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 16 },
+  priorityModalIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FFD700', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  priorityModalTitle: { color: '#FFFFFF', fontSize: 21, lineHeight: 26, fontWeight: '900' },
+  priorityModalBody: { color: 'rgba(255,255,255,0.72)', fontSize: 13, lineHeight: 19, fontWeight: '700', marginTop: 7 },
+  priorityModalCostRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.08)', paddingVertical: 12, marginTop: 16 },
+  priorityModalCostLabel: { color: 'rgba(255,255,255,0.78)', fontSize: 12, fontWeight: '800' },
+  priorityModalCost: { color: '#FFD700', fontSize: 15, fontWeight: '900' },
+  priorityModalBalance: { color: 'rgba(255,255,255,0.56)', fontSize: 11, fontWeight: '800', marginTop: 9 },
+  priorityModalBalanceLow: { color: '#FF8A8A' },
+  priorityModalActions: { flexDirection: 'row', gap: 9, marginTop: 17 },
+  priorityModalCancel: { minHeight: 46, paddingHorizontal: 15, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center' },
+  priorityModalCancelText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
+  priorityModalConfirm: { flex: 1, minHeight: 46, borderRadius: 8, backgroundColor: '#FFD700', flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  priorityModalConfirmDisabled: { opacity: 0.42 },
+  priorityModalConfirmText: { color: '#120914', fontSize: 12, fontWeight: '900' },
   chatHeaderAvatar: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: '#FF1493' },
   chatName: { color: '#FFFFFF', fontWeight: '900', fontSize: 17 },
   chatStatus: { color: '#16A34A', fontWeight: '800', fontSize: 12 },
@@ -3202,10 +3505,18 @@ const styles = StyleSheet.create({
   unlockButtonDone: { backgroundColor: '#16A34A' },
   unlockButtonText: { color: '#120914', fontWeight: '900' },
   bubble: { maxWidth: '86%', padding: 13, borderRadius: 20, marginVertical: 5 },
-  sent: { alignSelf: 'flex-end', backgroundColor: '#FF1493', borderBottomRightRadius: 4 },
-  received: { alignSelf: 'flex-start', backgroundColor: '#1E1222', borderBottomLeftRadius: 4 },
+  sent: { alignSelf: 'flex-end', backgroundColor: '#5A233F', borderBottomRightRadius: 4 },
+  received: { alignSelf: 'flex-start', backgroundColor: '#29232D', borderBottomLeftRadius: 4 },
   sentText: { color: '#FFFFFF', fontWeight: '800', lineHeight: 22 },
   receivedText: { color: '#FFFFFF', fontWeight: '800', lineHeight: 22 },
+  giftBubble: { minWidth: 128, alignItems: 'center', backgroundColor: 'transparent', borderWidth: 0, paddingHorizontal: 10, paddingVertical: 8 },
+  giftBubbleText: { color: '#FFFFFF', fontWeight: '900', fontSize: 28, lineHeight: 38, textAlign: 'center' },
+  emojiOnlyBubble: { backgroundColor: 'transparent', paddingHorizontal: 4, paddingVertical: 4 },
+  emojiOnlyText: { fontSize: 38, lineHeight: 48 },
+  priorityReceivedBubble: { borderWidth: 1, borderColor: '#FFD700', backgroundColor: '#2B2032' },
+  prioritySentBubble: { borderWidth: 1, borderColor: '#FFD700' },
+  priorityMessageLabel: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
+  priorityMessageLabelText: { color: '#FFD700', fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
   sentMeta: { color: 'rgba(255,255,255,0.68)', fontSize: 11, fontWeight: '900', marginTop: 6 },
   receivedMeta: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '900', marginTop: 6 },
   messageReceipt: { minHeight: 18, marginTop: 5, alignSelf: 'flex-end', flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' },
@@ -3219,6 +3530,26 @@ const styles = StyleSheet.create({
   giftButton: { flex: 1, backgroundColor: '#1E1222', borderRadius: 18, padding: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)' },
   giftName: { color: '#FFFFFF', fontWeight: '900' },
   giftMeta: { color: '#FFD700', fontWeight: '900', marginTop: 4, fontSize: 12 },
+  giftPickerBackdrop: { flex: 1, backgroundColor: 'rgba(4,1,6,0.72)', justifyContent: 'flex-end' },
+  giftPickerSheet: { backgroundColor: '#170B1A', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 28, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', maxHeight: '82%' },
+  giftPickerHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.24)', alignSelf: 'center', marginBottom: 16 },
+  giftPickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 },
+  giftPickerTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' },
+  giftPickerSubtitle: { color: 'rgba(255,255,255,0.62)', fontSize: 12, fontWeight: '700', marginTop: 4 },
+  giftPickerClose: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
+  giftPickerTabs: { flexDirection: 'row', marginBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  giftPickerTab: { flex: 1, minHeight: 42, borderBottomWidth: 2, borderBottomColor: 'transparent', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  giftPickerTabActive: { borderBottomColor: '#FFD700' },
+  giftPickerTabText: { color: 'rgba(255,255,255,0.58)', fontWeight: '900', fontSize: 13 },
+  giftPickerTabTextActive: { color: '#FFD700' },
+  giftPickerGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
+  giftPickerItem: { width: '19%', minHeight: 92, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3, paddingVertical: 8 },
+  giftPickerItemActive: { opacity: 0.55 },
+  giftPickerEmoji: { fontSize: 28, lineHeight: 36 },
+  giftPickerName: { color: '#FFFFFF', fontSize: 10, fontWeight: '900', marginTop: 4 },
+  emojiPickerGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
+  emojiPickerItem: { width: '12.5%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
+  emojiPickerText: { fontSize: 27 },
   composer: { flexDirection: 'row', gap: 8, marginTop: 10, backgroundColor: '#1E1222', borderRadius: 26, padding: 6, borderWidth: 1, borderColor: 'rgba(255,20,147,0.24)', alignItems: 'flex-end' },
   input: { flex: 1, minHeight: 42, maxHeight: 104, paddingHorizontal: 14, paddingVertical: 10, color: '#FFFFFF', fontWeight: '800', lineHeight: 20 },
   send: { width: 42, height: 42, backgroundColor: '#FF1493', borderRadius: 21, alignItems: 'center', justifyContent: 'center' },

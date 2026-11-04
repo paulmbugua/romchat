@@ -154,9 +154,16 @@ const premiumPlans = [
 ];
 
 const gifts = [
-  { id: 'rose', name: 'Rose', tokenCost: 12, redeemableUsd: 0.4, animation: 'petal_burst' },
-  { id: 'coffee', name: 'Digital coffee', tokenCost: 30, redeemableUsd: 1.2, animation: 'steam_heart' },
-  { id: 'spotlight', name: 'Spotlight note', tokenCost: 80, redeemableUsd: 3.5, animation: 'golden_ribbon' },
+  { id: 'rose', name: 'Rose', emoji: '🌹', animation: 'petal_burst' },
+  { id: 'chai', name: 'Chai', emoji: '☕', animation: 'steam_heart' },
+  { id: 'heart', name: 'Heart', emoji: '💖', animation: 'heart_pop' },
+  { id: 'hug', name: 'Hug', emoji: '🤗', animation: 'warm_glow' },
+  { id: 'kiss', name: 'Kiss', emoji: '💋', animation: 'kiss_pop' },
+  { id: 'bouquet', name: 'Bouquet', emoji: '💐', animation: 'petal_burst' },
+  { id: 'chocolate', name: 'Chocolate', emoji: '🍫', animation: 'sweet_pop' },
+  { id: 'cake', name: 'Cake', emoji: '🎂', animation: 'confetti' },
+  { id: 'sparkle', name: 'Sparkle', emoji: '✨', animation: 'sparkle' },
+  { id: 'dinner', name: 'Dinner', emoji: '🍽️', animation: 'warm_glow' },
 ];
 
 const boosts = [
@@ -487,9 +494,8 @@ app.post('/api/romchat/boosts', (req, res) => {
 app.post('/api/romchat/gifts', (req, res) => {
   const gift = gifts.find((item) => item.id === req.body?.giftId);
   if (!gift) return res.status(400).json({ message: 'Valid giftId is required.' });
-  const entry = { id: id('gift'), giftId: gift.id, matchId: req.body?.matchId || 'match_elena', note: req.body?.note || '', tokenCost: gift.tokenCost, redeemableUsd: gift.redeemableUsd, createdAt: now() };
+  const entry = { id: id('gift'), giftId: gift.id, matchId: req.body?.matchId || 'match_elena', note: req.body?.note || '', tokenCost: 0, redeemableUsd: 0, createdAt: now() };
   giftLedger.unshift(entry);
-  wallet.balance = Math.max(0, wallet.balance - gift.tokenCost);
   io.to(entry.matchId).emit('romchat:gift', entry);
   res.status(201).json({ gift: entry, wallet });
 });

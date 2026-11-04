@@ -284,8 +284,18 @@ export function createRomchatController(io) {
     async swipe(req, res) {
       try {
         const state = await authStateFor(req);
-        const result = await createSwipe({ ...(req.body || {}), actorId: state?.user?.id || 'me' });
-        io?.emit('romchat:swipe', { ...req.body, ...result, createdAt: new Date().toISOString() });
+        const result = await createSwipe({
+          profileId: req.body?.profileId,
+          action: req.body?.action,
+          actorId: state?.user?.id || 'me',
+        });
+        if (result.newMatch && result.matchId) {
+          io?.to(result.matchId).emit('romchat:match', {
+            matchId: result.matchId,
+            profileId: req.body?.profileId,
+            createdAt: new Date().toISOString(),
+          });
+        }
         res.status(201).json(result);
       } catch (error) {
         sendError(res, error);
@@ -308,9 +318,10 @@ export function createRomchatController(io) {
         }
         const riskOverride = moderation.status === 'review' || mediaModeration?.status === 'pending_provider_review' ? 'review' : null;
         const state = await authStateFor(req);
-        const message = await sendMessage({ ...(req.body || {}), actorId: state?.user?.id || 'me', priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
+        const result = await sendMessage({ ...(req.body || {}), actorId: state?.user?.id || 'me', priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
+        const { wallet, spent, ...message } = result;
         io?.to(message.matchId).to(`member:${message.recipientId}`).emit('romchat:message', message);
-        res.status(201).json({ message, moderation, mediaModeration, trustInsight: riskOverride || message.risk === 'review' ? 'Message queued for trust review.' : 'Message delivered.' });
+        res.status(201).json({ message, wallet, spent, moderation, mediaModeration, trustInsight: riskOverride || message.risk === 'review' ? 'Message queued for trust review.' : message.priority ? 'Priority message delivered.' : 'Message delivered.' });
       } catch (error) {
         sendError(res, error);
       }
@@ -320,9 +331,10 @@ export function createRomchatController(io) {
         const moderation = moderateTextPayload(req.body?.text || '');
         const mediaModeration = req.body?.mediaUrl ? moderateMediaAsset(req.body || {}) : null;
         const riskOverride = moderation.status === 'review' || mediaModeration?.status === 'pending_provider_review' ? 'review' : null;
-        const message = await sendMessage({ ...(req.body || {}), expiresInSeconds: req.body?.expiresInSeconds || 86400, viewOnce: Boolean(req.body?.viewOnce), priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
+        const result = await sendMessage({ ...(req.body || {}), expiresInSeconds: req.body?.expiresInSeconds || 86400, viewOnce: Boolean(req.body?.viewOnce), priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
+        const { wallet, spent, ...message } = result;
         io?.to(message.matchId).emit('romchat:message', message);
-        res.status(201).json({ message, moderation, mediaModeration });
+        res.status(201).json({ message, wallet, spent, moderation, mediaModeration });
       } catch (error) {
         sendError(res, error);
       }
@@ -476,6 +488,7 @@ export function createRomchatController(io) {
         const user = await requireRomchatAccount(req);
         const result = await sendGift({ ...(req.body || {}), memberId: user.id });
         io?.to(result.gift.matchId).emit('romchat:gift', result.gift);
+        io?.to(result.gift.matchId).emit('romchat:message', result.message);
         res.status(201).json(result);
       } catch (error) {
         sendError(res, error);

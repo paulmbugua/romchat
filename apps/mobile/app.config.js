@@ -34,7 +34,8 @@ module.exports = function expoConfig({ config }) {
   const DEVELOPMENT_BACKENDS = {
     androidEmu: 'http://10.0.2.2:4000',
     iosSim: 'http://localhost:4000',
-    devDevice: process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL || process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.42.11.111:4009',
+    // Physical development devices derive the current LAN host from Metro at runtime.
+    devDevice: process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL || process.env.EXPO_PUBLIC_LAN_BACKEND_URL || '',
     lan1: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://192.168.137.1:4009',
     hotspot: process.env.EXPO_PUBLIC_LAN_BACKEND_URL || 'http://10.254.198.47:4009',
     prod: process.env.EXPO_PUBLIC_PROD_BACKEND_URL || 'https://server.romchat.co.ke',
@@ -50,7 +51,9 @@ module.exports = function expoConfig({ config }) {
       ? 'prod'
       : process.env.EXPO_PUBLIC_DEFAULT_BACKEND || process.env.BACKEND || 'prod';
   const RESOLVED_BACKEND_URL = BACKENDS[DEFAULT_BACKEND] || BACKENDS.prod;
-  const usesCleartextTraffic = !isProduction && String(RESOLVED_BACKEND_URL).startsWith('http://');
+  const usesCleartextTraffic =
+    !isProduction &&
+    (DEFAULT_BACKEND === 'devDevice' || String(RESOLVED_BACKEND_URL).startsWith('http://'));
   const ALLOW_ANDROID_EMULATOR_BACKEND = process.env.EXPO_PUBLIC_ALLOW_ANDROID_EMULATOR_BACKEND || '';
   const DEVICE_BACKEND_PORT = process.env.EXPO_PUBLIC_DEVICE_BACKEND_PORT || '4009';
   const DEVICE_BACKEND_URL = isProduction ? '' : process.env.EXPO_PUBLIC_DEVICE_BACKEND_URL || '';

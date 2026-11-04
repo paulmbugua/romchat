@@ -92,6 +92,21 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     };
   }, [localProfiles, options.enabled, options.token]);
 
+  useEffect(() => {
+    if (!options.enabled) return undefined;
+    let mounted = true;
+    const syncInbox = () => romchatApi.discovery(false, options.token)
+      .then((payload) => {
+        if (mounted && payload.profiles?.length) setProfiles(mergeProfiles(payload.profiles, localProfiles));
+      })
+      .catch(() => undefined);
+    const timer = setInterval(syncInbox, 15000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, [localProfiles, options.enabled, options.token]);
+
   const refresh = useCallback(async () => {
     if (!options.enabled) return;
     const payload = await romchatApi.bootstrap(options.token);
@@ -110,29 +125,31 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
       setLastAction('Likes viewed');
     }
   }, [options.token, refresh]);
-  const swipe = useCallback(async (profileId: string, action: 'pass' | 'like' | 'super_like', swipeOptions: { forceMatch?: boolean } = {}) => {
-    setLastAction(action === 'pass' ? 'Passed' : action === 'super_like' ? 'Priority like sent' : swipeOptions.forceMatch ? 'Match accepted' : 'Like sent');
+  const swipe = useCallback(async (profileId: string, action: 'pass' | 'like' | 'super_like') => {
+    setLastAction(action === 'pass' ? 'Passed' : action === 'super_like' ? 'Super Like sent' : 'Like sent');
     try {
-      const result = await romchatApi.swipe(profileId, action, options.token, swipeOptions);
+      const result = await romchatApi.swipe(profileId, action, options.token);
       setApiOnline(true);
       setLastAction(result.message);
+      if (result.matched) await refresh();
       return result;
     } catch (error) {
-      if (error instanceof ApiRequestError && error.code === 'DAILY_LIKE_LIMIT_REACHED') {
+      if (error instanceof ApiRequestError) {
         setApiOnline(true);
         setLastAction(error.message);
         throw error;
       }
       setApiOnline(false);
-      return { id: 'local_swipe', matched: action !== 'pass', matchId: action === 'pass' ? null : `match_${profileId}`, message: action === 'pass' ? 'Preference saved.' : 'It is a match.' };
+      throw error;
     }
-  }, [options.token]);
+  }, [options.token, refresh]);
 
   const optionsToken = options.token;
   const sendMessage = useCallback(async (text: string, matchId?: string, options: { mode?: 'standard' | 'timed' | 'viewOnce'; readReceiptRequested?: boolean; priority?: boolean } = {}) => {
     setLastAction('Sending message');
     try {
       const result = await romchatApi.sendMessage(text, matchId, options, optionsToken);
+      if (result.wallet) setBootstrap((current) => current ? { ...current, wallet: result.wallet! } : current);
       setLastAction(result.trustInsight || 'Message sent');
       return result;
     } catch {
@@ -141,11 +158,14 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, [optionsToken]);
 
-  const getMessages = useCallback(async (matchId: string) => {
+  const getMessages = useCallback(async (matchId: string, readerId?: string) => {
     const result = await romchatApi.messages(matchId, optionsToken);
     const messages = result.messages || [];
-    const unreadMessageIds = messages.filter((message) => !message.readAt).map((message) => message.id);
+    const unreadMessageIds = messages
+      .filter((message) => !message.readAt && (!readerId || (message.senderId || message.from) !== readerId))
+      .map((message) => message.id);
     if (unreadMessageIds.length) {
+      setProfiles((current) => current.map((profile) => profile.matchId === matchId ? { ...profile, unreadMessageCount: 0, unreadPriorityCount: 0, latestPriorityAt: null } : profile));
       void romchatApi.markMessagesRead(matchId, unreadMessageIds, optionsToken).catch(() => undefined);
     }
     return messages;
@@ -192,7 +212,7 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, [optionsToken]);
 
-  const spendTokens = useCallback(async (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message', targetId: string) => {
+  const spendTokens = useCallback(async (feature: 'undo_swipe' | 'reveal_admirer' | 'priority_message' | 'super_like', targetId: string) => {
     const result = await romchatApi.spendTokens(feature, targetId, optionsToken);
     setBootstrap((current) => current ? { ...current, wallet: result.wallet } : current);
     setLastAction(result.alreadyProcessed ? 'Already unlocked' : `${result.spent} tokens used`);
