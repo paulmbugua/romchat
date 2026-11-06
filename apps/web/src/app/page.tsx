@@ -111,7 +111,7 @@ export default function Page() {
       <footer className={styles.footer}>
         <div><strong>RomChat</strong><p>Kenya dating, beautifully considered.</p></div>
         <div className={styles.footerLinks}>
-          <Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/policies">Community</Link><Link href="/help">Help</Link>
+          <Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/safety-standards">Child safety</Link><Link href="/help">Help</Link>
         </div>
         <p>© {new Date().getFullYear()} RomChat. Adults 18+ only.</p>
       </footer>

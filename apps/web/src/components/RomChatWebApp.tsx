@@ -985,7 +985,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
 
       <div className="rounded-[24px] border border-white/10 bg-[#1E1222] p-[18px]">
         <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-[#ffd700]">Legal and privacy</p>
-        {[['/privacy','Privacy Policy','How RomChat handles profile, chat, photo, location, and safety data.'],['/terms','Terms of Use','Account rules, subscriptions, tokens, acceptable use, and service limits.'],['/policies','Community Guidelines','Dating safety, respectful messaging, reporting, blocking, and contact-sharing guidance.']].map(([href,title,copy]) => <Link href={href} key={href} className="block border-t border-white/10 py-4 first:border-t-0"><p className="font-black">{title}</p><p className="mt-1 text-sm font-bold leading-5 text-white/55">{copy}</p></Link>)}
+        {[['/privacy','Privacy Policy','How RomChat handles profile, chat, photo, location, and safety data.'],['/terms','Terms of Use','Account rules, subscriptions, tokens, acceptable use, and service limits.'],['/safety-standards','Child Safety Standards','RomChat rules against child sexual abuse, exploitation, grooming, and prohibited content.']].map(([href,title,copy]) => <Link href={href} key={href} className="block border-t border-white/10 py-4 first:border-t-0"><p className="font-black">{title}</p><p className="mt-1 text-sm font-bold leading-5 text-white/55">{copy}</p></Link>)}
       </div>
     </section>
   );
