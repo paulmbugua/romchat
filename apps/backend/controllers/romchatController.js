@@ -36,7 +36,7 @@ import {
 } from '../services/romchatRepository.js';
 import { moderateMediaAsset, moderateTextPayload } from '../services/romchatModerationService.js';
 import pool, { queryWithRetry } from '../config/db.js';
-import { getAuthState, getMemberMediaContent, loginWithGoogleToken, loginWithPassword, requestPasswordReset, requestSignupOtp, requireRomchatAccount, resetPasswordWithCode, setMainProfilePhoto, deleteMemberMedia, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
+import { getAuthState, getMemberMediaContent, loginWithGoogleToken, loginWithPassword, requestPasswordReset, requestSignupOtp, requireRomchatAccount, requireRomchatIdentity, resetPasswordWithCode, setMainProfilePhoto, deleteMemberMedia, uploadMemberMedia, upsertMemberProfile, verifyMemberSelfie, verifySignupOtp } from '../services/romchatAccountService.js';
 import { publicErrorMessage } from '../utils/publicError.js';
 import { processGooglePlayPurchase } from '../services/googlePlayBillingService.js';
 
@@ -283,11 +283,11 @@ export function createRomchatController(io) {
     },
     async swipe(req, res) {
       try {
-        const state = await authStateFor(req);
+        const user = await requireRomchatAccount(req);
         const result = await createSwipe({
           profileId: req.body?.profileId,
           action: req.body?.action,
-          actorId: state?.user?.id || 'me',
+          actorId: user.id,
         });
         if (result.newMatch && result.matchId) {
           io?.to(result.matchId).emit('romchat:match', {
@@ -303,53 +303,71 @@ export function createRomchatController(io) {
     },
     async messages(req, res) {
       try {
-        const state = await authStateFor(req);
-        res.json({ messages: await getMessages(req.params.matchId, state?.user?.id || 'me'), generatedAt: new Date().toISOString() });
+        const user = await requireRomchatAccount(req);
+        res.json({ messages: await getMessages(req.params.matchId, user.id), generatedAt: new Date().toISOString() });
       } catch (error) {
         sendError(res, error);
       }
     },
     async sendMessage(req, res) {
       try {
+        const user = await requireRomchatAccount(req);
         const moderation = moderateTextPayload(req.body?.text || '');
-        const mediaModeration = req.body?.mediaUrl ? moderateMediaAsset(req.body || {}) : null;
-        if (moderation.status === 'blocked') {
+        const mediaModeration = req.body?.mediaUrl ? await moderateMediaAsset(req.body || {}) : null;
+        if (moderation.status === 'blocked' || mediaModeration?.status === 'blocked') {
+          await createReport({ reporterId: 'system', reportedMemberId: user.id, type: 'Blocked unsafe chat attempt', severity: moderation.severity === 'critical' ? 'critical' : 'high', details: 'Content was blocked before delivery.', evidence: { redactedText: moderation.redactedText, mediaUrl: req.body?.mediaUrl || null, mediaType: req.body?.mediaType || null }, moderation: { text: moderation, media: mediaModeration } });
           return res.status(422).json({ message: 'This message breaks RomChat community safety rules. Please rewrite it respectfully.', code: 'MESSAGE_BLOCKED_BY_SAFETY', moderation });
         }
         const riskOverride = moderation.status === 'review' || mediaModeration?.status === 'pending_provider_review' ? 'review' : null;
-        const state = await authStateFor(req);
-        const result = await sendMessage({ ...(req.body || {}), actorId: state?.user?.id || 'me', priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
+        const result = await sendMessage({ ...(req.body || {}), actorId: user.id, priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride, moderation: { text: moderation, media: mediaModeration } });
         const { wallet, spent, ...message } = result;
-        io?.to(message.matchId).to(`member:${message.recipientId}`).emit('romchat:message', message);
-        res.status(201).json({ message, wallet, spent, moderation, mediaModeration, trustInsight: riskOverride || message.risk === 'review' ? 'Message queued for trust review.' : message.priority ? 'Priority message delivered.' : 'Message delivered.' });
+        if (message.moderationStatus === 'approved') io?.to(message.matchId).to(`member:${message.recipientId}`).emit('romchat:message', message);
+        res.status(201).json({ message, wallet, spent, moderation, mediaModeration, trustInsight: message.moderationStatus === 'pending_review' ? 'Message held for trust review and not yet delivered.' : message.priority ? 'Priority message delivered.' : 'Message delivered.' });
       } catch (error) {
         sendError(res, error);
       }
     },
     async disappearingMessage(req, res) {
       try {
+        const user = await requireRomchatAccount(req);
         const moderation = moderateTextPayload(req.body?.text || '');
-        const mediaModeration = req.body?.mediaUrl ? moderateMediaAsset(req.body || {}) : null;
+        const mediaModeration = req.body?.mediaUrl ? await moderateMediaAsset(req.body || {}) : null;
+        if (moderation.status === 'blocked' || mediaModeration?.status === 'blocked') {
+          await createReport({ reporterId: 'system', reportedMemberId: user.id, type: 'Blocked unsafe disappearing message', severity: moderation.severity === 'critical' ? 'critical' : 'high', details: 'Disappearing content was blocked before delivery.', evidence: { redactedText: moderation.redactedText, mediaUrl: req.body?.mediaUrl || null, mediaType: req.body?.mediaType || null }, moderation: { text: moderation, media: mediaModeration } });
+          return res.status(422).json({ message: 'This message breaks RomChat community safety rules. Please rewrite it respectfully.', code: 'MESSAGE_BLOCKED_BY_SAFETY', moderation });
+        }
         const riskOverride = moderation.status === 'review' || mediaModeration?.status === 'pending_provider_review' ? 'review' : null;
-        const result = await sendMessage({ ...(req.body || {}), expiresInSeconds: req.body?.expiresInSeconds || 86400, viewOnce: Boolean(req.body?.viewOnce), priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride });
+        const result = await sendMessage({ ...(req.body || {}), actorId: user.id, expiresInSeconds: req.body?.expiresInSeconds || 86400, viewOnce: Boolean(req.body?.viewOnce), priority: riskOverride ? false : Boolean(req.body?.priority), riskOverride, moderation: { text: moderation, media: mediaModeration } });
         const { wallet, spent, ...message } = result;
-        io?.to(message.matchId).emit('romchat:message', message);
+        if (message.moderationStatus === 'approved') io?.to(message.matchId).to(`member:${message.recipientId}`).emit('romchat:message', message);
         res.status(201).json({ message, wallet, spent, moderation, mediaModeration });
       } catch (error) {
         sendError(res, error);
       }
     },
     async typing(req, res) {
-      const event = { matchId: req.body?.matchId || 'match_elena', userId: req.body?.userId || 'me', typing: req.body?.typing !== false, at: new Date().toISOString() };
-      io?.to(event.matchId).emit('romchat:typing', event);
-      res.status(202).json(event);
+      try {
+        const user = await requireRomchatAccount(req);
+        const matchId = String(req.body?.matchId || '').trim();
+        if (!matchId) {
+          const error = new Error('A conversation is required.');
+          error.status = 400;
+          throw error;
+        }
+        await getMessages(matchId, user.id);
+        const event = { matchId, userId: user.id, typing: req.body?.typing !== false, at: new Date().toISOString() };
+        io?.to(event.matchId).emit('romchat:typing', event);
+        res.status(202).json(event);
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async readReceipts(req, res) {
       try {
-        const state = await authStateFor(req);
+        const user = await requireRomchatAccount(req);
         const receipt = await markMessagesRead({
           matchId: req.body?.matchId || 'match_elena',
-          actorId: state?.user?.id || 'me',
+          actorId: user.id,
           messageIds: Array.isArray(req.body?.messageIds) ? req.body.messageIds : [],
         });
         io?.to(receipt.matchId).emit('romchat:read', receipt);
@@ -369,7 +387,13 @@ export function createRomchatController(io) {
     async report(req, res) {
       try {
         const user = await requireRomchatAccount(req);
-        const report = await createReport({ ...(req.body || {}), reporterId: user.id });
+        const reasonText = `${req.body?.type || ''} ${req.body?.details || ''} ${req.body?.reporterNote || ''}`.toLowerCase();
+        const severity = /underage|child|minor|groom|csam|csae/.test(reasonText)
+          ? 'critical'
+          : /threat|violence|sexual|harass|coerc|extort/.test(reasonText)
+            ? 'high'
+            : req.body?.severity;
+        const report = await createReport({ ...(req.body || {}), severity, reporterId: user.id });
         io?.emit('romchat:report', report);
         res.status(201).json({ report, message: 'Report received by RomChat safety.' });
       } catch (error) {
@@ -397,10 +421,20 @@ export function createRomchatController(io) {
       res.json({ revenue: await getRevenueCatalog() });
     },
     async moderateText(req, res) {
-      res.json({ moderation: moderateTextPayload(req.body?.text || '') });
+      try {
+        await requireRomchatAccount(req);
+        res.json({ moderation: moderateTextPayload(req.body?.text || '') });
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async moderateMedia(req, res) {
-      res.json({ moderation: moderateMediaAsset(req.body || {}) });
+      try {
+        await requireRomchatAccount(req);
+        res.json({ moderation: await moderateMediaAsset(req.body || {}) });
+      } catch (error) {
+        sendError(res, error);
+      }
     },
     async moderationCases(_req, res) {
       try {
@@ -411,7 +445,9 @@ export function createRomchatController(io) {
     },
     async moderationResolve(req, res) {
       try {
-        res.json({ case: await resolveModerationCase(req.params.reportId, req.body || {}) });
+        const result = await resolveModerationCase(req.params.reportId, { ...(req.body || {}), reviewedBy: req.admin?.email || req.adminRole || 'admin' });
+        if (result.releasedMessage?.recipientId) io?.to(result.releasedMessage.matchId).to(`member:${result.releasedMessage.recipientId}`).emit('romchat:message', result.releasedMessage);
+        res.json({ case: result });
       } catch (error) {
         sendError(res, error);
       }
@@ -425,7 +461,8 @@ export function createRomchatController(io) {
     },
     async moderationAppeal(req, res) {
       try {
-        res.status(201).json({ appeal: await createModerationAppeal(req.body || {}) });
+        const user = await requireRomchatIdentity(req);
+        res.status(201).json({ appeal: await createModerationAppeal({ ...(req.body || {}), memberId: user.id }) });
       } catch (error) {
         sendError(res, error);
       }

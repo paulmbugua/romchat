@@ -1109,6 +1109,7 @@ export default function App() {
           onInitialProfileHandled={() => setPendingChatProfileId(null)}
           blockProfile={(profileId) => romchat.block(profileId)}
           reportProfile={(profileId, reason) => romchat.report(profileId, reason)}
+          reportMessage={(payload) => romchat.reportMessage(payload)}
           status={romchat.lastAction}
         />
       );
@@ -2128,8 +2129,10 @@ function HomeNudge({ profile, openProfile, status }: { profile: ProfileSeed; ope
   );
 }
 
-type ChatDeliveryStatus = 'pending' | 'failed' | 'delivered' | 'read' | 'received';
-type ChatThreadMessage = { id: string; from: 'You' | 'Them'; text: string; status: ChatDeliveryStatus; giftId?: string | null; priority?: boolean };
+type ChatDeliveryStatus = 'pending' | 'review' | 'failed' | 'delivered' | 'read' | 'received';
+type ChatThreadMessage = { id: string; from: 'You' | 'Them'; text: string; status: ChatDeliveryStatus; giftId?: string | null; priority?: boolean; senderId?: string };
+
+const chatSafetyReasons = ['Threats or harassment', 'Scam or money request', 'Sexual coercion or explicit abuse', 'Underage or child safety concern', 'Spam or impersonation'];
 
 function isEmojiOnlyMessage(value: string) {
   const compact = String(value || '').replace(/\s/g, '');
@@ -2138,7 +2141,7 @@ function isEmojiOnlyMessage(value: string) {
     && /^(?:\p{Extended_Pictographic}|\p{Emoji_Presentation}|\uFE0F|\u200D)+$/u.test(compact);
 }
 
-function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessages, currentUserId, initialProfileId, onInitialProfileHandled, blockProfile, reportProfile, status }: {
+function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessages, currentUserId, initialProfileId, onInitialProfileHandled, blockProfile, reportProfile, reportMessage, status }: {
   profiles: ProfileSeed[];
   sendMessage: (text: string, matchId?: string, options?: { mode?: 'standard'; readReceiptRequested?: boolean; priority?: boolean }) => Promise<{ message?: RomChatMessage } | null>;
   sendGift: (giftId: string, matchId?: string) => Promise<{ gift: unknown; message: RomChatMessage; wallet: { balance: number; currency: string } } | null>;
@@ -2150,6 +2153,7 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
   onInitialProfileHandled?: () => void;
   blockProfile: (profileId: string) => Promise<void>;
   reportProfile: (profileId: string, reason: string) => Promise<void>;
+  reportMessage: (payload: { profileId: string; reportedMemberId?: string; matchId?: string; messageId?: string; text?: string; senderId?: string; reporterNote?: string }) => Promise<boolean>;
   status: string;
 }) {
   const matchPool = profiles.filter((profile) => Boolean(profile.matchId));
@@ -2166,6 +2170,11 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
   const [giftPickerOpen, setGiftPickerOpen] = useState(false);
   const [giftPickerTab, setGiftPickerTab] = useState<'gifts' | 'emoji'>('gifts');
   const [giftSendingId, setGiftSendingId] = useState<string | null>(null);
+  const [safetyOpen, setSafetyOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<ChatThreadMessage | null>(null);
+  const [reportReason, setReportReason] = useState('Threats or harassment');
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportError, setReportError] = useState('');
   const priorityCountFor = (profile: ProfileSeed) => priorityOverrides[profile.id]?.count ?? Number(profile.unreadPriorityCount || 0);
   const priorityTimeFor = (profile: ProfileSeed) => priorityOverrides[profile.id]?.latestAt || profile.latestPriorityAt || '';
   const orderedMatches = [...matchPool].sort((left, right) =>
@@ -2232,7 +2241,7 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
         if (existing.some((item) => item.id === message.id)) return current;
         return {
           ...current,
-          [profile.id]: [...existing, { id: message.id, from: 'Them', text: message.text, status: 'received', giftId: message.giftId, priority: Boolean(message.priority) }],
+          [profile.id]: [...existing, { id: message.id, from: 'Them', text: message.text, status: 'received', giftId: message.giftId, priority: Boolean(message.priority), senderId: message.senderId || message.from }],
         };
       });
       if (message.priority && selectedMatchId !== profile.id) {
@@ -2290,7 +2299,7 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
         id: result.message!.id,
         from: 'You',
         text: result.message!.text || textValue,
-        status: result.message!.readAt ? 'read' : 'delivered',
+        status: result.message!.moderationStatus === 'pending_review' ? 'review' : result.message!.readAt ? 'read' : 'delivered',
         priority: Boolean(result.message!.priority || priority),
       } : message),
     }));
@@ -2329,6 +2338,44 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
     setDraft('');
     if (priorityMessage) void deliverMessage(textValue, true);
     else sendChatText(textValue);
+  }
+
+  function openSafetyReport(message: ChatThreadMessage | null = null) {
+    if (!selectedMatch) return;
+    setReportTarget(message?.from === 'Them' ? message : null);
+    setReportReason(message?.from === 'Them' ? 'Threats or harassment' : 'Spam or impersonation');
+    setReportError('');
+    setSafetyOpen(true);
+  }
+
+  async function submitSafetyReport() {
+    if (!selectedMatch || reportBusy) return;
+    setReportBusy(true);
+    setReportError('');
+    try {
+      if (reportTarget) {
+        const submitted = await reportMessage({
+          profileId: selectedMatch.id,
+          reportedMemberId: selectedMatch.id,
+          matchId: selectedMatch.matchId || undefined,
+          messageId: reportTarget.id,
+          text: reportTarget.text,
+          senderId: reportTarget.senderId || selectedMatch.id,
+          reporterNote: reportReason,
+        });
+        if (!submitted) throw new Error('report_failed');
+      } else {
+        await reportProfile(selectedMatch.id, reportReason);
+        await blockProfile(selectedMatch.id);
+      }
+      setSafetyOpen(false);
+      setReportTarget(null);
+      setSelectedMatchId(null);
+    } catch {
+      setReportError('We could not submit this report. Check your connection and try again.');
+    } finally {
+      setReportBusy(false);
+    }
   }
 
   async function sendChatGift(gift: (typeof chatGifts)[number]) {
@@ -2375,9 +2422,10 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
             id: message.id,
             from: (message.senderId || message.from) === currentUserId ? 'You' : 'Them',
             text: message.text,
-            status: (message.senderId || message.from) === currentUserId ? (message.readAt ? 'read' : 'delivered') : 'received',
+            status: (message.senderId || message.from) === currentUserId ? (message.moderationStatus === 'pending_review' ? 'review' : message.readAt ? 'read' : 'delivered') : 'received',
             giftId: message.giftId,
             priority: Boolean(message.priority),
+            senderId: message.senderId || message.from,
           }));
           const fetchedIds = new Set(fetched.map((message) => message.id));
           const optimistic = (current[profileId] || []).filter((message) => message.from === 'You' && !fetchedIds.has(message.id));
@@ -2394,6 +2442,34 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
     return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0} style={[styles.chatScreen, styles.chatKeyboardAvoider]}>
         <ContactSafetySheet visible={Boolean(pendingContactText)} matchName={selectedMatch.name} onReview={cancelContactShare} onSend={confirmContactShare} />
+        <Modal visible={safetyOpen} transparent animationType="fade" onRequestClose={() => !reportBusy && setSafetyOpen(false)}>
+          <Pressable style={styles.chatSafetyBackdrop} onPress={() => !reportBusy && setSafetyOpen(false)}>
+            <Pressable style={styles.chatSafetyCard} onPress={(event) => event.stopPropagation()}>
+              <View style={styles.chatSafetyHeader}>
+                <View style={styles.chatSafetyIcon}><Icon name="shield-checkmark" size={22} color="#FFD700" /></View>
+                <View style={styles.chatSafetyHeaderCopy}>
+                  <Text style={styles.chatSafetyTitle}>{reportTarget ? 'Report this message' : `Report ${selectedMatch.name}`}</Text>
+                  <Text style={styles.chatSafetySubtitle}>{reportTarget ? 'The original message is securely attached for review.' : 'The profile will be reported and blocked immediately.'}</Text>
+                </View>
+                <TouchableOpacity disabled={reportBusy} accessibilityLabel="Close safety report" onPress={() => setSafetyOpen(false)} style={styles.chatSafetyClose}><Icon name="close" size={19} color="#FFFFFF" /></TouchableOpacity>
+              </View>
+              {reportTarget ? <View style={styles.reportMessagePreview}><Text numberOfLines={3} style={styles.reportMessagePreviewText}>{reportTarget.text}</Text></View> : null}
+              <Text style={styles.chatSafetyLabel}>What happened?</Text>
+              <View style={styles.chatSafetyReasons}>
+                {chatSafetyReasons.map((reason) => (
+                  <TouchableOpacity key={reason} disabled={reportBusy} onPress={() => setReportReason(reason)} style={[styles.chatSafetyReason, reportReason === reason && styles.chatSafetyReasonActive]}>
+                    <View style={[styles.chatSafetyRadio, reportReason === reason && styles.chatSafetyRadioActive]}>{reportReason === reason ? <View style={styles.chatSafetyRadioDot} /> : null}</View>
+                    <Text style={[styles.chatSafetyReasonText, reportReason === reason && styles.chatSafetyReasonTextActive]}>{reason}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {reportError ? <Text style={styles.chatSafetyError}>{reportError}</Text> : null}
+              <TouchableOpacity disabled={reportBusy} onPress={() => void submitSafetyReport()} style={[styles.chatSafetySubmit, reportBusy && styles.actionButtonDisabled]}>
+                {reportBusy ? <ActivityIndicator color="#120914" /> : <><Icon name="shield" size={17} color="#120914" /><Text style={styles.chatSafetySubmitText}>Report and block</Text></>}
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
         <Modal visible={priorityConfirmOpen} transparent animationType="fade" onRequestClose={() => setPriorityConfirmOpen(false)}>
           <Pressable style={styles.priorityModalBackdrop} onPress={() => setPriorityConfirmOpen(false)}>
             <Pressable style={styles.priorityModalCard} onPress={(event) => event.stopPropagation()}>
@@ -2454,7 +2530,7 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
               <Text style={styles.chatStatus}>{selectedMatch.online === true ? 'Online now' : 'Matched on RomChat'}</Text>
             </View>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={19} color="#FFFFFF" /></TouchableOpacity>
+          <TouchableOpacity onPress={() => openSafetyReport()} accessibilityRole="button" accessibilityLabel={`Report or block ${selectedMatch.name}`} style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={19} color="#FFFFFF" /></TouchableOpacity>
         </View>
 
         <View style={styles.safetyReminder}>
@@ -2467,11 +2543,11 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
           {selectedMessages.length ? selectedMessages.map((message) => {
             const emojiOnly = !message.giftId && isEmojiOnlyMessage(message.text);
             return (
-              <View key={message.id} style={[styles.bubble, message.from === 'You' ? styles.sent : styles.received, message.giftId && styles.giftBubble, emojiOnly && styles.emojiOnlyBubble, message.priority && message.from === 'Them' && styles.priorityReceivedBubble, message.priority && message.from === 'You' && styles.prioritySentBubble]}>
+              <Pressable key={message.id} disabled={message.from === 'You'} onLongPress={() => openSafetyReport(message)} delayLongPress={350} accessibilityHint={message.from === 'Them' ? 'Long press to report this message' : undefined} style={[styles.bubble, message.from === 'You' ? styles.sent : styles.received, message.giftId && styles.giftBubble, emojiOnly && styles.emojiOnlyBubble, message.priority && message.from === 'Them' && styles.priorityReceivedBubble, message.priority && message.from === 'You' && styles.prioritySentBubble]}>
                 {message.priority ? <View style={styles.priorityMessageLabel}><Icon name="flash" size={12} color={message.from === 'You' ? '#FFD700' : '#FFD700'} /><Text style={styles.priorityMessageLabelText}>{message.from === 'You' ? 'Priority sent' : 'Priority message'}</Text></View> : null}
                 <Text style={message.giftId ? styles.giftBubbleText : emojiOnly ? styles.emojiOnlyText : message.from === 'You' ? styles.sentText : styles.receivedText}>{message.text}</Text>
                 {message.from === 'You' ? <MessageReceipt status={message.status} /> : null}
-              </View>
+              </Pressable>
             );
           }) : (
             <View style={styles.emptyThreadCard}>
@@ -2506,7 +2582,7 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
           <Text style={styles.chatHeroTitle}>Chat</Text>
           <Text style={styles.chatHeroMeta}>{onlineMatches.length} ready now - {orderedMatches.length} matches</Text>
         </View>
-        <TouchableOpacity style={styles.chatIconButton}><Icon name="shield-checkmark-outline" size={20} color="#FFFFFF" /></TouchableOpacity>
+        <View style={styles.chatProtectedBadge}><Icon name="shield-checkmark" size={16} color="#36D399" /><Text style={styles.chatProtectedText}>Protected</Text></View>
       </View>
       <View style={styles.searchBox}>
         <Icon name="search" size={20} color="rgba(255,255,255,0.62)" />
@@ -2555,10 +2631,11 @@ function Chat({ profiles, sendMessage, sendGift, spendTokens, tokens, getMessage
 function MessageReceipt({ status }: { status: ChatDeliveryStatus }) {
   const read = status === 'read';
   const failed = status === 'failed';
+  const review = status === 'review';
   const delivered = status === 'delivered' || read;
   return (
-    <View style={styles.messageReceipt} accessibilityLabel={failed ? 'Not sent' : read ? 'Read' : delivered ? 'Delivered' : 'Sending'}>
-      {failed ? <><Icon name="alert-circle" size={15} color="#FFD166" /><Text style={styles.messageFailedText}>Not sent</Text></> : <Icon name={delivered ? 'checkmark-done' : 'checkmark'} size={16} color={read ? '#35D07F' : 'rgba(255,255,255,0.72)'} />}
+    <View style={styles.messageReceipt} accessibilityLabel={failed ? 'Not sent' : review ? 'Under safety review' : read ? 'Read' : delivered ? 'Delivered' : 'Sending'}>
+      {failed ? <><Icon name="alert-circle" size={15} color="#FFD166" /><Text style={styles.messageFailedText}>Not sent</Text></> : review ? <><Icon name="shield-checkmark" size={14} color="#FFD700" /><Text style={styles.messageReviewText}>Checking</Text></> : <Icon name={delivered ? 'checkmark-done' : 'checkmark'} size={16} color={read ? '#35D07F' : 'rgba(255,255,255,0.72)'} />}
     </View>
   );
 }
@@ -3451,6 +3528,30 @@ const styles = StyleSheet.create({
   contactSendText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textTransform: 'uppercase' },
   conversationPanel: { backgroundColor: '#1E1222', borderRadius: 22, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)', flexShrink: 1 },
   chatIconButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#2A1A30', borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)', alignItems: 'center', justifyContent: 'center' },
+  chatProtectedBadge: { minHeight: 34, borderRadius: 17, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(54,211,153,0.10)', borderWidth: 1, borderColor: 'rgba(54,211,153,0.24)' },
+  chatProtectedText: { color: '#79E8BE', fontSize: 11, fontWeight: '900' },
+  chatSafetyBackdrop: { flex: 1, backgroundColor: 'rgba(4,1,6,0.78)', alignItems: 'center', justifyContent: 'center', padding: 18 },
+  chatSafetyCard: { width: '100%', maxWidth: 390, borderRadius: 18, backgroundColor: '#19101C', borderWidth: 1, borderColor: 'rgba(255,215,0,0.24)', padding: 18, shadowColor: '#000000', shadowOpacity: 0.45, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 18 },
+  chatSafetyHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
+  chatSafetyIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,215,0,0.10)' },
+  chatSafetyHeaderCopy: { flex: 1 },
+  chatSafetyTitle: { color: '#FFFFFF', fontSize: 19, lineHeight: 24, fontWeight: '900' },
+  chatSafetySubtitle: { color: 'rgba(255,255,255,0.62)', fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 3 },
+  chatSafetyClose: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)' },
+  reportMessagePreview: { borderLeftWidth: 3, borderLeftColor: '#FFD700', backgroundColor: 'rgba(255,255,255,0.05)', padding: 11, marginTop: 14 },
+  reportMessagePreviewText: { color: 'rgba(255,255,255,0.78)', fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  chatSafetyLabel: { color: '#FFD700', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', marginTop: 16, marginBottom: 8 },
+  chatSafetyReasons: { gap: 5 },
+  chatSafetyReason: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, borderRadius: 10 },
+  chatSafetyReasonActive: { backgroundColor: 'rgba(255,20,147,0.10)' },
+  chatSafetyRadio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.32)', alignItems: 'center', justifyContent: 'center' },
+  chatSafetyRadioActive: { borderColor: '#FF1493' },
+  chatSafetyRadioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FF1493' },
+  chatSafetyReasonText: { flex: 1, color: 'rgba(255,255,255,0.72)', fontSize: 13, fontWeight: '800' },
+  chatSafetyReasonTextActive: { color: '#FFFFFF' },
+  chatSafetyError: { color: '#FF9A9A', fontSize: 12, lineHeight: 18, fontWeight: '800', marginTop: 10 },
+  chatSafetySubmit: { minHeight: 50, borderRadius: 25, backgroundColor: '#FFD700', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 15 },
+  chatSafetySubmitText: { color: '#120914', fontSize: 14, fontWeight: '900' },
   chatTools: { backgroundColor: '#1E1222', borderRadius: 20, padding: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
   chatToolsSimple: { backgroundColor: '#1E1222', borderRadius: 18, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,20,147,0.14)' },
   tokenChatTools: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -3521,6 +3622,7 @@ const styles = StyleSheet.create({
   receivedMeta: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '900', marginTop: 6 },
   messageReceipt: { minHeight: 18, marginTop: 5, alignSelf: 'flex-end', flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' },
   messageFailedText: { color: '#FFD166', fontSize: 10, fontWeight: '800' },
+  messageReviewText: { color: '#FFD700', fontSize: 10, fontWeight: '800' },
   segment: { flexDirection: 'row', backgroundColor: '#1E1222', borderRadius: 18, padding: 4, marginVertical: 12 },
   segmentItem: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 15 },
   segmentActive: { backgroundColor: '#FF1493' },

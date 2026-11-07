@@ -8,6 +8,13 @@ const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
 const FREE_DAILY_LIKE_LIMIT = 30;
 
+function redactSafetyEvidence(text = '') {
+  return String(text || '')
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]')
+    .replace(/\+?\d[\d\s().-]{6,}\d/g, '[phone]')
+    .slice(0, 2000);
+}
+
 export const romanceVibeCatalog = [
   { id: 'serious-love', title: 'Serious love', subtitle: 'Marriage-minded and ready to build', icon: 'heart', accent: '#FF1493' },
   { id: 'slow-burn', title: 'Slow-burn romance', subtitle: 'Friendship, consistency, then sparks', icon: 'time', accent: '#F472B6' },
@@ -244,6 +251,22 @@ async function ensureSchema() {
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`);
   await queryWithRetry('CREATE TABLE IF NOT EXISTS romchat_moderation_appeals (id TEXT PRIMARY KEY, member_id TEXT NOT NULL, report_id TEXT, reason TEXT NOT NULL, status TEXT NOT NULL, details JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, reviewed_at TIMESTAMPTZ, reviewed_by TEXT)');
+  await queryWithRetry(`ALTER TABLE romchat_messages
+    ADD COLUMN IF NOT EXISTS moderation_status TEXT NOT NULL DEFAULT 'approved',
+    ADD COLUMN IF NOT EXISTS moderation JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS moderated_at TIMESTAMPTZ`);
+  await queryWithRetry(`ALTER TABLE romchat_reports
+    ADD COLUMN IF NOT EXISTS reported_member_id TEXT,
+    ADD COLUMN IF NOT EXISTS match_id TEXT,
+    ADD COLUMN IF NOT EXISTS message_id TEXT,
+    ADD COLUMN IF NOT EXISTS evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS moderation JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS auto_blocked BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS admin_note TEXT,
+    ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS reviewed_by TEXT`);
+  await queryWithRetry("CREATE INDEX IF NOT EXISTS idx_romchat_messages_moderation_queue ON romchat_messages (moderation_status, created_at DESC) WHERE moderation_status = 'pending_review'");
+  await queryWithRetry("CREATE UNIQUE INDEX IF NOT EXISTS uq_romchat_reports_message_reporter ON romchat_reports (reporter_id, message_id) WHERE message_id IS NOT NULL AND reporter_id <> 'system'");
   await queryWithRetry(`CREATE TABLE IF NOT EXISTS romchat_profile_blocks (
     blocker_id TEXT NOT NULL,
     blocked_id TEXT NOT NULL,
@@ -289,6 +312,10 @@ async function withDb(work, fallback) {
     console.warn('[romchat:db-fallback]', error.code || error.message);
     return typeof fallback === 'function' ? fallback(error) : fallback;
   }
+}
+
+function rethrowDatabaseError(error) {
+  throw error;
 }
 
 function romanticMatchScore(row) {
@@ -381,6 +408,8 @@ function fromMessageRow(row) {
     expiresAt: row.expires_at,
     readAt: row.read_at,
     risk: row.risk,
+    moderationStatus: row.moderation_status || 'approved',
+    moderation: row.moderation || {},
     locked: Boolean(row.locked),
     unlockCostTokens: Number(row.unlock_cost_tokens || 0),
     unlockedByActor: Boolean(row.unlocked_by_actor),
@@ -560,8 +589,11 @@ export async function getMessages(matchId = 'match_elena', actorId = null) {
   return withDb(async () => {
     if (actorId) await getActiveMatch(matchId, actorId);
     const result = await queryWithRetry(
-      `SELECT * FROM romchat_messages WHERE match_id = $1 ORDER BY created_at ASC`,
-      [matchId]
+      `SELECT * FROM romchat_messages
+       WHERE match_id = $1
+         AND (moderation_status = 'approved' OR sender_id = $2)
+       ORDER BY created_at ASC`,
+      [matchId, actorId]
     );
     return result.rows.map(fromMessageRow);
   }, (error) => {
@@ -1002,7 +1034,7 @@ export async function createSwipe({ profileId, action, actorId = 'me' }) {
   return result;
 }
 
-export async function sendMessage({ matchId = 'match_elena', text, actorId = 'me', expiresInSeconds = null, viewOnce = false, mediaUrl = null, mediaType = null, giftId = null, priority = false, readReceiptRequested = false, riskOverride = null }) {
+export async function sendMessage({ matchId = 'match_elena', text, actorId = 'me', expiresInSeconds = null, viewOnce = false, mediaUrl = null, mediaType = null, giftId = null, priority = false, readReceiptRequested = false, riskOverride = null, moderation = {} }) {
   if (!String(text || '').trim() && !mediaUrl) {
     const error = new Error('Message text or mediaUrl is required.');
     error.status = 400;
@@ -1022,6 +1054,8 @@ export async function sendMessage({ matchId = 'match_elena', text, actorId = 'me
     expiresAt: expiresInSeconds ? new Date(Date.now() + Number(expiresInSeconds) * 1000).toISOString() : null,
     readAt: null,
     risk: riskOverride || (/money|wire|crypto|password/i.test(String(text || '')) ? 'review' : 'clear'),
+    moderationStatus: riskOverride === 'review' ? 'pending_review' : 'approved',
+    moderation,
     createdAt: now(),
   };
   return withDb(async () => {
@@ -1054,17 +1088,26 @@ export async function sendMessage({ matchId = 'match_elena', text, actorId = 'me
         spent = 15;
       }
       await client.query(
-        `INSERT INTO romchat_messages (id, match_id, sender_id, text, media_url, media_type, gift_id, priority, view_once, expires_at, risk)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-        [message.id, message.matchId, message.senderId, message.text, message.mediaUrl, message.mediaType, message.giftId, message.priority, message.viewOnce, message.expiresAt, message.risk]
+        `INSERT INTO romchat_messages (id, match_id, sender_id, text, media_url, media_type, gift_id, priority, view_once, expires_at, risk, moderation_status, moderation)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [message.id, message.matchId, message.senderId, message.text, message.mediaUrl, message.mediaType, message.giftId, message.priority, message.viewOnce, message.expiresAt, message.risk, message.moderationStatus, message.moderation]
       );
-      await client.query(
-        `INSERT INTO romchat_notifications (id, member_id, match_id, type, title, body, metadata)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [id('ntf'), recipientId, matchId, message.priority ? 'priority_message' : 'message', message.priority ? 'Priority message waiting' : readReceiptRequested ? 'New RomChat message with read receipt' : 'New RomChat message', message.text.slice(0, 160), { messageId: message.id, priority: message.priority, viewOnce: message.viewOnce, expiresAt: message.expiresAt, readReceiptRequested: Boolean(readReceiptRequested) }]
-      );
+      if (message.moderationStatus === 'approved') {
+        await client.query(
+          `INSERT INTO romchat_notifications (id, member_id, match_id, type, title, body, metadata)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [id('ntf'), recipientId, matchId, message.priority ? 'priority_message' : 'message', message.priority ? 'Priority message waiting' : readReceiptRequested ? 'New RomChat message with read receipt' : 'New RomChat message', message.text.slice(0, 160), { messageId: message.id, priority: message.priority, viewOnce: message.viewOnce, expiresAt: message.expiresAt, readReceiptRequested: Boolean(readReceiptRequested) }]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO romchat_reports
+            (id, reporter_id, profile_id, reported_member_id, match_id, message_id, type, severity, status, details, evidence, moderation, auto_blocked)
+           VALUES ($1,'system',$2,$2,$3,$4,'Automated chat safety review',$5,'open','Message quarantined before delivery.',$6,$7,false)`,
+          [id('rp'), message.senderId, matchId, message.id, message.moderation?.severity || 'medium', { messageId: message.id, matchId, senderId: message.senderId, redactedText: redactSafetyEvidence(message.text), mediaUrl: message.mediaUrl, mediaType: message.mediaType }, message.moderation]
+        );
+      }
       await client.query('COMMIT');
-      return { ...message, recipientId, notificationSent: true, readReceiptRequested: Boolean(readReceiptRequested), spent, wallet: await getWallet(message.senderId) };
+      return { ...message, recipientId, notificationSent: message.moderationStatus === 'approved', readReceiptRequested: Boolean(readReceiptRequested), spent, wallet: await getWallet(message.senderId) };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -1102,23 +1145,86 @@ export async function updatePrivacy(payload = {}) {
 }
 
 export async function createReport(payload = {}) {
-  const report = {
-    id: id('rp'),
-    reporterId: payload.reporterId || payload.reporter_id || 'me',
-    profileId: payload.profileId || null,
-    type: payload.type || 'Safety report',
-    severity: payload.severity || 'medium',
-    status: 'open',
-    details: payload.details || '',
-    createdAt: now(),
-  };
+  const reporterId = String(payload.reporterId || payload.reporter_id || '').trim();
+  const requestedProfileId = String(payload.reportedMemberId || payload.reported_member_id || payload.profileId || '').trim() || null;
+  const messageId = String(payload.messageId || payload.message_id || '').trim() || null;
+  const requestedMatchId = String(payload.matchId || payload.match_id || '').trim() || null;
+  const type = String(payload.type || 'Safety report').trim().slice(0, 120);
+  const severity = ['low', 'medium', 'high', 'critical'].includes(String(payload.severity)) ? String(payload.severity) : 'medium';
+  if (!reporterId) { const error = new Error('Login is required to submit a report.'); error.status = 401; throw error; }
+  if (!requestedProfileId && !messageId) { const error = new Error('Choose a profile or message to report.'); error.status = 400; error.code = 'REPORT_TARGET_REQUIRED'; throw error; }
   return withDb(async () => {
-    await queryWithRetry(
-      'INSERT INTO romchat_reports (id, reporter_id, profile_id, type, severity, status, details) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [report.id, report.reporterId, report.profileId, report.type, report.severity, report.status, report.details]
-    );
-    return report;
-  }, () => report);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      let reportedMemberId = requestedProfileId;
+      let matchId = requestedMatchId;
+      let evidence = payload.evidence && typeof payload.evidence === 'object' ? payload.evidence : {};
+      let moderation = payload.moderation && typeof payload.moderation === 'object' ? payload.moderation : {};
+
+      if (messageId) {
+        const messageResult = await client.query(
+          `SELECT msg.*, m.actor_id, m.profile_id
+           FROM romchat_messages msg
+           JOIN romchat_matches m ON m.id = msg.match_id
+           WHERE msg.id = $1
+             AND ($2 = m.actor_id OR $2 = m.profile_id)
+             AND msg.sender_id <> $2
+           LIMIT 1`,
+          [messageId, reporterId]
+        );
+        const message = messageResult.rows[0];
+        if (!message || (requestedMatchId && message.match_id !== requestedMatchId)) {
+          const error = new Error('This message is not available to report.');
+          error.status = 404;
+          error.code = 'REPORT_MESSAGE_NOT_FOUND';
+          throw error;
+        }
+        reportedMemberId = message.sender_id;
+        matchId = message.match_id;
+        moderation = message.moderation || moderation;
+        evidence = { messageId: message.id, matchId: message.match_id, senderId: message.sender_id, redactedText: redactSafetyEvidence(message.text), mediaUrl: message.media_url || null, mediaType: message.media_type || null, createdAt: message.created_at };
+      }
+
+      if (!reportedMemberId || reportedMemberId === reporterId) {
+        const error = new Error('A valid profile is required.');
+        error.status = 400;
+        error.code = 'INVALID_REPORT_TARGET';
+        throw error;
+      }
+
+      const autoBlocked = payload.autoBlock === true || payload.auto_block === true;
+      const details = String(payload.details || payload.reporterNote || '').trim().slice(0, 2000);
+      const reportId = id('rp');
+      const insert = await client.query(
+        `INSERT INTO romchat_reports
+          (id, reporter_id, profile_id, reported_member_id, match_id, message_id, type, severity, status, details, evidence, moderation, auto_blocked)
+         VALUES ($1,$2,$3,$3,$4,$5,$6,$7,'open',$8,$9,$10,$11)
+         ON CONFLICT (reporter_id, message_id) WHERE message_id IS NOT NULL AND reporter_id <> 'system'
+         DO UPDATE SET type = EXCLUDED.type, severity = EXCLUDED.severity, details = EXCLUDED.details,
+           evidence = EXCLUDED.evidence, moderation = EXCLUDED.moderation, status = 'open', created_at = now()
+         RETURNING *`,
+        [reportId, reporterId, reportedMemberId, matchId, messageId, type, severity, details, evidence, moderation, autoBlocked]
+      );
+      if (autoBlocked) {
+        await client.query(
+          `INSERT INTO romchat_profile_blocks (blocker_id, blocked_id, reason)
+           VALUES ($1,$2,$3)
+           ON CONFLICT (blocker_id, blocked_id) DO UPDATE SET reason = EXCLUDED.reason, created_at = now()`,
+          [reporterId, reportedMemberId, `Safety report: ${type}`]
+        );
+        await client.query("UPDATE romchat_matches SET status = 'blocked' WHERE (actor_id = $1 AND profile_id = $2) OR (actor_id = $2 AND profile_id = $1)", [reporterId, reportedMemberId]);
+      }
+      await client.query('COMMIT');
+      const row = insert.rows[0];
+      return { id: row.id, reporterId: row.reporter_id, profileId: row.profile_id, reportedMemberId: row.reported_member_id, matchId: row.match_id, messageId: row.message_id, type: row.type, severity: row.severity, status: row.status, details: row.details || '', evidence: row.evidence || {}, moderation: row.moderation || {}, autoBlocked: Boolean(row.auto_blocked), createdAt: row.created_at };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }, rethrowDatabaseError);
 }
 
 export async function blockProfile(payload = {}) {
@@ -1131,7 +1237,7 @@ export async function blockProfile(payload = {}) {
     await queryWithRetry("UPDATE romchat_matches SET status = 'blocked' WHERE (actor_id = $1 AND profile_id = $2) OR (actor_id = $2 AND profile_id = $1)", [blockerId, blockedId]);
     console.info('[romchat-safety] profile:blocked', { blockerId, blockedId });
     return { blockerId, blockedId, blocked: true };
-  }, () => ({ blockerId, blockedId, blocked: true }));
+  }, rethrowDatabaseError);
 }
 
 export async function createModerationAppeal(payload = {}) {
@@ -1141,26 +1247,63 @@ export async function createModerationAppeal(payload = {}) {
     await queryWithRetry('INSERT INTO romchat_moderation_appeals (id, member_id, report_id, reason, status, details) VALUES ($1,$2,$3,$4,$5,$6)', [appeal.id, appeal.memberId, appeal.reportId, appeal.reason, appeal.status, appeal.details]);
     console.info('[romchat-moderation] appeal:created', { appealId: appeal.id, memberId: appeal.memberId, reportId: appeal.reportId });
     return appeal;
-  }, () => appeal);
+  }, rethrowDatabaseError);
 }
 
 export async function listModerationCases() {
   return withDb(async () => {
-    const result = await queryWithRetry('SELECT r.*, COALESCE(json_agg(a ORDER BY a.created_at DESC) FILTER (WHERE a.id IS NOT NULL), \'[]\'::json) AS appeals FROM romchat_reports r LEFT JOIN romchat_moderation_appeals a ON a.report_id = r.id GROUP BY r.id ORDER BY r.created_at DESC');
-    return { cases: result.rows.map((row) => ({ id: row.id, reporterId: row.reporter_id, profileId: row.profile_id, type: row.type, severity: row.severity, status: row.status, details: row.details || '', createdAt: row.created_at, appeals: row.appeals || [] })) };
-  }, () => ({ cases: [] }));
+    const result = await queryWithRetry('SELECT r.*, COALESCE(json_agg(a ORDER BY a.created_at DESC) FILTER (WHERE a.id IS NOT NULL), \'[]\'::json) AS appeals FROM romchat_reports r LEFT JOIN romchat_moderation_appeals a ON a.report_id = r.id GROUP BY r.id ORDER BY CASE r.severity WHEN \'critical\' THEN 4 WHEN \'high\' THEN 3 WHEN \'medium\' THEN 2 ELSE 1 END DESC, r.created_at DESC');
+    const appeals = await queryWithRetry("SELECT * FROM romchat_moderation_appeals WHERE status = 'pending' ORDER BY created_at DESC");
+    return {
+      cases: result.rows.map((row) => ({ id: row.id, reporterId: row.reporter_id, profileId: row.profile_id, reportedMemberId: row.reported_member_id || row.profile_id, matchId: row.match_id, messageId: row.message_id, type: row.type, severity: row.severity, status: row.status, details: row.details || '', evidence: row.evidence || {}, moderation: row.moderation || {}, autoBlocked: Boolean(row.auto_blocked), adminNote: row.admin_note || '', reviewedAt: row.reviewed_at, reviewedBy: row.reviewed_by, createdAt: row.created_at, appeals: row.appeals || [] })),
+      appeals: appeals.rows.map((row) => ({ id: row.id, memberId: row.member_id, reportId: row.report_id, appealText: row.reason, status: row.status, createdAt: row.created_at })),
+    };
+  }, rethrowDatabaseError);
 }
 
 export async function resolveModerationCase(reportId, payload = {}) {
   const status = String(payload.status || 'resolved');
+  if (!['confirmed_block', 'dismissed', 'resolved'].includes(status)) { const error = new Error('Invalid moderation decision.'); error.status = 400; throw error; }
   const reviewedBy = payload.reviewedBy || payload.reviewed_by || 'admin';
   return withDb(async () => {
-    const result = await queryWithRetry('UPDATE romchat_reports SET status = $2 WHERE id = $1 RETURNING *', [reportId, status]);
-    if (!result.rows[0]) { const error = new Error('Moderation case not found.'); error.status = 404; throw error; }
-    await queryWithRetry("UPDATE romchat_moderation_appeals SET status = $2, reviewed_at = now(), reviewed_by = $3 WHERE report_id = $1 AND status = 'pending'", [reportId, status, reviewedBy]);
-    const row = result.rows[0];
-    return { id: row.id, status: row.status, profileId: row.profile_id, reviewedBy };
-  }, () => ({ id: reportId, status, reviewedBy }));
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query('UPDATE romchat_reports SET status = $2, admin_note = $3, reviewed_at = now(), reviewed_by = $4 WHERE id = $1 RETURNING *', [reportId, status, String(payload.adminNote || payload.admin_note || '').slice(0, 2000), reviewedBy]);
+      if (!result.rows[0]) { const error = new Error('Moderation case not found.'); error.status = 404; throw error; }
+      const row = result.rows[0];
+      let releasedMessage = null;
+      if (row.message_id) {
+        const nextMessageStatus = status === 'dismissed' ? 'approved' : 'rejected';
+        const messageResult = await client.query('UPDATE romchat_messages SET moderation_status = $2, moderated_at = now() WHERE id = $1 RETURNING *', [row.message_id, nextMessageStatus]);
+        if (status === 'dismissed' && messageResult.rows[0]) {
+          const message = messageResult.rows[0];
+          const matchResult = await client.query('SELECT actor_id, profile_id FROM romchat_matches WHERE id = $1', [message.match_id]);
+          const match = matchResult.rows[0];
+          releasedMessage = { ...fromMessageRow(message), recipientId: match?.actor_id === message.sender_id ? match?.profile_id : match?.actor_id };
+          if (releasedMessage.recipientId) {
+            await client.query(
+              `INSERT INTO romchat_notifications (id, member_id, match_id, type, title, body, metadata)
+               VALUES ($1,$2,$3,'message','New RomChat message',$4,$5)`,
+              [id('ntf'), releasedMessage.recipientId, message.match_id, message.text.slice(0, 160), { messageId: message.id, releasedByModeration: true }]
+            );
+          }
+        }
+      }
+      if (status === 'confirmed_block' && row.reported_member_id) {
+        await client.query("UPDATE romchat_accounts SET moderation_status = 'suspended_safety_review', updated_at = now() WHERE id = $1", [row.reported_member_id]);
+        await client.query("UPDATE romchat_matches SET status = 'moderated' WHERE status = 'active' AND (actor_id = $1 OR profile_id = $1)", [row.reported_member_id]);
+      }
+      await client.query("UPDATE romchat_moderation_appeals SET status = $2, reviewed_at = now(), reviewed_by = $3 WHERE report_id = $1 AND status = 'pending'", [reportId, status, reviewedBy]);
+      await client.query('COMMIT');
+      return { id: row.id, status, profileId: row.profile_id, reportedMemberId: row.reported_member_id, messageId: row.message_id, reviewedBy, releasedMessage };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }, rethrowDatabaseError);
 }
 
 export async function reinstateModeratedMember(memberId, payload = {}) {
@@ -1168,10 +1311,20 @@ export async function reinstateModeratedMember(memberId, payload = {}) {
   return withDb(async () => {
     const result = await queryWithRetry("UPDATE romchat_accounts SET moderation_status = 'approved_for_review', updated_at = now() WHERE id = $1 RETURNING id, email, moderation_status", [memberId]);
     if (!result.rows[0]) { const error = new Error('Member account not found.'); error.status = 404; throw error; }
+    await queryWithRetry(
+      `UPDATE romchat_matches m SET status = 'active'
+       WHERE m.status = 'moderated' AND (m.actor_id = $1 OR m.profile_id = $1)
+         AND NOT EXISTS (
+           SELECT 1 FROM romchat_profile_blocks b
+           WHERE (b.blocker_id = m.actor_id AND b.blocked_id = m.profile_id)
+              OR (b.blocker_id = m.profile_id AND b.blocked_id = m.actor_id)
+         )`,
+      [memberId]
+    );
     await queryWithRetry("UPDATE romchat_moderation_appeals SET status = 'reinstated', reviewed_at = now(), reviewed_by = 'admin' WHERE member_id = $1 AND status = 'pending'", [memberId]);
     console.info('[romchat-moderation] member:reinstated', { memberId, reason });
     return { memberId, status: result.rows[0].moderation_status, reason };
-  }, () => ({ memberId, status: 'approved_for_review', reason }));
+  }, rethrowDatabaseError);
 }
 
 export async function createVerification(payload = {}) {

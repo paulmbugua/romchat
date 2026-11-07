@@ -1,5 +1,7 @@
 import express from 'express';
 import { createRomchatController } from '../controllers/romchatController.js';
+import { adminAuth } from '../middleware/adminAuth.js';
+import { requireRole } from '../middleware/requireRole.js';
 
 export default function romchatRoutes(io) {
   const router = express.Router();
@@ -41,9 +43,9 @@ export default function romchatRoutes(io) {
   router.get('/revenue', controller.revenue);
   router.post('/moderation/text', controller.moderateText);
   router.post('/moderation/media', controller.moderateMedia);
-  router.get('/admin/moderation/cases', controller.moderationCases);
-  router.patch('/admin/moderation/cases/:reportId', controller.moderationResolve);
-  router.post('/admin/moderation/reinstate/:memberId', controller.moderationReinstate);
+  router.get('/admin/moderation/cases', adminAuth, requireRole('admin'), controller.moderationCases);
+  router.patch('/admin/moderation/cases/:reportId', adminAuth, requireRole('admin'), controller.moderationResolve);
+  router.post('/admin/moderation/reinstate/:memberId', adminAuth, requireRole('admin'), controller.moderationReinstate);
   router.post('/moderation/appeals', controller.moderationAppeal);
   router.get('/video-requests', controller.videoRequests);
   router.post('/video-requests', controller.createVideoRequest);

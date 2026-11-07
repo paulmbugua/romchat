@@ -281,6 +281,7 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
 
     try {
       await romchatApi.reportMessage(payload, optionsToken);
+      setProfiles((current) => current.filter((profile) => profile.id !== payload.profileId));
       setLastAction('Message reported and user blocked');
       return true;
     } catch (error) {

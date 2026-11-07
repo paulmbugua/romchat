@@ -231,7 +231,19 @@ async function ensureAccountSchema() {
   accountSchemaReady = true;
 }
 
+const RESTRICTED_MODERATION_STATUSES = new Set(['suspended', 'suspended_safety_review', 'banned', 'terminated']);
+
+function assertAccountMayAccess(account) {
+  if (RESTRICTED_MODERATION_STATUSES.has(String(account?.moderationStatus || '').toLowerCase())) {
+    const error = new Error('This account is temporarily unavailable while a safety review is completed.');
+    error.status = 403;
+    error.code = 'ACCOUNT_SAFETY_RESTRICTED';
+    throw error;
+  }
+}
+
 function signSession(account) {
+  assertAccountMayAccess(account);
   return jwt.sign({ sub: account.id, email: account.email, scope: 'romchat' }, jwtSecret, { expiresIn: '30d' });
 }
 
@@ -562,6 +574,17 @@ export async function verifyRomchatToken(token) {
 }
 
 export async function requireRomchatAccount(req) {
+  const user = await verifyRomchatToken(req.headers.authorization || '');
+  if (!user) {
+    const error = new Error('RomChat login required.');
+    error.status = 401;
+    throw error;
+  }
+  assertAccountMayAccess(user);
+  return user;
+}
+
+export async function requireRomchatIdentity(req) {
   const user = await verifyRomchatToken(req.headers.authorization || '');
   if (!user) {
     const error = new Error('RomChat login required.');

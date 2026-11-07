@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { APP_BACKEND_URL } from './config';
+import { useShopContext } from '@mindcare/shared/context/ShopContext';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -168,13 +169,16 @@ function Verification({ queue, approve, hold, verifiedFilter, setVerifiedFilter 
 }
 
 function Moderation() {
+  const { adminToken, token } = useShopContext();
+  const authToken = adminToken || token || '';
   const [cases, setCases] = useState<any[]>([]);
   const [appeals, setAppeals] = useState<any[]>([]);
   const [notice, setNotice] = useState('');
   const apiBase = APP_BACKEND_URL || 'http://localhost:4009';
   async function loadCases() {
     try {
-      const res = await fetch(`${apiBase}/api/romchat/admin/moderation/cases`);
+      if (!authToken) throw new Error('Admin login is required to view moderation cases.');
+      const res = await fetch(`${apiBase}/api/romchat/admin/moderation/cases`, { headers: { Authorization: `Bearer ${authToken}` } });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || 'Unable to load moderation queue');
       setCases(Array.isArray(data.cases) ? data.cases : []);
@@ -183,16 +187,16 @@ function Moderation() {
     } catch (error: any) { setNotice(error?.message || 'Unable to reach RomChat moderation API'); }
   }
   async function decide(id: string, status: string) {
-    const res = await fetch(`${apiBase}/api/romchat/admin/moderation/cases/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, adminNote: status === 'dismissed' ? 'Dismissed after evidence review.' : 'Abuse confirmed by admin.' }) });
+    const res = await fetch(`${apiBase}/api/romchat/admin/moderation/cases/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ status, adminNote: status === 'dismissed' ? 'Dismissed after evidence review.' : 'Abuse confirmed by admin.' }) });
     if (!res.ok) throw new Error('Decision failed');
     await loadCases();
   }
   async function reinstate(memberId: string, reportId: string) {
-    const res = await fetch(`${apiBase}/api/romchat/admin/moderation/reinstate/${memberId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reportId, adminNote: 'Appeal approved after review.' }) });
+    const res = await fetch(`${apiBase}/api/romchat/admin/moderation/reinstate/${memberId}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ reportId, adminNote: 'Appeal approved after review.' }) });
     if (!res.ok) throw new Error('Reinstate failed');
     await loadCases();
   }
-  useEffect(() => { void loadCases(); }, []);
+  useEffect(() => { void loadCases(); }, [authToken]);
   return <Panel title="Reports and enforcement"><div className="mb-4 flex items-center justify-between rounded-3xl bg-[#1a1c1e] p-4 text-white"><div><p className="text-sm font-black text-[#ffb3c8]">RomChat community safety</p><p className="text-2xl font-black">Abuse reports, blocks, appeals</p></div><button onClick={() => void loadCases()} className="rounded-full bg-white px-4 py-2 font-black text-[#1a1c1e]">Refresh</button></div>{notice ? <div className="mb-3 rounded-2xl bg-[#fff0f5] p-3 font-bold text-[#93000a]">{notice}</div> : null}<div className="grid gap-3">{cases.map((item) => { const evidence = item.evidence || {}; const moderation = item.moderation || {}; const reportedId = item.reportedMemberId || item.reported_member_id || item.memberId || 'unknown'; return <div key={item.id} className="rounded-3xl border border-[#e2e2e5] bg-[#f9f9fc] p-4"><p className="text-lg font-black">{item.type || 'Chat abuse report'} <span className="rounded-full bg-[#ffdad6] px-2 py-1 text-xs text-[#93000a]">{item.severity || moderation.severity || 'review'}</span></p><p className="text-sm font-bold text-[#574142]">Report {item.id} - {item.status || 'open'} - member {reportedId} - {item.autoBlocked || item.auto_blocked ? 'auto-blocked' : 'manual review'}</p><div className="mt-3 rounded-2xl bg-white p-3 text-sm leading-6"><p className="font-black">Recorded message evidence</p><p>{evidence.redactedText || evidence.text || evidence.messageText || 'No message text captured.'}</p><p className="mt-2 text-[#574142]">Flags: {(moderation.categories || []).join(', ') || 'none'}</p></div><div className="mt-3 flex flex-wrap gap-2"><button onClick={() => void decide(item.id, 'confirmed_block')} className="rounded-full bg-[#ffdad6] px-4 py-2 font-black text-[#93000a]">Confirm block</button><button onClick={() => void decide(item.id, 'dismissed')} className="rounded-full border border-[#ddbfc0] px-4 py-2 font-black">Dismiss</button><button onClick={() => void reinstate(reportedId, item.id)} className="rounded-full bg-[#1a1c1e] px-4 py-2 font-black text-white">Reinstate</button></div></div>; })}{cases.length === 0 ? <div className="rounded-3xl bg-[#f3f3f6] p-5 font-black">No active abuse reports.</div> : null}</div><h3 className="mt-6 text-xl font-black">Appeals</h3><div className="mt-3 grid gap-3">{appeals.map((appeal) => <div key={appeal.id} className="rounded-3xl bg-[#fff8e1] p-4"><p className="font-black">Appeal from {appeal.memberId || appeal.member_id}</p><p className="text-sm leading-6 text-[#574142]">{appeal.appealText || appeal.appeal_text || 'No appeal text supplied.'}</p></div>)}</div></Panel>;
 }
 function Conversations() {

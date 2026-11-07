@@ -54,6 +54,8 @@ export type RomChatMessage = {
   createdAt?: string;
   readAt?: string | null;
   risk?: string;
+  moderationStatus?: 'approved' | 'pending_review' | 'rejected' | string;
+  moderation?: unknown;
   locked?: boolean;
   unlockCostTokens?: number;
   unlockedByActor?: boolean;
@@ -183,8 +185,8 @@ export const romchatApi = {
         reportedMemberId: payload.reportedMemberId || payload.profileId,
         matchId: payload.matchId,
         messageId: payload.messageId,
-        type: 'Abusive chat message',
-        severity: 'high',
+        type: payload.reporterNote || 'Abusive chat message',
+        severity: /underage|child|minor|groom/i.test(payload.reporterNote || '') ? 'critical' : 'high',
         autoBlock: true,
         reporterNote: payload.reporterNote || 'Reported from chat safety controls',
         moderation: payload.moderation,
