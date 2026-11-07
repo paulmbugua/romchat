@@ -1,3 +1,6 @@
+ALTER TABLE romchat_accounts
+  ADD COLUMN IF NOT EXISTS moderation_status TEXT NOT NULL DEFAULT 'approved_for_review';
+
 ALTER TABLE romchat_messages
   ADD COLUMN IF NOT EXISTS moderation_status TEXT NOT NULL DEFAULT 'approved',
   ADD COLUMN IF NOT EXISTS moderation JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -24,3 +27,6 @@ CREATE INDEX IF NOT EXISTS idx_romchat_reports_moderation_queue
 CREATE UNIQUE INDEX IF NOT EXISTS uq_romchat_reports_message_reporter
   ON romchat_reports (reporter_id, message_id)
   WHERE message_id IS NOT NULL AND reporter_id <> 'system';
+
+CREATE INDEX IF NOT EXISTS idx_romchat_accounts_moderation_status
+  ON romchat_accounts (moderation_status);

@@ -123,6 +123,7 @@ ALTER TABLE romchat_member_profiles
   ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
 ALTER TABLE romchat_accounts ALTER COLUMN token_balance SET DEFAULT 0;
+ALTER TABLE romchat_accounts ADD COLUMN IF NOT EXISTS moderation_status TEXT NOT NULL DEFAULT 'approved_for_review';
 
 ALTER TABLE romchat_profile_media DROP CONSTRAINT IF EXISTS romchat_profile_media_media_type_check;
 ALTER TABLE romchat_profile_media ADD CONSTRAINT romchat_profile_media_media_type_check CHECK (media_type IN ('image','video','voice','selfie'));
@@ -256,6 +257,7 @@ function accountFromRow(row) {
     emailVerified: Boolean(row.email_verified),
     provider: row.auth_provider || 'email',
     tokenBalance: Number(row.token_balance || 0),
+    moderationStatus: row.moderation_status || 'approved_for_review',
   };
 }
 
