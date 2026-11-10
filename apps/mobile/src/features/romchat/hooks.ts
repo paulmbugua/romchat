@@ -266,6 +266,13 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     setLastAction('Report submitted');
   }, [optionsToken]);
 
+  const submitSafetyFeedback = useCallback(async (payload: { category: string; details: string }) => {
+    setLastAction('Sending safety concern');
+    const result = await romchatApi.submitSafetyFeedback(payload, optionsToken);
+    setLastAction('Safety concern submitted');
+    return result;
+  }, [optionsToken]);
+
   const reportMessage = useCallback(
   async (payload: {
     profileId: string;
@@ -312,5 +319,5 @@ export function useRomChatData(localProfiles: LocalProfile[], options: { enabled
     }
   }, []);
 
-  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, markLikesSeen, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, spendTokens, boost, updatePrivacy, block, report, reportMessage, setVibeMembership, verify };
+  return { profiles, bootstrap, apiOnline, lastAction, paidMessages, videoRequests, refresh, markLikesSeen, swipe, sendMessage, getMessages, unlockMessage, unlockVideoRequest, createVideoRequest, sendGift, spendTokens, boost, updatePrivacy, block, report, reportMessage, submitSafetyFeedback, setVibeMembership, verify };
 }

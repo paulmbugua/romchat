@@ -37,6 +37,7 @@ export default function romchatRoutes(io) {
   router.get('/privacy', controller.privacy);
   router.patch('/privacy', controller.updatePrivacy);
   router.post('/reports', controller.report);
+  router.post('/safety/feedback', controller.safetyFeedback);
   router.post('/blocks', controller.block);
   router.post('/verification', controller.verification);
   router.get('/features', controller.features);

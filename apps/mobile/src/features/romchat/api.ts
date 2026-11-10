@@ -170,6 +170,12 @@ export const romchatApi = {
       token,
       body: JSON.stringify({ profileId, type, severity: 'medium', details: type }),
     }),
+  submitSafetyFeedback: (payload: { category: string; details: string }, token?: string | null) =>
+    apiFetch<{ report: { id: string; status: string }; message: string }>('/api/romchat/safety/feedback', {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
   block: (profileId: string, token?: string | null) =>
     apiFetch('/api/romchat/blocks', {
       method: 'POST',

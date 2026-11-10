@@ -40,7 +40,7 @@ import { ProfileDetailModal, type ProfileDetailData } from './components/Profile
 import { connectGooglePlayBilling, googlePlayBilling, launchGooglePlayPurchase, listenForGooglePlayPurchases } from './features/romchat/googlePlayBilling';
 import { GOOGLE_PLAY_PRODUCT_IDS } from './features/romchat/billingCatalog';
 
-type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'payment' | 'safety' | 'profile' | 'privacy' | 'terms' | 'community';
+type Section = 'explore' | 'likes' | 'chat' | 'premium' | 'superlikes' | 'goldPlans' | 'payment' | 'safety' | 'childSafety' | 'profile' | 'privacy' | 'terms' | 'community';
 type AuthMode = 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
 type SessionState = RomChatSessionPayload & { onboarding: RomChatOnboardingState };
 type RomChatPromptAnswer = { prompt: string; answer: string };
@@ -224,6 +224,7 @@ const screenTitles: Record<Section, string> = {
   goldPlans: 'RomChat Gold',
   payment: 'Secure Payment',
   safety: 'Kenya Safety',
+  childSafety: 'Child Safety',
   profile: 'My Kenyan Profile',
   privacy: 'Privacy Policy',
   terms: 'Terms of Use',
@@ -1126,6 +1127,9 @@ export default function App() {
     if (section === 'payment') {
       return <PaymentUnavailableScreen notice={paymentNotice} onBack={() => setActiveSection('premium')} />;
     }
+    if (section === 'childSafety') {
+      return <ChildSafetyScreen submitFeedback={romchat.submitSafetyFeedback} />;
+    }
     if (section === 'privacy' || section === 'terms' || section === 'community') {
       return <PolicyScreen section={section} />;
     }
@@ -1140,6 +1144,7 @@ export default function App() {
           setVerifiedOnly={setVerifiedOnly}
           updatePrivacy={(next) => void romchat.updatePrivacy(next)}
           report={() => profile ? void romchat.report(profile.id) : undefined}
+          openChildSafety={() => setActiveSection('childSafety')}
           verify={romchat.verify}
           status={romchat.lastAction}
         />
@@ -2796,7 +2801,7 @@ function Premium({ tokens, boosted, activePlan, paymentNotice, billingStatus, pu
   );
 }
 
-function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, setVerifiedOnly, updatePrivacy, report, verify, status }: {
+function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, setVerifiedOnly, updatePrivacy, report, openChildSafety, verify, status }: {
   incognito: boolean;
   setIncognito: (value: boolean) => void;
   antiGrab: boolean;
@@ -2805,6 +2810,7 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
   setVerifiedOnly: (value: boolean) => void;
   updatePrivacy: (payload: { incognito: boolean; screenshotsBlocked: boolean; visibleToLikedOnly: boolean }) => void;
   report: () => void;
+  openChildSafety: () => void;
   verify: () => Promise<void>;
   status: string;
 }) {
@@ -2830,6 +2836,7 @@ function Safety({ incognito, setIncognito, antiGrab, setAntiGrab, verifiedOnly, 
         <ToggleRow title="Anti-screengrab blocks" value={antiGrab} onPress={() => setPrivacy({ antiGrab: !antiGrab })} />
         <TouchableOpacity onPress={() => void verify()} style={styles.listItem}><Text style={styles.listTitle}>Selfie verification</Text><Text style={styles.caption}>Persona / Smile Identity ready</Text></TouchableOpacity>
         <TouchableOpacity onPress={report} style={styles.listItem}><Text style={styles.listTitle}>Report profile</Text><Text style={styles.caption}>Kenya safety team</Text></TouchableOpacity>
+        <TouchableOpacity onPress={openChildSafety} accessibilityRole="button" style={styles.childSafetyEntry}><View style={styles.childSafetyEntryIcon}><Icon name="shield-checkmark" size={21} color="#FFD700" /></View><View style={styles.childSafetyEntryCopy}><Text style={styles.childSafetyEntryTitle}>Child Safety & Report Concern</Text><Text style={styles.childSafetyEntryCaption}>Confidential in-app feedback to RomChat safety</Text></View><Icon name="chevron-forward" size={18} color="rgba(255,255,255,0.58)" /></TouchableOpacity>
         <TouchableOpacity style={styles.listItem}><Text style={styles.listTitle}>Blocked accounts</Text><Text style={styles.caption}>Manage list</Text></TouchableOpacity>
         <TouchableOpacity style={styles.listItem}><Text style={styles.listTitle}>Community support</Text><Text style={styles.caption}>Get help</Text></TouchableOpacity>
       </View>
@@ -3027,6 +3034,75 @@ function ContactSafetySheet({ visible, matchName, onReview, onSend }: { visible:
   );
 }
 
+const childSafetyConcernOptions = [
+  { id: 'underage', label: 'Underage user or child safety' },
+  { id: 'exploitation', label: 'Sexual exploitation or grooming' },
+  { id: 'sextortion', label: 'Sextortion or explicit content' },
+  { id: 'coercion', label: 'Threats, trafficking, or coercion' },
+  { id: 'other', label: 'Other safety concern' },
+];
+
+function ChildSafetyScreen({ submitFeedback }: { submitFeedback: (payload: { category: string; details: string }) => Promise<{ report: { id: string; status: string }; message: string }> }) {
+  const [category, setCategory] = useState('underage');
+  const [details, setDetails] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+
+  async function submit() {
+    if (busy) return;
+    if (details.trim().length < 20) {
+      setNotice({ tone: 'error', text: 'Add a few more details so our safety team can review the concern.' });
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    try {
+      const result = await submitFeedback({ category, details: details.trim() });
+      setDetails('');
+      setNotice({ tone: 'success', text: result.message || 'Your confidential concern was sent to the RomChat safety team.' });
+    } catch (error) {
+      setNotice({ tone: 'error', text: userFacingErrorMessage(error, 'We could not send your concern. Check your connection and try again.') });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <View style={styles.childSafetyScreen}>
+      <View style={styles.childSafetyHero}>
+        <View style={styles.childSafetyHeroIcon}><Icon name="shield-checkmark" size={30} color="#120914" /></View>
+        <Text style={styles.childSafetyEyebrow}>ROMCHAT SAFETY CENTER</Text>
+        <Text style={styles.childSafetyTitle}>Children are never dating content</Text>
+        <Text style={styles.childSafetyBody}>RomChat is strictly for adults aged 18 and over. We prohibit child sexual abuse and exploitation, grooming, sextortion, trafficking, and sexualized content involving anyone under 18.</Text>
+      </View>
+
+      <View style={styles.childSafetyStandards}>
+        <View style={styles.childSafetyStandardRow}><Icon name="ban" size={18} color="#FF6F61" /><Text style={styles.childSafetyStandardText}>Accounts suspected of being under 18 are investigated and removed.</Text></View>
+        <View style={styles.childSafetyStandardRow}><Icon name="eye-off" size={18} color="#FF6F61" /><Text style={styles.childSafetyStandardText}>CSAE content and grooming attempts are blocked, preserved for review, and escalated where legally required.</Text></View>
+        <View style={styles.childSafetyStandardRow}><Icon name="lock-closed" size={18} color="#FF6F61" /><Text style={styles.childSafetyStandardText}>Reports are confidential and available directly inside the app.</Text></View>
+      </View>
+
+      <View style={styles.childSafetyForm}>
+        <Text style={styles.childSafetyFormTitle}>Report a child safety concern</Text>
+        <Text style={styles.childSafetyFormCaption}>Use this form for general feedback or concerns not tied to a visible profile or chat. To report a specific member, use Report on their profile or the shield in chat.</Text>
+        <Text style={styles.childSafetyFieldLabel}>Concern type</Text>
+        <View style={styles.childSafetyOptions}>
+          {childSafetyConcernOptions.map((option) => {
+            const selected = category === option.id;
+            return <TouchableOpacity key={option.id} disabled={busy} onPress={() => setCategory(option.id)} accessibilityRole="radio" accessibilityState={{ selected }} style={[styles.childSafetyOption, selected && styles.childSafetyOptionSelected]}><View style={[styles.childSafetyOptionDot, selected && styles.childSafetyOptionDotSelected]}>{selected ? <View style={styles.childSafetyOptionDotInner} /> : null}</View><Text style={[styles.childSafetyOptionText, selected && styles.childSafetyOptionTextSelected]}>{option.label}</Text></TouchableOpacity>;
+          })}
+        </View>
+        <Text style={styles.childSafetyFieldLabel}>What happened?</Text>
+        <TextInput value={details} onChangeText={setDetails} editable={!busy} multiline maxLength={2000} textAlignVertical="top" placeholder="Describe what you saw, when it happened, and any details that can help our safety team." placeholderTextColor="rgba(255,255,255,0.38)" style={styles.childSafetyInput} />
+        <Text style={styles.childSafetyCharacterCount}>{details.length}/2000</Text>
+        {notice ? <View accessibilityLiveRegion="polite" style={[styles.childSafetyNotice, notice.tone === 'success' ? styles.childSafetyNoticeSuccess : styles.childSafetyNoticeError]}><Icon name={notice.tone === 'success' ? 'checkmark-circle' : 'alert-circle'} size={18} color={notice.tone === 'success' ? '#79E8BE' : '#FF9A9A'} /><Text style={styles.childSafetyNoticeText}>{notice.text}</Text></View> : null}
+        <TouchableOpacity disabled={busy} onPress={() => void submit()} accessibilityRole="button" style={[styles.childSafetySubmit, busy && styles.actionButtonDisabled]}>{busy ? <ActivityIndicator color="#120914" /> : <><Icon name="shield" size={18} color="#120914" /><Text style={styles.childSafetySubmitText}>Send confidential report</Text></>}</TouchableOpacity>
+        <Text style={styles.childSafetyUrgent}>If someone is in immediate danger, contact local emergency services. Do not download, copy, or redistribute suspected child sexual abuse material.</Text>
+      </View>
+    </View>
+  );
+}
+
 function PolicyScreen({ section }: { section: 'privacy' | 'terms' | 'community' }) {
   const content = {
     privacy: {
@@ -3078,7 +3154,7 @@ function resolveMediaUrl(url?: string) {
   return `${apiBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-function Profile({ account, profile, strength, incognito, busy, activeAction, error, onUploadImage, onDeletePhoto, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; activeAction: ProfileAction; error: string; onUploadImage: (replaceMediaId?: string) => Promise<void>; onDeletePhoto: (mediaId: string) => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community') => void }) {
+function Profile({ account, profile, strength, incognito, busy, activeAction, error, onUploadImage, onDeletePhoto, onSetMainPhoto, onVerifySelfie, onSaveDetails, onSavePrompts, onSaveDiscoverySettings, status, onSignOut, openPolicy }: { account: RomChatAccount | null; profile: RomChatMemberProfile | null; strength: number; incognito: boolean; busy: boolean; activeAction: ProfileAction; error: string; onUploadImage: (replaceMediaId?: string) => Promise<void>; onDeletePhoto: (mediaId: string) => Promise<void>; onSetMainPhoto: (mediaId: string) => Promise<void>; onVerifySelfie: () => Promise<void>; onSaveDetails: (payload: { displayName: string; gender: string; city: string; intent: string; bio: string; interests: string[] }) => Promise<void>; onSavePrompts: (answers: RomChatPromptAnswer[]) => Promise<void>; onSaveDiscoverySettings: (payload: { maxDistanceKm: number; minAge: number; maxAge: number; mapDiscoveryEnabled: boolean }) => Promise<void>; status: string; onSignOut: () => Promise<void>; openPolicy: (section: 'privacy' | 'terms' | 'community' | 'childSafety') => void }) {
   const imageCount = profile?.imageCount || 0;
   const computedStrength = profile?.profileStrength || strength;
   const catalogueAccess = Math.min(6, Math.max(1, imageCount));
@@ -3221,6 +3297,7 @@ function Profile({ account, profile, strength, incognito, busy, activeAction, er
       </View>
       <View style={styles.legalPanel}>
         <Text style={styles.sectionLabel}>Legal and privacy</Text>
+        <TouchableOpacity onPress={() => openPolicy('childSafety')} accessibilityRole="button" style={styles.childSafetyLegalLink}><View style={styles.childSafetyLegalIcon}><Icon name="shield-checkmark" size={20} color="#120914" /></View><View style={styles.childSafetyEntryCopy}><Text style={styles.childSafetyLegalTitle}>Child Safety & Report Concern</Text><Text style={styles.childSafetyLegalCaption}>Read our standards or send confidential feedback without leaving RomChat.</Text></View><Icon name="chevron-forward" size={18} color="#120914" /></TouchableOpacity>
         <TouchableOpacity onPress={() => openPolicy('privacy')} style={styles.legalLink}><Text style={styles.legalTitle}>Privacy Policy</Text><Text style={styles.caption}>How RomChat handles profile, chat, photo, location, and safety data.</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => openPolicy('terms')} style={styles.legalLink}><Text style={styles.legalTitle}>Terms of Use</Text><Text style={styles.caption}>Account rules, subscriptions, tokens, acceptable use, and service limits.</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => openPolicy('community')} style={styles.legalLink}><Text style={styles.legalTitle}>Community Guidelines</Text><Text style={styles.caption}>Dating safety, respectful messaging, reporting, blocking, and contact-sharing guidance.</Text></TouchableOpacity>
@@ -3834,6 +3911,10 @@ const styles = StyleSheet.create({
   textButtonLabel: { color: '#FFD700', fontWeight: '900' },
   legalPanel: { backgroundColor: '#1E1222', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,215,0,0.18)', padding: 16, marginBottom: 14 },
   legalLink: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  childSafetyLegalLink: { minHeight: 74, borderRadius: 14, backgroundColor: '#FFD700', padding: 12, marginTop: 8, marginBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  childSafetyLegalIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(18,9,20,0.10)', alignItems: 'center', justifyContent: 'center' },
+  childSafetyLegalTitle: { color: '#120914', fontSize: 14, fontWeight: '900' },
+  childSafetyLegalCaption: { color: 'rgba(18,9,20,0.72)', fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: 2 },
   legalTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 16, marginBottom: 4 },
   policyScreen: { gap: 12 },
   policyItem: { backgroundColor: '#1E1222', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,20,147,0.18)', padding: 16 },
@@ -3849,6 +3930,41 @@ const styles = StyleSheet.create({
   toggleDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#FFFFFF' },
   toggleDotOn: { transform: [{ translateX: 22 }] },
   safetyScore: { flexDirection: 'row', gap: 16, backgroundColor: '#1E1222', borderRadius: 24, padding: 18, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,20,147,0.22)' },
+  childSafetyEntry: { minHeight: 68, borderRadius: 14, backgroundColor: 'rgba(255,215,0,0.08)', borderWidth: 1, borderColor: 'rgba(255,215,0,0.24)', paddingHorizontal: 12, marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  childSafetyEntryIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,215,0,0.10)', alignItems: 'center', justifyContent: 'center' },
+  childSafetyEntryCopy: { flex: 1 },
+  childSafetyEntryTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  childSafetyEntryCaption: { color: 'rgba(255,255,255,0.58)', fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: 2 },
+  childSafetyScreen: { gap: 14 },
+  childSafetyHero: { backgroundColor: '#251525', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,215,0,0.28)', padding: 20 },
+  childSafetyHeroIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#FFD700', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  childSafetyEyebrow: { color: '#FFD700', fontSize: 11, fontWeight: '900' },
+  childSafetyTitle: { color: '#FFFFFF', fontSize: 24, lineHeight: 30, fontWeight: '900', marginTop: 7 },
+  childSafetyBody: { color: 'rgba(255,255,255,0.72)', fontSize: 13, lineHeight: 20, fontWeight: '700', marginTop: 9 },
+  childSafetyStandards: { gap: 12, paddingHorizontal: 4, paddingVertical: 4 },
+  childSafetyStandardRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  childSafetyStandardText: { flex: 1, color: 'rgba(255,255,255,0.78)', fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  childSafetyForm: { backgroundColor: '#1E1222', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,20,147,0.20)', padding: 16 },
+  childSafetyFormTitle: { color: '#FFFFFF', fontSize: 19, lineHeight: 24, fontWeight: '900' },
+  childSafetyFormCaption: { color: 'rgba(255,255,255,0.58)', fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 5 },
+  childSafetyFieldLabel: { color: '#FFD700', fontSize: 11, fontWeight: '900', marginTop: 16, marginBottom: 8 },
+  childSafetyOptions: { gap: 5 },
+  childSafetyOption: { minHeight: 44, borderRadius: 10, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  childSafetyOptionSelected: { backgroundColor: 'rgba(255,20,147,0.11)' },
+  childSafetyOptionDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.34)', alignItems: 'center', justifyContent: 'center' },
+  childSafetyOptionDotSelected: { borderColor: '#FF1493' },
+  childSafetyOptionDotInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FF1493' },
+  childSafetyOptionText: { flex: 1, color: 'rgba(255,255,255,0.70)', fontSize: 13, fontWeight: '800' },
+  childSafetyOptionTextSelected: { color: '#FFFFFF' },
+  childSafetyInput: { minHeight: 126, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', backgroundColor: '#160C19', color: '#FFFFFF', paddingHorizontal: 12, paddingVertical: 12, fontSize: 13, lineHeight: 20, fontWeight: '700' },
+  childSafetyCharacterCount: { alignSelf: 'flex-end', color: 'rgba(255,255,255,0.38)', fontSize: 10, fontWeight: '700', marginTop: 5 },
+  childSafetyNotice: { borderRadius: 10, padding: 11, marginTop: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  childSafetyNoticeSuccess: { backgroundColor: 'rgba(54,211,153,0.11)', borderWidth: 1, borderColor: 'rgba(54,211,153,0.25)' },
+  childSafetyNoticeError: { backgroundColor: 'rgba(255,111,97,0.10)', borderWidth: 1, borderColor: 'rgba(255,111,97,0.25)' },
+  childSafetyNoticeText: { flex: 1, color: 'rgba(255,255,255,0.82)', fontSize: 12, lineHeight: 17, fontWeight: '800' },
+  childSafetySubmit: { minHeight: 52, borderRadius: 26, backgroundColor: '#FFD700', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14 },
+  childSafetySubmitText: { color: '#120914', fontSize: 14, fontWeight: '900' },
+  childSafetyUrgent: { color: 'rgba(255,255,255,0.45)', fontSize: 10, lineHeight: 16, fontWeight: '700', marginTop: 12 },
   score: { width: 76, height: 76, borderRadius: 38, textAlign: 'center', textAlignVertical: 'center', backgroundColor: '#FFD700', color: '#120914', fontSize: 30, fontWeight: '900', overflow: 'hidden' },
   scoreTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', marginBottom: 4 },
   progress: { height: 9, backgroundColor: '#2A1A30', borderRadius: 999, overflow: 'hidden', marginVertical: 12 },

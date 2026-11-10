@@ -393,9 +393,48 @@ export function createRomchatController(io) {
           : /threat|violence|sexual|harass|coerc|extort/.test(reasonText)
             ? 'high'
             : req.body?.severity;
-        const report = await createReport({ ...(req.body || {}), severity, reporterId: user.id });
+        const report = await createReport({ ...(req.body || {}), severity, reporterId: user.id, allowNoTarget: false });
         io?.emit('romchat:report', report);
         res.status(201).json({ report, message: 'Report received by RomChat safety.' });
+      } catch (error) {
+        sendError(res, error);
+      }
+    },
+    async safetyFeedback(req, res) {
+      try {
+        const user = await requireRomchatAccount(req);
+        const allowedCategories = new Map([
+          ['underage', ['Underage user or child safety', 'critical']],
+          ['exploitation', ['Sexual exploitation or grooming', 'critical']],
+          ['sextortion', ['Sextortion or explicit content involving a minor', 'critical']],
+          ['coercion', ['Threats, trafficking, or coercion', 'high']],
+          ['other', ['Other safety concern', 'medium']],
+        ]);
+        const category = String(req.body?.category || '').trim().toLowerCase();
+        const selected = allowedCategories.get(category);
+        const details = String(req.body?.details || '').trim();
+        if (!selected) {
+          const error = new Error('Choose a child safety concern.');
+          error.status = 400;
+          error.code = 'SAFETY_CATEGORY_REQUIRED';
+          throw error;
+        }
+        if (details.length < 20) {
+          const error = new Error('Please provide enough detail for the safety team to review this concern.');
+          error.status = 400;
+          error.code = 'SAFETY_DETAILS_REQUIRED';
+          throw error;
+        }
+        const report = await createReport({
+          reporterId: user.id,
+          allowNoTarget: true,
+          type: `Child safety feedback: ${selected[0]}`,
+          severity: selected[1],
+          details: details.slice(0, 2000),
+          evidence: { source: 'in_app_child_safety_center', submittedAt: new Date().toISOString() },
+        });
+        io?.emit('romchat:report', report);
+        res.status(201).json({ report, message: 'Your confidential safety concern has been sent to the RomChat safety team.' });
       } catch (error) {
         sendError(res, error);
       }

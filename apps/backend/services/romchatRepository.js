@@ -1146,13 +1146,14 @@ export async function updatePrivacy(payload = {}) {
 
 export async function createReport(payload = {}) {
   const reporterId = String(payload.reporterId || payload.reporter_id || '').trim();
+  const allowNoTarget = payload.allowNoTarget === true;
   const requestedProfileId = String(payload.reportedMemberId || payload.reported_member_id || payload.profileId || '').trim() || null;
   const messageId = String(payload.messageId || payload.message_id || '').trim() || null;
   const requestedMatchId = String(payload.matchId || payload.match_id || '').trim() || null;
   const type = String(payload.type || 'Safety report').trim().slice(0, 120);
   const severity = ['low', 'medium', 'high', 'critical'].includes(String(payload.severity)) ? String(payload.severity) : 'medium';
   if (!reporterId) { const error = new Error('Login is required to submit a report.'); error.status = 401; throw error; }
-  if (!requestedProfileId && !messageId) { const error = new Error('Choose a profile or message to report.'); error.status = 400; error.code = 'REPORT_TARGET_REQUIRED'; throw error; }
+  if (!allowNoTarget && !requestedProfileId && !messageId) { const error = new Error('Choose a profile or message to report.'); error.status = 400; error.code = 'REPORT_TARGET_REQUIRED'; throw error; }
   return withDb(async () => {
     const client = await pool.connect();
     try {
@@ -1186,14 +1187,14 @@ export async function createReport(payload = {}) {
         evidence = { messageId: message.id, matchId: message.match_id, senderId: message.sender_id, redactedText: redactSafetyEvidence(message.text), mediaUrl: message.media_url || null, mediaType: message.media_type || null, createdAt: message.created_at };
       }
 
-      if (!reportedMemberId || reportedMemberId === reporterId) {
+      if ((!reportedMemberId && !allowNoTarget) || reportedMemberId === reporterId) {
         const error = new Error('A valid profile is required.');
         error.status = 400;
         error.code = 'INVALID_REPORT_TARGET';
         throw error;
       }
 
-      const autoBlocked = payload.autoBlock === true || payload.auto_block === true;
+      const autoBlocked = Boolean(reportedMemberId) && (payload.autoBlock === true || payload.auto_block === true);
       const details = String(payload.details || payload.reporterNote || '').trim().slice(0, 2000);
       const reportId = id('rp');
       const insert = await client.query(
