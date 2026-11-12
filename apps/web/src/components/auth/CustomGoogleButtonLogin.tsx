@@ -5,6 +5,7 @@ import { FcGoogle } from 'react-icons/fc';
 import { getIdToken } from 'firebase/auth';
 
 import { signInGooglePopup } from '@/lib/firebaseAuthWeb';
+import { resolveBackendUrl } from '@/lib/backendUrl';
 import { userFacingErrorMessage } from '@/lib/publicError';
 
 type Props = {
@@ -24,7 +25,7 @@ export default function CustomGoogleButtonLogin({
 
       const result = await signInGooglePopup();
       const idToken = await getIdToken(result.user, true);
-      const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || '').replace(/\/+$/, '');
+      const backendUrl = resolveBackendUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
 
       console.info('[romchat-google-web] firebase-login-success', {
         uid: result.user.uid,
@@ -55,9 +56,11 @@ export default function CustomGoogleButtonLogin({
         localStorage.setItem('romchat:auth:token', data.token);
       }
 
-      onSuccess?.(data);
-
-      window.location.reload();
+      if (onSuccess) {
+        onSuccess(data);
+      } else {
+        window.location.reload();
+      }
     } catch (error: any) {
       console.error('[romchat-google-web] login-failure', error);
 

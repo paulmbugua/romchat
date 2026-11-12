@@ -7,6 +7,7 @@ import {
   BadgeCheck,
   Camera,
   Check,
+  ChevronRight,
   Compass,
   CreditCard,
   Flag,
@@ -67,7 +68,7 @@ type Profile = {
   match_score?: number;
   interests?: string[];
   tags?: string[];
-  media?: Array<{ id?: string; url?: string; mediaType?: string }>;
+  media?: Array<{ id?: string; url?: string; mediaType?: string; media_type?: string }>;
   photos?: string[];
   image?: string;
   photoUrl?: string;
@@ -87,18 +88,16 @@ function resolveMediaUrl(url?: string) {
   return `${apiBase()}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-const imageFor = (profile?: Profile | null) => {
-  const url = first(
-    profile?.media?.find((item) => item.mediaType !== 'voice')?.url,
-    profile?.photos?.[0],
-    profile?.photoUrl,
-    profile?.image
-  );
+const profileImages = (profile?: Profile | null) => Array.from(new Set([
+  ...(profile?.media || [])
+    .filter((item) => !['voice', 'video'].includes(String(item.mediaType || item.media_type || '').toLowerCase()))
+    .map((item) => item.url),
+  ...(profile?.photos || []),
+  profile?.photoUrl,
+  profile?.image,
+].filter((value): value is string => Boolean(value)).map(resolveMediaUrl)));
 
-  return url
-    ? resolveMediaUrl(url)
-    : '/assets/romchat/icon.png';
-};
+const imageFor = (profile?: Profile | null) => profileImages(profile)[0] || '/assets/romchat/icon.png';
 
 const nameFor = (profile?: Profile | null) => first(profile?.displayName, profile?.name) || 'RomChat member';
 const interestsFor = (profile?: Profile | null) => (profile?.interests?.length ? profile.interests : profile?.tags || []).slice(0, 5);
@@ -272,10 +271,17 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
       } else {
         setToast(action === 'pass' ? 'Passed. Showing the next profile.' : 'Like sent.');
       }
-      setProfileIndex((value) => Math.min(value + 1, Math.max(0, visibleProfiles.length - 1)));
+      const swipedProfileId = activeProfile.id;
+      setProfiles((items) => items.filter((item) => item.id !== swipedProfileId));
+      setProfileIndex((value) => Math.min(value, Math.max(0, visibleProfiles.length - 2)));
     } catch (error) {
       setToast(userFacingErrorMessage(error, 'Swipe failed.'));
     }
+  }
+
+  function skipUnavailableProfile(profileId: string) {
+    setProfiles((items) => items.filter((item) => item.id !== profileId));
+    setProfileIndex((value) => Math.min(value, Math.max(0, visibleProfiles.length - 2)));
   }
 
   async function loadMessages(id = matchId) {
@@ -362,12 +368,12 @@ export default function RomChatWebApp({ mode = 'app' }: { mode?: Mode }) {
   return (
     <main className="min-h-screen bg-[#09050b] text-white">
       <AppHeader signedIn={signedIn} onLogin={() => setSection('profile')} onLogout={() => { clearStoredSession(); setToken(''); setSession(null); setSection('profile'); }} />
-      <div className="mx-auto grid max-w-7xl gap-5 px-4 pb-28 pt-5 lg:grid-cols-[230px_1fr] lg:px-6">
+      <div className="mx-auto grid max-w-7xl gap-4 px-3 pb-28 pt-4 sm:px-4 lg:grid-cols-[76px_minmax(0,1fr)] lg:px-6">
         <SideNav section={section} setSection={setSection} />
         <section className="min-w-0">
           {toast ? <button onClick={() => setToast('')} className="mb-4 w-full rounded-3xl border border-[#ff1493]/30 bg-[#210d1d] px-5 py-3 text-left text-sm font-bold text-[#ffd7eb]">{toast}</button> : null}
           {loading ? <LoadingCard /> : null}
-          {!loading && section === 'swipe' ? <SwipeScreen profile={activeProfile} onSwipe={handleSwipe} onReport={reportActiveProfile} activeVibe={activeVibe} onClearVibe={() => { setActiveVibeId(''); setProfileIndex(0); }} /> : null}
+          {!loading && section === 'swipe' ? <SwipeScreen profile={activeProfile} onSwipe={handleSwipe} onReport={reportActiveProfile} onUnavailable={skipUnavailableProfile} activeVibe={activeVibe} onClearVibe={() => { setActiveVibeId(''); setProfileIndex(0); }} remaining={visibleProfiles.length} /> : null}
           {!loading && section === 'explore' ? <ExploreVibesScreen vibes={vibes} profiles={profiles} busyId={vibeBusyId} onToggle={setVibeMembership} onBrowse={browseVibe} /> : null}
           {!loading && section === 'likes' ? <LikesScreen profiles={visibleProfiles} onPick={(profile) => { setProfileIndex(Math.max(0, visibleProfiles.findIndex((item) => item.id === profile.id))); setSection('swipe'); }} /> : null}
           {!loading && section === 'chat' ? <ChatScreen messages={messages} text={messageText} setText={setMessageText} sendChat={sendChat} loadMessages={loadMessages} matchId={matchId} setMatchId={setMatchId} /> : null}
@@ -420,7 +426,7 @@ function SideNav({ section, setSection }: { section: AppSection; setSection: (va
     ['safety', Shield, 'Safety'],
     ['profile', UserRound, 'Profile'],
   ];
-  return <aside className="hidden rounded-[28px] border border-white/10 bg-white/[0.04] p-3 lg:block">{items.map(([key, Icon, label]) => <button key={key} onClick={() => setSection(key)} className={'mb-2 flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-black ' + (section === key ? 'bg-[#ff1493] text-white' : 'text-white/70 hover:bg-white/10')}><Icon size={19} />{label}</button>)}</aside>;
+  return <aside className="sticky top-[84px] hidden h-fit rounded-[24px] border border-white/10 bg-white/[0.035] p-2 lg:block">{items.map(([key, Icon, label]) => <button key={key} onClick={() => setSection(key)} title={label} aria-label={label} className={'mb-1 grid h-14 w-full place-items-center rounded-[18px] transition ' + (section === key ? 'bg-[#ff1493] text-white shadow-[0_10px_35px_rgba(255,20,147,.24)]' : 'text-white/55 hover:bg-white/10 hover:text-white')}><Icon fill={section === key && key === 'swipe' ? 'currentColor' : 'none'} size={22} /></button>)}</aside>;
 }
 
 function FooterNav({ section, setSection }: { section: AppSection; setSection: (value: AppSection) => void }) {
@@ -428,34 +434,111 @@ function FooterNav({ section, setSection }: { section: AppSection; setSection: (
   return <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-black/90 px-2 pb-4 pt-2 backdrop-blur-xl lg:hidden"><div className="mx-auto flex max-w-xl justify-between">{items.map(([key, Icon, label]) => <button key={key} onClick={() => setSection(key)} className={'grid min-w-14 place-items-center rounded-2xl px-2 py-2 text-xs font-black ' + (section === key ? 'text-white' : 'text-white/50')}><Icon fill={section === key ? 'currentColor' : 'none'} size={22} />{label}</button>)}</div></nav>;
 }
 
-function SwipeScreen({ profile, onSwipe, onReport, activeVibe, onClearVibe }: { profile: Profile | null; onSwipe: (action: 'pass' | 'like' | 'super_like') => void; onReport: () => void; activeVibe: RomanceVibe | null; onClearVibe: () => void }) {
+function SwipeScreen({ profile, onSwipe, onReport, onUnavailable, activeVibe, onClearVibe, remaining }: { profile: Profile | null; onSwipe: (action: 'pass' | 'like' | 'super_like') => Promise<void>; onReport: () => void; onUnavailable: (profileId: string) => void; activeVibe: RomanceVibe | null; onClearVibe: () => void; remaining: number }) {
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const startX = useRef(0);
+
+  useEffect(() => {
+    setDragX(0);
+    setDragging(false);
+    setBusy(false);
+  }, [profile?.id]);
+
   if (!profile) return <div>{activeVibe ? <VibeFilter vibe={activeVibe} onClear={onClearVibe} /> : null}<EmptyState title={activeVibe ? 'No more profiles in this vibe' : 'No live profiles yet'} body={activeVibe ? 'Try another romance vibe or browse everyone.' : 'Complete your profile and refresh to load real RomChat members from the backend.'} /></div>;
+
+  async function submit(action: 'pass' | 'like' | 'super_like') {
+    if (busy) return;
+    setBusy(true);
+    setDragX(action === 'pass' ? -window.innerWidth : window.innerWidth);
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    try {
+      await onSwipe(action);
+    } finally {
+      setBusy(false);
+      setDragX(0);
+    }
+  }
+
+  function pointerDown(event: React.PointerEvent<HTMLElement>) {
+    if (busy || (event.target as HTMLElement).closest('button')) return;
+    startX.current = event.clientX;
+    setDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function pointerMove(event: React.PointerEvent<HTMLElement>) {
+    if (!dragging || busy) return;
+    setDragX(event.clientX - startX.current);
+  }
+
+  function pointerUp() {
+    if (!dragging || busy) return;
+    setDragging(false);
+    if (Math.abs(dragX) >= 110) {
+      void submit(dragX > 0 ? 'like' : 'pass');
+    } else {
+      setDragX(0);
+    }
+  }
+
   return (
-    <div>{activeVibe ? <VibeFilter vibe={activeVibe} onClear={onClearVibe} /> : null}<section className="grid gap-5 xl:grid-cols-[1fr_320px]">
-      <article className="relative min-h-[720px] overflow-hidden rounded-[36px] border border-[#ff1493]/20 bg-[#180a16]">
-        <img src={imageFor(profile)} alt={nameFor(profile)} className="absolute inset-0 h-full w-full object-cover brightness-110 contrast-105" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
+    <div className="mx-auto max-w-[720px]">{activeVibe ? <VibeFilter vibe={activeVibe} onClear={onClearVibe} /> : null}
+      <div className="mb-3 flex items-end justify-between px-1"><div><p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#ff8fc8]">Discover</p><h1 className="text-2xl font-black sm:text-3xl">Find your next conversation</h1></div><span className="hidden text-xs font-bold text-white/45 sm:block">{remaining} nearby</span></div>
+      <section className="relative mx-auto max-w-[620px]">
+      <article
+        onPointerDown={pointerDown}
+        onPointerMove={pointerMove}
+        onPointerUp={pointerUp}
+        onPointerCancel={pointerUp}
+        className="relative h-[calc(100svh-245px)] min-h-[590px] max-h-[700px] touch-pan-y select-none overflow-hidden rounded-[30px] border border-white/10 bg-[#180a16] shadow-[0_28px_80px_rgba(0,0,0,.45)] sm:h-auto sm:min-h-[700px] sm:max-h-none"
+        style={{ transform: `translateX(${dragX}px) rotate(${dragX / 28}deg)`, transition: dragging ? 'none' : 'transform 180ms ease-out' }}
+      >
+        <ProfilePhoto profile={profile} alt={nameFor(profile)} onUnavailable={() => onUnavailable(profile.id)} className="absolute inset-0 h-full w-full object-cover brightness-110 contrast-105" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/5 to-transparent" />
+        <div className={'pointer-events-none absolute left-6 top-7 rotate-[-10deg] rounded-lg border-4 px-4 py-2 text-3xl font-black tracking-wider transition-opacity ' + (dragX > 35 ? 'opacity-100' : 'opacity-0')} style={{ color: '#38e09f', borderColor: '#38e09f' }}>LIKE</div>
+        <div className={'pointer-events-none absolute right-6 top-7 rotate-[10deg] rounded-lg border-4 px-4 py-2 text-3xl font-black tracking-wider transition-opacity ' + (dragX < -35 ? 'opacity-100' : 'opacity-0')} style={{ color: '#ff6b70', borderColor: '#ff6b70' }}>PASS</div>
         <button onClick={onReport} className="absolute right-4 top-4 rounded-full bg-black/45 p-3 text-white backdrop-blur"><Flag size={20} /></button>
-        <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-8">
+        <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-7">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-xs font-black text-[#141016]">{profile.online ? 'Online now' : 'Recently active'} {profile.verified ? <BadgeCheck className="text-[#13caa8]" size={16} /> : null}</div>
-          <h1 className="text-5xl font-black sm:text-7xl">{nameFor(profile)} {profile.age ? <span className="font-medium">{profile.age}</span> : null}</h1>
+          <h2 className="text-4xl font-black sm:text-6xl">{nameFor(profile)} {profile.age ? <span className="font-medium">{profile.age}</span> : null}</h2>
           <p className="mt-2 max-w-2xl text-lg font-bold text-white/85">{profile.city || 'Kenya'} · {profile.intent || profile.prompt || 'Ready to connect'}</p>
           {profile.bio ? <p className="mt-4 max-w-2xl text-base leading-7 text-white/80">{profile.bio}</p> : null}
           <div className="mt-4 flex flex-wrap gap-2">{interestsFor(profile).map((item) => <span key={item} className="rounded-full bg-[#ff1493] px-3 py-1 text-sm font-black">{item}</span>)}</div>
           <div className="mt-7 flex justify-center gap-4">
-            <button onClick={() => onSwipe('pass')} className="grid h-16 w-16 place-items-center rounded-full bg-white/12 text-white ring-1 ring-white/15"><X size={30} /></button>
-            <button onClick={() => onSwipe('super_like')} className="grid h-16 w-16 place-items-center rounded-full bg-[#152342] text-[#8fbbff] ring-1 ring-[#8fbbff]/25"><Star fill="currentColor" size={28} /></button>
-            <button onClick={() => onSwipe('like')} className="grid h-20 w-20 place-items-center rounded-full bg-[#ff1493] text-white shadow-[0_20px_60px_rgba(255,20,147,.36)]"><Heart fill="currentColor" size={36} /></button>
+            <button disabled={busy} aria-label="Pass" onClick={() => void submit('pass')} className="grid h-16 w-16 place-items-center rounded-full bg-black/55 text-white ring-1 ring-white/20 backdrop-blur transition hover:scale-105 disabled:opacity-50"><X size={30} /></button>
+            <button disabled={busy} aria-label="Super Like" onClick={() => void submit('super_like')} className="grid h-16 w-16 place-items-center rounded-full bg-[#152342]/90 text-[#8fbbff] ring-1 ring-[#8fbbff]/30 backdrop-blur transition hover:scale-105 disabled:opacity-50"><Star fill="currentColor" size={28} /></button>
+            <button disabled={busy} aria-label="Like" onClick={() => void submit('like')} className="grid h-20 w-20 place-items-center rounded-full bg-[#ff1493] text-white shadow-[0_20px_60px_rgba(255,20,147,.36)] transition hover:scale-105 disabled:opacity-50"><Heart fill="currentColor" size={36} /></button>
           </div>
         </div>
       </article>
-      <aside className="grid gap-4">
-        <InfoCard icon={Sparkles} title="Real Kenyan profiles" body="Discovery is driven by saved backend profiles, gender preference, distance, age range, verification, and swipe history." />
-        <InfoCard icon={Shield} title="Safer romance" body="Report or block suspicious members, and abusive chat is filtered before it damages the community." />
-        <InfoCard icon={WalletCards} title="Tokens and premium" body="Buy KES token bundles for Super Likes, profile boosts, and premium discovery perks." />
-      </aside>
-    </section></div>
+      </section>
+      <p className="mt-3 flex items-center justify-center gap-1 text-xs font-bold text-white/40">Drag the card or use the actions <ChevronRight size={14} /></p>
+    </div>
   );
+}
+
+function ProfilePhoto({ profile, alt, className, onUnavailable }: { profile: Profile; alt: string; className: string; onUnavailable?: () => void }) {
+  const images = useMemo(() => profileImages(profile), [profile]);
+  const [index, setIndex] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const unavailable = index >= images.length;
+
+  useEffect(() => { setIndex(0); setLoaded(false); }, [profile.id]);
+  useEffect(() => {
+    if (loaded || unavailable) return;
+    const timer = window.setTimeout(() => setIndex((value) => value + 1), 8000);
+    return () => window.clearTimeout(timer);
+  }, [index, loaded, unavailable]);
+  useEffect(() => {
+    if (!unavailable || !onUnavailable) return;
+    const timer = window.setTimeout(onUnavailable, 250);
+    return () => window.clearTimeout(timer);
+  }, [onUnavailable, unavailable]);
+
+  if (unavailable) return <div className={`${className} grid place-items-center bg-[#1e1222]`}><div className="text-center"><ImagePlus className="mx-auto text-[#ff1493]" size={34} /><p className="mt-2 text-sm font-black text-white/60">Loading the next profile...</p></div></div>;
+  return <img key={images[index]} src={images[index]} alt={alt} className={className} draggable={false} onLoad={(event) => event.currentTarget.naturalWidth ? setLoaded(true) : setIndex((value) => value + 1)} onError={() => setIndex((value) => value + 1)} />;
 }
 
 function VibeFilter({ vibe, onClear }: { vibe: RomanceVibe; onClear: () => void }) {
@@ -674,7 +757,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
       setBusy(true);
       if (authMode === 'login') {
         const data = await apiJson('/api/romchat/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-        storeToken(data.token); setToken(data.token); setStatus('Logged in.'); await reload(data.token);
+        storeToken(data.token); setToken(data.token); setStatus('Logged in.'); window.location.assign('/discover');
       } else if (authMode === 'signup') {
         const data = await apiJson('/api/romchat/auth/request-otp', { method: 'POST', body: JSON.stringify({ email, password, name: displayName }) });
         setStatus(data.message || 'OTP sent.'); setAuthMode('otp');
@@ -686,7 +769,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
         setStatus(data.message || 'Reset code sent.'); setAuthMode('reset');
       } else {
         const data = await apiJson('/api/romchat/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, code: otp, password }) });
-        storeToken(data.token); setToken(data.token); setStatus('Password reset.'); await reload(data.token);
+        storeToken(data.token); setToken(data.token); setStatus('Password reset.'); window.location.assign('/discover');
       }
     } catch (error) {
       setStatus(userFacingErrorMessage(error, 'Action failed.'));
@@ -893,7 +976,7 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
           <p className="mb-2 text-xs font-black uppercase tracking-[0.16em] text-[#ff1493]">RomChat account</p>
           <h1 className="text-3xl font-black sm:text-4xl">Login or create account</h1>
           <p className="mt-2 font-bold leading-6 text-white/65">Use Google or email verification, then complete your Kenyan dating profile.</p>
-          <div className="mt-5"><CustomGoogleButtonLogin className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-3 font-black text-[#120914] disabled:opacity-60" /></div>
+          <div className="mt-5"><CustomGoogleButtonLogin onSuccess={() => window.location.assign('/discover')} className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-3 font-black text-[#120914] disabled:opacity-60" /></div>
           <div className="my-5 flex items-center gap-3 text-xs font-black uppercase tracking-[0.16em] text-white/35"><span className="h-px flex-1 bg-white/10" />or use email<span className="h-px flex-1 bg-white/10" /></div>
           <div className="grid gap-3">
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="min-h-[52px] rounded-2xl border border-[#ff1493]/20 bg-[#170d1b] px-4 py-3 font-bold outline-none focus:border-[#ff1493]" />

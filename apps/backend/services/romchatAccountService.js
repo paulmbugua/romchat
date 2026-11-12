@@ -302,7 +302,7 @@ function mediaFromRow(row) {
     id: row.id,
     memberId: row.member_id,
     mediaType: row.media_type,
-    url: row.object_key ? `/api/romchat/profile/media/${encodeURIComponent(row.id)}/content?v=${encodeURIComponent(row.object_key)}` : row.url,
+    url: row.object_key && row.bucket !== 'review-seed' ? `/api/romchat/profile/media/${encodeURIComponent(row.id)}/content?v=${encodeURIComponent(row.object_key)}` : row.url,
     key: row.object_key,
     bucket: row.bucket,
     contentType: row.content_type,

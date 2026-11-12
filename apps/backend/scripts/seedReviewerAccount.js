@@ -178,8 +178,7 @@ const profiles = [
     latitude: -1.286389,
     longitude: 36.817223,
     photos: [
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=1200&q=85',
-      'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=1200&q=85',
+      'https://www.romchat.co.ke/assets/romchat/profile-noah.png',
     ],
   },
   {
@@ -196,9 +195,7 @@ const profiles = [
     latitude: -1.292066,
     longitude: 36.821946,
     photos: [
-      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=1200&q=85',
-      'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=1200&q=85',
-      'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=1200&q=85',
+      'https://www.romchat.co.ke/assets/romchat/profile-elena.png',
     ],
   },
   {
@@ -215,8 +212,7 @@ const profiles = [
     latitude: -0.303099,
     longitude: 36.080025,
     photos: [
-      'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=1200&q=85',
-      'https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=1200&q=85',
+      'https://www.romchat.co.ke/assets/romchat/profile-amara.png',
     ],
   },
   {
@@ -233,8 +229,7 @@ const profiles = [
     latitude: -4.043477,
     longitude: 39.668206,
     photos: [
-      'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=1200&q=85',
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=85',
+      'https://www.romchat.co.ke/assets/romchat/profile-mia.png',
     ],
   },
 ];

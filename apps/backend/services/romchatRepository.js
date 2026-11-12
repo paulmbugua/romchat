@@ -328,9 +328,17 @@ function isRecentlyOnline(row) {
   return Number.isFinite(lastSeen) && Date.now() - lastSeen <= 5 * 60 * 1000;
 }
 
+const reviewerProfilePhotos = {
+  reviewer_romchat: 'https://www.romchat.co.ke/assets/romchat/profile-noah.png',
+  reviewer_match_amina: 'https://www.romchat.co.ke/assets/romchat/profile-elena.png',
+  reviewer_match_nia: 'https://www.romchat.co.ke/assets/romchat/profile-amara.png',
+  reviewer_pick_zuri: 'https://www.romchat.co.ke/assets/romchat/profile-mia.png',
+};
+
 function fromMemberProfileRow(row, catalogueAccess = 1) {
   const access = Math.max(1, Number(catalogueAccess || 1));
-  const photos = Array.isArray(row.photos) ? row.photos.filter(Boolean) : [];
+  const reviewerPhoto = reviewerProfilePhotos[row.member_id];
+  const photos = reviewerPhoto ? [reviewerPhoto] : Array.isArray(row.photos) ? row.photos.filter(Boolean) : [];
   const visiblePhotos = photos.slice(0, access);
   const fullGallery = photos.length;
   const interests = row.interests || [];
@@ -484,7 +492,7 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
            WHERE b.profile_id = p.member_id AND b.ends_at > now()
          ) AS boosted_now,
          COALESCE(
-           array_agg(CASE WHEN m.object_key IS NOT NULL THEN '/api/romchat/profile/media/' || m.id || '/content?v=' || md5(m.object_key) ELSE m.url END ORDER BY m.position ASC, m.created_at ASC)
+           array_agg(CASE WHEN m.object_key IS NOT NULL AND COALESCE(m.bucket, '') <> 'review-seed' THEN '/api/romchat/profile/media/' || m.id || '/content?v=' || md5(m.object_key) ELSE m.url END ORDER BY m.position ASC, m.created_at ASC)
              FILTER (WHERE m.media_type = 'image'),
            '{}'
          ) AS photos
@@ -518,7 +526,7 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
              WHERE b.profile_id = p.member_id AND b.ends_at > now()
            ) AS boosted_now,
            COALESCE(
-             array_agg(CASE WHEN m.object_key IS NOT NULL THEN '/api/romchat/profile/media/' || m.id || '/content?v=' || md5(m.object_key) ELSE m.url END ORDER BY m.position ASC, m.created_at ASC)
+             array_agg(CASE WHEN m.object_key IS NOT NULL AND COALESCE(m.bucket, '') <> 'review-seed' THEN '/api/romchat/profile/media/' || m.id || '/content?v=' || md5(m.object_key) ELSE m.url END ORDER BY m.position ASC, m.created_at ASC)
                FILTER (WHERE m.media_type = 'image'),
              '{}'
            ) AS photos
