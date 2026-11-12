@@ -1018,9 +1018,8 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
           <div className="flex items-start justify-between gap-3"><div><h2 className="font-black">Distance preference</h2><p className="mt-1 text-xs font-bold text-white/55">{mapEnabled ? 'Map discovery on' : 'Map discovery paused'} - show people within {distanceKm} km</p></div><button type="button" disabled={busy} onClick={() => setMapEnabled((value) => !value)} className={'grid h-11 w-11 place-items-center rounded-full border ' + (mapEnabled ? 'border-[#ffd700] bg-[#ffd700] text-[#120914]' : 'border-[#ffd700]/40 bg-transparent text-[#ffd700]')}><Map size={18} /></button></div>
           <input type="range" min="5" max="500" step="5" value={distanceKm} onChange={(e) => setDistanceKm(Number(e.target.value))} className="mt-4 w-full accent-[#ff1493]" />
           <div className="flex justify-between text-xs font-black text-white/45"><span>5 km</span><span>500 km</span></div>
-          <div className="mt-5 border-t border-white/10 pt-4"><div className="flex items-center justify-between"><h3 className="font-black">Age range</h3><span className="rounded-full bg-white/10 px-3 py-1 text-sm font-black text-[#ffd700]">{minAge} - {maxAge}</span></div><p className="mt-1 text-xs font-bold text-white/55">Show profiles in this age range, like Tinder discovery.</p>
-            <input type="range" min="18" max="79" step="1" value={minAge} onChange={(e) => setMinAge(Math.min(Number(e.target.value), maxAge - 1))} className="mt-4 w-full accent-[#ff1493]" />
-            <input type="range" min="19" max="80" step="1" value={maxAge} onChange={(e) => setMaxAge(Math.max(Number(e.target.value), minAge + 1))} className="mt-2 w-full accent-[#ff6f61]" />
+          <div className="mt-5 border-t border-white/10 pt-4"><div className="flex items-center justify-between"><h3 className="font-black">Age range</h3><span className="rounded-full bg-white/10 px-3 py-1 text-sm font-black text-[#ffd700]">{minAge} - {maxAge}</span></div><p className="mt-1 text-xs font-bold text-white/55">Set the age range you would like to discover.</p>
+            <AgeRangeSlider minAge={minAge} maxAge={maxAge} onChange={(nextMin, nextMax) => { setMinAge(nextMin); setMaxAge(nextMax); }} />
             <div className="flex justify-between text-xs font-black text-white/45"><span>18</span><span>80+</span></div>
           </div>
           <button type="button" disabled={busy} onClick={() => void saveDiscoverySettings()} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[16px] bg-[#ff1493] px-5 py-3 font-black disabled:opacity-60">{activeAction === 'discovery' ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />Applying filters...</> : 'Apply discovery filters'}</button>
@@ -1071,6 +1070,21 @@ function ProfileScreen({ token, setToken, session, reload }: { token: string; se
         {[['/privacy','Privacy Policy','How RomChat handles profile, chat, photo, location, and safety data.'],['/terms','Terms of Use','Account rules, subscriptions, tokens, acceptable use, and service limits.'],['/safety-standards','Child Safety Standards','RomChat rules against child sexual abuse, exploitation, grooming, and prohibited content.']].map(([href,title,copy]) => <Link href={href} key={href} className="block border-t border-white/10 py-4 first:border-t-0"><p className="font-black">{title}</p><p className="mt-1 text-sm font-bold leading-5 text-white/55">{copy}</p></Link>)}
       </div>
     </section>
+  );
+}
+
+function AgeRangeSlider({ minAge, maxAge, onChange }: { minAge: number; maxAge: number; onChange: (minAge: number, maxAge: number) => void }) {
+  const minimum = 18;
+  const maximum = 80;
+  const minPercent = ((minAge - minimum) / (maximum - minimum)) * 100;
+  const maxPercent = ((maxAge - minimum) / (maximum - minimum)) * 100;
+  return (
+    <div className="age-range-control my-4" aria-label={`Preferred ages ${minAge} to ${maxAge}`}>
+      <div className="age-range-rail" />
+      <div className="age-range-fill" style={{ left: `${minPercent}%`, width: `${maxPercent - minPercent}%` }} />
+      <input aria-label="Minimum age" type="range" min={minimum} max={maximum - 1} step="1" value={minAge} onChange={(event) => onChange(Math.min(Number(event.target.value), maxAge - 1), maxAge)} />
+      <input aria-label="Maximum age" type="range" min={minimum + 1} max={maximum} step="1" value={maxAge} onChange={(event) => onChange(minAge, Math.max(Number(event.target.value), minAge + 1))} />
+    </div>
   );
 }
 

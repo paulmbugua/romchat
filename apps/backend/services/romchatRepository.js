@@ -584,10 +584,20 @@ export async function getProfiles({ verifiedOnly = true, catalogueAccess = 1, vi
         shared_vibe_ids: (vibeIdsByMember.get(row.member_id) || []).filter((vibeId) => viewerVibes.has(vibeId)),
       }));
     }
-    return result.rows
+    const rankedProfiles = result.rows
       .map((row) => ({ ...row, distance_km: viewerCoordinates ? haversineKm(viewerCoordinates, rowCoordinates(row)) : 0 }))
-      .filter((row) => !viewerCoordinates || !mapDiscoveryEnabled || Number(row.distance_km || 0) <= maxDistanceKm)
-      .filter((row) => Number(row.age || 0) >= minAge && Number(row.age || 0) <= maxAge)
+      .filter((row) => Number(row.age || 0) >= 18 && Number(row.age || 0) <= 80);
+    const withinDistance = (row) => !viewerCoordinates || !mapDiscoveryEnabled || Number(row.distance_km || 0) <= maxDistanceKm;
+    const preferredProfiles = rankedProfiles
+      .filter(withinDistance)
+      .filter((row) => Number(row.age || 0) >= minAge && Number(row.age || 0) <= maxAge);
+    const nearbyProfiles = rankedProfiles.filter(withinDistance);
+    const profilesToShow = preferredProfiles.length
+      ? preferredProfiles
+      : nearbyProfiles.length
+        ? nearbyProfiles.map((row) => ({ ...row, outside_age_preference: true }))
+        : rankedProfiles.map((row) => ({ ...row, outside_distance_preference: true }));
+    return profilesToShow
       .sort((a, b) => Number(Boolean(b.boosted_now)) - Number(Boolean(a.boosted_now)) || Number(b.shared_vibe_ids?.length || 0) - Number(a.shared_vibe_ids?.length || 0) || Number(a.distance_km || 0) - Number(b.distance_km || 0) || Number(b.profile_strength || 0) - Number(a.profile_strength || 0))
       .map((row) => fromMemberProfileRow(row, access));
   }, () => []);

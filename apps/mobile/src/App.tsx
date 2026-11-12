@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { GestureResponderHandlers, ImageSourcePropType, LayoutChangeEvent } from 'react-native';
+import type { GestureResponderEvent, GestureResponderHandlers, ImageSourcePropType, LayoutChangeEvent } from 'react-native';
 import {
   Image,
   ImageBackground,
@@ -3200,8 +3200,6 @@ function Profile({ account, profile, strength, incognito, busy, activeAction, er
     setMaxAge(profile?.maxAge || 80);
     setMapEnabled(profile?.mapDiscoveryEnabled !== false);
   }, [profile?.memberId, profile?.maxDistanceKm, profile?.minAge, profile?.maxAge, profile?.mapDiscoveryEnabled]);
-  const updateMinAge = (value: number) => setMinAge(Math.min(Math.round(value), maxAge - 1));
-  const updateMaxAge = (value: number) => setMaxAge(Math.max(Math.round(value), minAge + 1));
   const completePrompts = promptAnswers.filter((item) => item.prompt && item.answer.trim()).length;
   const profileTasks = [
     [`Images uploaded: ${imageCount}`, imageCount >= 3 ? 'Fuller catalogues unlocked' : 'Add photos to unlock more galleries'],
@@ -3252,9 +3250,8 @@ function Profile({ account, profile, strength, incognito, busy, activeAction, er
               <Text style={styles.distanceTitle}>Age range</Text>
               <Text style={styles.ageRangeValue}>{minAge} - {maxAge}</Text>
             </View>
-            <Text style={styles.distanceMeta}>Show profiles in this age range, like Tinder discovery.</Text>
-            <Slider value={minAge} minimumValue={18} maximumValue={79} step={1} minimumTrackTintColor="#FF1493" maximumTrackTintColor="rgba(255,255,255,0.18)" thumbTintColor="#FFD700" onValueChange={updateMinAge} />
-            <Slider value={maxAge} minimumValue={19} maximumValue={80} step={1} minimumTrackTintColor="#FF6F61" maximumTrackTintColor="rgba(255,255,255,0.18)" thumbTintColor="#FFFFFF" onValueChange={updateMaxAge} />
+            <Text style={styles.distanceMeta}>Set the age range you would like to discover.</Text>
+            <AgeRangeControl minAge={minAge} maxAge={maxAge} onChange={(nextMin, nextMax) => { setMinAge(nextMin); setMaxAge(nextMax); }} />
             <View style={styles.distanceScale}><Text style={styles.distanceScaleText}>18</Text><Text style={styles.distanceScaleText}>80+</Text></View>
           </View>
           <TouchableOpacity accessibilityRole="button" accessibilityState={{ busy: activeAction === 'discovery', disabled: busy }} disabled={busy} onPress={() => void onSaveDiscoverySettings({ maxDistanceKm: distanceKm, minAge, maxAge, mapDiscoveryEnabled: mapEnabled })} style={[styles.distanceSaveButton, busy && styles.actionButtonDisabled]}>
@@ -3302,6 +3299,45 @@ function Profile({ account, profile, strength, incognito, busy, activeAction, er
         <TouchableOpacity onPress={() => openPolicy('terms')} style={styles.legalLink}><Text style={styles.legalTitle}>Terms of Use</Text><Text style={styles.caption}>Account rules, subscriptions, tokens, acceptable use, and service limits.</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => openPolicy('community')} style={styles.legalLink}><Text style={styles.legalTitle}>Community Guidelines</Text><Text style={styles.caption}>Dating safety, respectful messaging, reporting, blocking, and contact-sharing guidance.</Text></TouchableOpacity>
       </View>
+    </View>
+  );
+}
+
+function AgeRangeControl({ minAge, maxAge, onChange }: { minAge: number; maxAge: number; onChange: (minAge: number, maxAge: number) => void }) {
+  const minimum = 18;
+  const maximum = 80;
+  const span = maximum - minimum;
+  const [trackWidth, setTrackWidth] = useState(0);
+  const activeThumb = useRef<'min' | 'max'>('min');
+  const minPercent = ((minAge - minimum) / span) * 100;
+  const maxPercent = ((maxAge - minimum) / span) * 100;
+  const ageAt = (locationX: number) => Math.round(minimum + (Math.max(0, Math.min(trackWidth, locationX)) / Math.max(1, trackWidth)) * span);
+  const applyLocation = (locationX: number) => {
+    const age = ageAt(locationX);
+    if (activeThumb.current === 'min') onChange(Math.min(age, maxAge - 1), maxAge);
+    else onChange(minAge, Math.max(age, minAge + 1));
+  };
+  const beginDrag = (event: GestureResponderEvent) => {
+    const age = ageAt(event.nativeEvent.locationX);
+    activeThumb.current = Math.abs(age - minAge) <= Math.abs(age - maxAge) ? 'min' : 'max';
+    applyLocation(event.nativeEvent.locationX);
+  };
+  return (
+    <View
+      accessible
+      accessibilityRole="adjustable"
+      accessibilityLabel={`Preferred ages ${minAge} to ${maxAge}`}
+      style={styles.ageRangeControl}
+      onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderGrant={beginDrag}
+      onResponderMove={(event) => applyLocation(event.nativeEvent.locationX)}
+    >
+      <View style={styles.ageRangeRail} />
+      <View style={[styles.ageRangeFill, { left: `${minPercent}%`, width: `${maxPercent - minPercent}%` }]} />
+      <View style={[styles.ageRangeThumb, styles.ageRangeThumbMinimum, { left: `${minPercent}%` }]} />
+      <View style={[styles.ageRangeThumb, styles.ageRangeThumbMaximum, { left: `${maxPercent}%` }]} />
     </View>
   );
 }
@@ -3982,6 +4018,12 @@ const styles = StyleSheet.create({
   distanceHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
   distanceTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
   distanceMeta: { color: 'rgba(255,255,255,0.66)', fontWeight: '800', marginTop: 3, lineHeight: 18 },
+  ageRangeControl: { height: 48, justifyContent: 'center', marginTop: 8 },
+  ageRangeRail: { position: 'absolute', left: 0, right: 0, height: 6, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.18)' },
+  ageRangeFill: { position: 'absolute', height: 6, borderRadius: 999, backgroundColor: '#FF1493' },
+  ageRangeThumb: { position: 'absolute', width: 26, height: 26, marginLeft: -13, borderRadius: 13, borderWidth: 3, borderColor: '#120914', shadowColor: '#000000', shadowOpacity: 0.35, shadowRadius: 5, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
+  ageRangeThumbMinimum: { backgroundColor: '#FFD700' },
+  ageRangeThumbMaximum: { backgroundColor: '#FFFFFF' },
   mapToggle: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: 'rgba(255,215,0,0.45)', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1E1222' },
   mapToggleActive: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
   distanceScale: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -2 },
