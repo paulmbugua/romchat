@@ -8084,9 +8084,7 @@ __metadata:
     eslint-plugin-react-native: "npm:^5.0.0"
     expo: "npm:~54.0.33"
     expo-asset: "npm:~12.0.12"
-    expo-audio: "npm:~1.1.1"
     expo-auth-session: "npm:~7.0.10"
-    expo-av: "npm:~16.0.8"
     expo-build-properties: "npm:~1.0.10"
     expo-clipboard: "npm:~8.0.8"
     expo-constants: "npm:~18.0.13"
@@ -8109,7 +8107,6 @@ __metadata:
     expo-status-bar: "npm:~3.0.9"
     expo-system-ui: "npm:~6.0.9"
     expo-updates: "npm:~29.0.16"
-    expo-video: "npm:~3.0.15"
     expo-web-browser: "npm:~15.0.10"
     firebase: "npm:12.2.1"
     lodash.debounce: "npm:^4.0.8"
@@ -15030,18 +15027,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"expo-audio@npm:~1.1.1":
-  version: 1.1.1
-  resolution: "expo-audio@npm:1.1.1"
-  peerDependencies:
-    expo: "*"
-    expo-asset: "*"
-    react: "*"
-    react-native: "*"
-  checksum: 10c0/3ec687ca239b816097336808c9bd69995149166faf8dd74cb5fe732878843436178cbd1d901642779148df397562ffd36d207d217c801f16c300ab7df24d2208
-  languageName: node
-  linkType: hard
-
 "expo-auth-session@npm:~7.0.10":
   version: 7.0.11
   resolution: "expo-auth-session@npm:7.0.11"
@@ -15056,21 +15041,6 @@ __metadata:
     react: "*"
     react-native: "*"
   checksum: 10c0/187755b5ee613b6aac3936ecbc3e7cad27b5e987d74feca37d651394b1db8138f3918900fea4c6798ddb3183a4443b471ed75cebcccf34bfcede94ec7c16feb1
-  languageName: node
-  linkType: hard
-
-"expo-av@npm:~16.0.8":
-  version: 16.0.8
-  resolution: "expo-av@npm:16.0.8"
-  peerDependencies:
-    expo: "*"
-    react: "*"
-    react-native: "*"
-    react-native-web: "*"
-  peerDependenciesMeta:
-    react-native-web:
-      optional: true
-  checksum: 10c0/2f40b8fcc7824d4f3e0078e6dff25ccb5b12b21abfcf6de30f4ea831716c6be18f9b59ab085e7b88ece5b0d314f998798e864f4b4a3c0f493c66060f4fc94955
   languageName: node
   linkType: hard
 
@@ -15559,17 +15529,6 @@ __metadata:
   bin:
     expo-updates: bin/cli.js
   checksum: 10c0/2a5b2ef865ba6501a485720f19326cd2dce1cf573895046f1fdad5327b4b83eed78bd1b427419d6d4fad33acd6fa86bcb81b40741a563c48d528f1cbd86b975c
-  languageName: node
-  linkType: hard
-
-"expo-video@npm:~3.0.15":
-  version: 3.0.16
-  resolution: "expo-video@npm:3.0.16"
-  peerDependencies:
-    expo: "*"
-    react: "*"
-    react-native: "*"
-  checksum: 10c0/b0f9e7c2597f2c44515eb34c16fbd0e79f19bcc4227c99788f9a98833832418a0717fcf2d06f66d2aba3ceb8e08733b28c2b6d662da304eccd728e6aa12a7ef2
   languageName: node
   linkType: hard
 
